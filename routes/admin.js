@@ -12,35 +12,167 @@ function generateTempPassword() {
   return crypto.randomBytes(9).toString('base64').replace(/[+/=]/g, '').slice(0, 12);
 }
 
+function loadPlans() {
+  const plans = db.prepare('SELECT * FROM plans ORDER BY created_at ASC').all();
+
+  const sshByPlan = {};
+  db.prepare('SELECT plan_id, host, port, username, auth_type FROM plan_ssh').all().forEach((s) => {
+    sshByPlan[s.plan_id] = s;
+  });
+
+  const actionsByPlan = {};
+  db.prepare('SELECT * FROM plan_actions ORDER BY sort_order ASC, id ASC').all().forEach((a) => {
+    (actionsByPlan[a.plan_id] = actionsByPlan[a.plan_id] || []).push(a);
+  });
+
+  const containersByPlan = {};
+  db.prepare('SELECT * FROM plan_containers ORDER BY sort_order ASC, id ASC').all().forEach((c) => {
+    (containersByPlan[c.plan_id] = containersByPlan[c.plan_id] || []).push(c);
+  });
+
+  return { plans, sshByPlan, actionsByPlan, containersByPlan };
+}
+
 function loadUsersPageData() {
   const users = db.prepare("SELECT * FROM users WHERE role = 'subscriber' ORDER BY created_at DESC").all();
 
   const subsByUser = {};
-  db.prepare('SELECT * FROM subscriptions').all().forEach((s) => {
+  db.prepare(
+    `SELECT s.*, p.name AS plan_display_name FROM subscriptions s
+     LEFT JOIN plans p ON p.id = s.plan_id`
+  ).all().forEach((s) => {
     (subsByUser[s.user_id] = subsByUser[s.user_id] || []).push(s);
   });
 
-  const sshByUser = {};
-  db.prepare('SELECT user_id, host, port, username, auth_type, restart_command FROM ssh_targets')
-    .all()
-    .forEach((t) => { sshByUser[t.user_id] = t; });
+  const plans = db.prepare('SELECT * FROM plans ORDER BY name ASC').all();
 
-  return { users, subsByUser, sshByUser };
+  return { users, subsByUser, plans };
 }
 
 router.get('/admin', (req, res) => {
   const userCount = db.prepare("SELECT COUNT(*) c FROM users WHERE role = 'subscriber'").get().c;
   const openTickets = db.prepare("SELECT COUNT(*) c FROM tickets WHERE status != 'closed'").get().c;
   const activeSubs = db.prepare("SELECT COUNT(*) c FROM subscriptions WHERE status = 'active'").get().c;
-  const recentRestarts = db
+  const planCount = db.prepare('SELECT COUNT(*) c FROM plans').get().c;
+  const recentActions = db
     .prepare(
-      `SELECT r.*, u.name, u.email FROM restart_log r JOIN users u ON u.id = r.user_id
-       ORDER BY r.requested_at DESC LIMIT 8`
+      `SELECT al.*, u.name, u.email, pa.label AS action_label FROM action_log al
+       JOIN users u ON u.id = al.user_id
+       JOIN plan_actions pa ON pa.id = al.plan_action_id
+       ORDER BY al.requested_at DESC LIMIT 8`
     )
     .all();
   const mailConfigured = isConfigured(getAllSettings());
 
-  res.render('admin-overview', { userCount, openTickets, activeSubs, recentRestarts, mailConfigured });
+  res.render('admin-overview', { userCount, openTickets, activeSubs, planCount, recentActions, mailConfigured });
+});
+
+// ---------- Plans ----------
+
+router.get('/admin/plans', (req, res) => {
+  res.render('admin-plans', { ...loadPlans(), newPlanId: null });
+});
+
+router.post('/admin/plans', (req, res) => {
+  const name = String(req.body.name || '').trim();
+  const service = String(req.body.service || 'docker').trim();
+  const description = String(req.body.description || '').trim();
+  const features = String(req.body.features || '').trim();
+
+  if (!name) return res.status(400).redirect('/admin/plans');
+
+  const info = db
+    .prepare('INSERT INTO plans (name, service, description, features) VALUES (?, ?, ?, ?)')
+    .run(name, service, description, features);
+
+  res.render('admin-plans', { ...loadPlans(), newPlanId: info.lastInsertRowid });
+});
+
+router.post('/admin/plans/:id/update', (req, res) => {
+  const name = String(req.body.name || '').trim();
+  const service = String(req.body.service || 'docker').trim();
+  const description = String(req.body.description || '').trim();
+  const features = String(req.body.features || '').trim();
+
+  db.prepare(
+    `UPDATE plans SET name = ?, service = ?, description = ?, features = ?, updated_at = datetime('now') WHERE id = ?`
+  ).run(name, service, description, features, req.params.id);
+
+  res.redirect('/admin/plans');
+});
+
+router.post('/admin/plans/:id/delete', (req, res) => {
+  db.prepare('DELETE FROM plans WHERE id = ?').run(req.params.id);
+  res.redirect('/admin/plans');
+});
+
+router.post('/admin/plans/:id/ssh', (req, res) => {
+  const { host, port, username, auth_type, secret } = req.body;
+  if (!host || !username) return res.status(400).redirect('/admin/plans');
+
+  const existing = db.prepare('SELECT * FROM plan_ssh WHERE plan_id = ?').get(req.params.id);
+
+  if (existing) {
+    if (secret) {
+      db.prepare(
+        `UPDATE plan_ssh SET host = ?, port = ?, username = ?, auth_type = ?, secret_encrypted = ?, updated_at = datetime('now') WHERE plan_id = ?`
+      ).run(host, port || 22, username, auth_type || 'password', encrypt(secret), req.params.id);
+    } else {
+      db.prepare(
+        `UPDATE plan_ssh SET host = ?, port = ?, username = ?, auth_type = ?, updated_at = datetime('now') WHERE plan_id = ?`
+      ).run(host, port || 22, username, auth_type || 'password', req.params.id);
+    }
+  } else {
+    if (!secret) return res.status(400).redirect('/admin/plans');
+    db.prepare(
+      `INSERT INTO plan_ssh (plan_id, host, port, username, auth_type, secret_encrypted) VALUES (?, ?, ?, ?, ?, ?)`
+    ).run(req.params.id, host, port || 22, username, auth_type || 'password', encrypt(secret));
+  }
+
+  res.redirect('/admin/plans');
+});
+
+router.post('/admin/plans/:id/actions', (req, res) => {
+  const label = String(req.body.label || '').trim();
+  const command = String(req.body.command || '').trim();
+  const icon = String(req.body.icon || 'fa-rotate').trim();
+  const cooldownHours = Math.max(0, parseInt(req.body.cooldown_hours, 10) || 6);
+
+  if (!label || !command) return res.status(400).redirect('/admin/plans');
+
+  db.prepare(
+    'INSERT INTO plan_actions (plan_id, label, command, icon, cooldown_hours) VALUES (?, ?, ?, ?, ?)'
+  ).run(req.params.id, label, command, icon, cooldownHours);
+
+  res.redirect('/admin/plans');
+});
+
+router.post('/admin/plans/:id/actions/:actionId/delete', (req, res) => {
+  db.prepare('DELETE FROM plan_actions WHERE id = ? AND plan_id = ?').run(req.params.actionId, req.params.id);
+  res.redirect('/admin/plans');
+});
+
+router.post('/admin/plans/:id/containers', (req, res) => {
+  const containerName = String(req.body.container_name || '').trim();
+  const label = String(req.body.label || containerName).trim();
+
+  if (!containerName) return res.status(400).redirect('/admin/plans');
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(containerName)) {
+    return res.status(400).render('error', { message: 'Container name can only contain letters, numbers, dots, dashes, and underscores.' });
+  }
+
+  db.prepare('INSERT INTO plan_containers (plan_id, container_name, label) VALUES (?, ?, ?)').run(
+    req.params.id,
+    containerName,
+    label
+  );
+
+  res.redirect('/admin/plans');
+});
+
+router.post('/admin/plans/:id/containers/:containerId/delete', (req, res) => {
+  db.prepare('DELETE FROM plan_containers WHERE id = ? AND plan_id = ?').run(req.params.containerId, req.params.id);
+  res.redirect('/admin/plans');
 });
 
 // ---------- Users ----------
@@ -52,8 +184,7 @@ router.get('/admin/users', (req, res) => {
 router.post('/admin/users/invite', async (req, res) => {
   const name = String(req.body.name || '').trim();
   const email = String(req.body.email || '').toLowerCase().trim();
-  const service = String(req.body.service || 'docker').trim();
-  const planName = String(req.body.plan_name || 'Standard').trim();
+  const planId = req.body.plan_id ? Number(req.body.plan_id) : null;
 
   if (!name || !email) return res.status(400).redirect('/admin/users');
 
@@ -67,9 +198,14 @@ router.post('/admin/users/invite', async (req, res) => {
       )
       .run(name, email, hash);
 
-    db.prepare(
-      `INSERT INTO subscriptions (user_id, service, plan_name, status) VALUES (?, ?, ?, 'active')`
-    ).run(info.lastInsertRowid, service, planName);
+    if (planId) {
+      const plan = db.prepare('SELECT * FROM plans WHERE id = ?').get(planId);
+      if (plan) {
+        db.prepare(
+          `INSERT INTO subscriptions (user_id, plan_id, service, plan_name, status) VALUES (?, ?, ?, ?, 'active')`
+        ).run(info.lastInsertRowid, plan.id, plan.service, plan.name);
+      }
+    }
 
     const siteName = getAllSettings().site_name;
     const loginUrl = `${getSiteBaseUrl(req)}/login`;
@@ -100,17 +236,20 @@ router.post('/admin/users/invite', async (req, res) => {
 });
 
 router.post('/admin/users/:id/subscription', (req, res) => {
-  const { service, plan_name, status, expires_at, notes } = req.body;
-  const existing = db.prepare('SELECT id FROM subscriptions WHERE user_id = ? AND service = ?').get(req.params.id, service);
+  const { plan_id, status, expires_at, notes } = req.body;
+  const plan = db.prepare('SELECT * FROM plans WHERE id = ?').get(plan_id);
+  if (!plan) return res.status(400).redirect('/admin/users');
+
+  const existing = db.prepare('SELECT id FROM subscriptions WHERE user_id = ? AND plan_id = ?').get(req.params.id, plan.id);
 
   if (existing) {
     db.prepare(
-      `UPDATE subscriptions SET plan_name = ?, status = ?, expires_at = ?, notes = ?, updated_at = datetime('now') WHERE id = ?`
-    ).run(plan_name, status, expires_at || null, notes || null, existing.id);
+      `UPDATE subscriptions SET service = ?, plan_name = ?, status = ?, expires_at = ?, notes = ?, updated_at = datetime('now') WHERE id = ?`
+    ).run(plan.service, plan.name, status, expires_at || null, notes || null, existing.id);
   } else {
     db.prepare(
-      `INSERT INTO subscriptions (user_id, service, plan_name, status, expires_at, notes) VALUES (?, ?, ?, ?, ?, ?)`
-    ).run(req.params.id, service, plan_name, status, expires_at || null, notes || null);
+      `INSERT INTO subscriptions (user_id, plan_id, service, plan_name, status, expires_at, notes) VALUES (?, ?, ?, ?, ?, ?, ?)`
+    ).run(req.params.id, plan.id, plan.service, plan.name, status, expires_at || null, notes || null);
   }
 
   res.redirect('/admin/users');
@@ -118,26 +257,6 @@ router.post('/admin/users/:id/subscription', (req, res) => {
 
 router.post('/admin/users/:id/subscription/:subId/delete', (req, res) => {
   db.prepare('DELETE FROM subscriptions WHERE id = ? AND user_id = ?').run(req.params.subId, req.params.id);
-  res.redirect('/admin/users');
-});
-
-router.post('/admin/users/:id/ssh', (req, res) => {
-  const { host, port, username, auth_type, secret, restart_command } = req.body;
-  if (!host || !username || !secret) return res.status(400).redirect('/admin/users');
-
-  const encryptedSecret = encrypt(secret);
-  const existing = db.prepare('SELECT id FROM ssh_targets WHERE user_id = ?').get(req.params.id);
-
-  if (existing) {
-    db.prepare(
-      `UPDATE ssh_targets SET host = ?, port = ?, username = ?, auth_type = ?, secret_encrypted = ?, restart_command = ?, updated_at = datetime('now') WHERE id = ?`
-    ).run(host, port || 22, username, auth_type || 'password', encryptedSecret, restart_command || 'docker compose restart plex', existing.id);
-  } else {
-    db.prepare(
-      `INSERT INTO ssh_targets (user_id, host, port, username, auth_type, secret_encrypted, restart_command) VALUES (?, ?, ?, ?, ?, ?, ?)`
-    ).run(req.params.id, host, port || 22, username, auth_type || 'password', encryptedSecret, restart_command || 'docker compose restart plex');
-  }
-
   res.redirect('/admin/users');
 });
 

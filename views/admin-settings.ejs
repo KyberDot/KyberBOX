@@ -7,8 +7,8 @@
 <body class="antialiased overflow-x-hidden">
     <%- include('partials/nav') %>
 
-    <main class="max-w-3xl mx-auto px-6 py-10 pb-24">
-        <h1 class="text-3xl font-extrabold mb-8">Settings</h1>
+    <main class="max-w-3xl mx-auto px-4 sm:px-6 py-8 sm:py-10 pb-24">
+        <h1 class="text-2xl sm:text-3xl font-extrabold mb-8">Settings</h1>
 
         <% if (saved) { %>
             <div class="mb-6 px-4 py-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-sm">
@@ -23,7 +23,7 @@
         <% } %>
 
         <!-- General -->
-        <div class="glass rounded-3xl p-8 mb-8">
+        <div class="glass rounded-2xl sm:rounded-3xl p-5 sm:p-8 mb-8">
             <h2 class="text-lg font-bold text-white mb-4"><i class="fas fa-sliders mr-2 text-sky-400"></i>General</h2>
             <form method="POST" action="/admin/settings/general" class="space-y-4">
                 <div>
@@ -40,7 +40,7 @@
         </div>
 
         <!-- Mail -->
-        <div class="glass rounded-3xl p-8 mb-8">
+        <div class="glass rounded-2xl sm:rounded-3xl p-5 sm:p-8 mb-8">
             <h2 class="text-lg font-bold text-white mb-1"><i class="fas fa-envelope mr-2 text-sky-400"></i>Mail (SMTP)</h2>
             <p class="text-slate-400 text-sm mb-4">Used for client invites, password resets, and ticket notifications.</p>
             <form method="POST" action="/admin/settings/mail" class="grid md:grid-cols-2 gap-4">

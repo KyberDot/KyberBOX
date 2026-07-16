@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <% pageTitle = 'Plans' %>
+    <%- include('partials/head') %>
+</head>
+<body class="antialiased overflow-x-hidden">
+    <%- include('partials/nav') %>
+
+    <main class="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-10 pb-24">
+        <h1 class="text-2xl sm:text-3xl font-extrabold mb-2">Plans</h1>
+        <p class="text-slate-400 text-sm mb-8">Each plan controls what subscribers on it see when they log in: its feature list, its server access, its action buttons (like a Plex restart), and which containers' health is shown.</p>
+
+        <!-- Create plan -->
+        <div class="glass rounded-3xl p-6 sm:p-8 mb-10">
+            <h2 class="text-lg font-bold text-white mb-4"><i class="fas fa-layer-group mr-2 text-sky-400"></i>Create a New Plan</h2>
+            <form method="POST" action="/admin/plans" class="grid sm:grid-cols-2 gap-4">
+                <input type="text" name="name" required class="input" placeholder="Plan name (e.g. Plex Premium)">
+                <select name="service" class="input">
+                    <option value="docker">Docker Hosting</option>
+                    <option value="plex">Plex Servers</option>
+                    <option value="stream">Stream Addons</option>
+                    <option value="indexers">Indexers</option>
+                    <option value="hosting">Web Hosting</option>
+                    <option value="multiple">Multiple Services</option>
+                </select>
+                <input type="text" name="description" class="input sm:col-span-2" placeholder="Short description (optional)">
+                <textarea name="features" rows="3" class="input sm:col-span-2" placeholder="One feature per line, e.g.&#10;4K Transcoding&#10;5 simultaneous streams&#10;Priority support"></textarea>
+                <button type="submit" class="btn-primary py-3 rounded-xl text-sm sm:col-span-2">
+                    <i class="fas fa-plus mr-2"></i>Create Plan
+                </button>
+            </form>
+        </div>
+
+        <!-- Plans list -->
+        <div class="space-y-6">
+            <% plans.forEach(function(plan) { %>
+                <div class="glass rounded-2xl p-5 sm:p-6 <%= newPlanId === plan.id ? 'border border-emerald-500/40' : '' %>">
+                    <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+                        <div>
+                            <p class="font-bold text-white text-lg"><%= plan.name %></p>
+                            <span class="badge badge-answered"><%= plan.service %></span>
+                        </div>
+                        <div class="flex flex-wrap gap-2">
+                            <% if (sshByPlan[plan.id]) { %>
+                                <span class="badge badge-active"><i class="fas fa-terminal"></i> SSH configured</span>
+                            <% } else { %>
+                                <span class="badge badge-suspended"><i class="fas fa-triangle-exclamation"></i> No SSH</span>
+                            <% } %>
+                            <span class="badge badge-answered"><i class="fas fa-bolt"></i> <%= (actionsByPlan[plan.id] || []).length %> action(s)</span>
+                            <span class="badge badge-answered"><i class="fas fa-heart-pulse"></i> <%= (containersByPlan[plan.id] || []).length %> container(s)</span>
+                        </div>
+                    </div>
+
+                    <details class="mb-3">
+                        <summary class="cursor-pointer text-sky-400 text-xs font-semibold uppercase tracking-wide">Plan Details &amp; Features</summary>
+                        <form method="POST" action="/admin/plans/<%= plan.id %>/update" class="grid sm:grid-cols-2 gap-3 mt-3">
+                            <input type="text" name="name" required class="input" value="<%= plan.name %>">
+                            <select name="service" class="input">
+                                <option value="docker" <%= plan.service === 'docker' ? 'selected' : '' %>>Docker Hosting</option>
+                                <option value="plex" <%= plan.service === 'plex' ? 'selected' : '' %>>Plex Servers</option>
+                                <option value="stream" <%= plan.service === 'stream' ? 'selected' : '' %>>Stream Addons</option>
+                                <option value="indexers" <%= plan.service === 'indexers' ? 'selected' : '' %>>Indexers</option>
+                                <option value="hosting" <%= plan.service === 'hosting' ? 'selected' : '' %>>Web Hosting</option>
+                                <option value="multiple" <%= plan.service === 'multiple' ? 'selected' : '' %>>Multiple Services</option>
+                            </select>
+                            <input type="text" name="description" class="input sm:col-span-2" value="<%= plan.description || '' %>" placeholder="Short description">
+                            <textarea name="features" rows="4" class="input sm:col-span-2" placeholder="One feature per line"><%= plan.features || '' %></textarea>
+                            <button type="submit" class="btn-primary py-3 rounded-xl text-sm sm:col-span-2">Save Details</button>
+                        </form>
+                    </details>
+
+                    <details class="mb-3">
+                        <summary class="cursor-pointer text-sky-400 text-xs font-semibold uppercase tracking-wide">Server / SSH Access (shared by everyone on this plan)</summary>
+                        <form method="POST" action="/admin/plans/<%= plan.id %>/ssh" class="grid sm:grid-cols-3 gap-3 mt-3">
+                            <input type="text" name="host" required class="input" placeholder="Host / IP" value="<%= sshByPlan[plan.id] ? sshByPlan[plan.id].host : '' %>">
+                            <input type="number" name="port" class="input" placeholder="Port (22)" value="<%= sshByPlan[plan.id] ? sshByPlan[plan.id].port : 22 %>">
+                            <input type="text" name="username" required class="input" placeholder="SSH username" value="<%= sshByPlan[plan.id] ? sshByPlan[plan.id].username : '' %>">
+                            <select name="auth_type" class="input sm:col-span-3">
+                                <option value="password" <%= sshByPlan[plan.id] && sshByPlan[plan.id].auth_type === 'password' ? 'selected' : '' %>>Password</option>
+                                <option value="key" <%= sshByPlan[plan.id] && sshByPlan[plan.id].auth_type === 'key' ? 'selected' : '' %>>Private Key</option>
+                            </select>
+                            <textarea name="secret" rows="2" class="input sm:col-span-3" placeholder="Password or private key (leave blank to keep current)"></textarea>
+                            <button type="submit" class="btn-primary py-3 rounded-xl text-sm sm:col-span-3">
+                                <i class="fas fa-lock mr-2"></i>Save (encrypted at rest)
+                            </button>
+                        </form>
+                    </details>
+
+                    <details class="mb-3">
+                        <summary class="cursor-pointer text-sky-400 text-xs font-semibold uppercase tracking-wide">Action Buttons (e.g. Restart Plex)</summary>
+                        <div class="mt-3 space-y-2 mb-3">
+                            <% (actionsByPlan[plan.id] || []).forEach(function(action) { %>
+                                <form method="POST" action="/admin/plans/<%= plan.id %>/actions/<%= action.id %>/delete" class="flex items-center justify-between text-xs text-slate-400 bg-slate-900/40 rounded-lg px-3 py-2 gap-2">
+                                    <span class="truncate"><i class="fas <%= action.icon %> mr-2 text-sky-400"></i><strong class="text-white"><%= action.label %></strong> — <span class="font-mono"><%= action.command %></span> (every <%= action.cooldown_hours %>h)</span>
+                                    <button class="text-red-400 hover:text-red-300 flex-shrink-0"><i class="fas fa-trash"></i></button>
+                                </form>
+                            <% }); %>
+                        </div>
+                        <form method="POST" action="/admin/plans/<%= plan.id %>/actions" class="grid sm:grid-cols-4 gap-3">
+                            <input type="text" name="label" required class="input" placeholder="Button label (e.g. Restart Plex)">
+                            <input type="text" name="command" required class="input sm:col-span-2" placeholder="Command (e.g. docker compose restart plex)">
+                            <input type="number" name="cooldown_hours" class="input" placeholder="Cooldown hrs (6)" value="6">
+                            <input type="text" name="icon" class="input sm:col-span-3" placeholder="Font Awesome icon class (default: fa-rotate)">
+                            <button type="submit" class="btn-primary py-3 rounded-xl text-sm">Add Action</button>
+                        </form>
+                    </details>
+
+                    <details>
+                        <summary class="cursor-pointer text-sky-400 text-xs font-semibold uppercase tracking-wide">Container Health (shown to subscribers)</summary>
+                        <div class="mt-3 space-y-2 mb-3">
+                            <% (containersByPlan[plan.id] || []).forEach(function(c) { %>
+                                <form method="POST" action="/admin/plans/<%= plan.id %>/containers/<%= c.id %>/delete" class="flex items-center justify-between text-xs text-slate-400 bg-slate-900/40 rounded-lg px-3 py-2 gap-2">
+                                    <span><strong class="text-white"><%= c.label %></strong> — container: <span class="font-mono"><%= c.container_name %></span></span>
+                                    <button class="text-red-400 hover:text-red-300"><i class="fas fa-trash"></i></button>
+                                </form>
+                            <% }); %>
+                        </div>
+                        <form method="POST" action="/admin/plans/<%= plan.id %>/containers" class="grid sm:grid-cols-3 gap-3">
+                            <input type="text" name="label" required class="input" placeholder="Display label (e.g. Plex Server)">
+                            <input type="text" name="container_name" required class="input" placeholder="Exact container name (e.g. plex)">
+                            <button type="submit" class="btn-primary py-3 rounded-xl text-sm">Add Container</button>
+                        </form>
+                    </details>
+
+                    <form method="POST" action="/admin/plans/<%= plan.id %>/delete" onsubmit="return confirm('Delete this plan? Subscribers on it will lose access to its features/actions until reassigned.');" class="mt-4">
+                        <button class="text-red-400 hover:text-red-300 text-xs"><i class="fas fa-trash mr-1"></i>Delete Plan</button>
+                    </form>
+                </div>
+            <% }); %>
+            <% if (plans.length === 0) { %>
+                <p class="text-slate-500 text-sm">No plans yet — create one above to start assigning subscribers.</p>
+            <% } %>
+        </div>
+    </main>
+</body>
+</html>

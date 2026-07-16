@@ -15,6 +15,13 @@ if (!process.env.JWT_SECRET || !process.env.CREDENTIAL_ENC_KEY) {
 
 const app = express();
 
+// Running behind a reverse proxy (Authentik, Nginx, Traefik, etc.), so Express
+// needs to know it can trust the X-Forwarded-For header for things like
+// express-rate-limit and req.protocol/secure cookies to work correctly.
+// TRUST_PROXY can be overridden in .env if you have more than one proxy hop
+// in front of this container (e.g. TRUST_PROXY=2).
+app.set('trust proxy', process.env.TRUST_PROXY ? Number(process.env.TRUST_PROXY) : 1);
+
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 

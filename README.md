@@ -1,31 +1,44 @@
 # KyberBOX Client Portal
 
-A self-hosted client portal for KyberBOX. Subscribers log in to see their
-subscription status, self-service restart their Plex server (rate-limited),
-and raise support tickets. Admins invite clients, assign subscriptions,
-configure server access, answer tickets, and manage email delivery — all in
-one dashboard, styled to match the existing KyberBOX site.
+A self-hosted client portal for KyberBOX. Subscribers log in to see the
+plan they're on — its features, live server/container health, and its
+action buttons (like a rate-limited Plex restart) — and can raise support
+tickets. Admins define Plans once, assign clients to them, answer tickets,
+and manage email delivery, all from a dashboard styled to match the
+existing KyberBOX site and built to work on phones as well as desktop.
 
 ## Features
 
+- **Plans, not per-user config** — an admin defines a Plan once (e.g. "Plex
+  Standard"): its feature list, the shared SSH server it acts on, which
+  action buttons appear (e.g. "Restart Plex"), and which containers' live
+  health is shown. Assigning a client to that plan gives them all of it
+  instantly — no per-user server setup.
 - **Invite-only accounts** — no public signup. Admin creates each client
-  account and assigns their subscription(s): Docker Hosting, Plex, Stream
-  Addons, Indexers, Web Hosting, or Multiple Services.
-- **Client dashboard** — subscription status/plan/expiry at a glance.
-- **Plex self-service restart** — one click, with a confirmation dialog,
-  runs a fixed `docker compose restart plex` command over SSH against the
-  client's own server. Limited to once every 6 hours per account.
+  account and assigns it to a Plan (or leaves it unassigned for later).
+- **Live container health** — each plan can list containers (e.g. `plex`,
+  `tautulli`) whose status is checked over SSH and shown to subscribers as
+  Online / Starting / Unhealthy / Offline, fetched asynchronously so it
+  never blocks the dashboard from loading.
+- **Rate-limited action buttons** — each plan can have any number of
+  action buttons (not just Plex restart) mapped to a fixed admin-defined
+  command, each with its own cooldown (e.g. once every 6 hours). Subscribers
+  only ever click a button; they never type or influence the command that
+  runs on the server.
 - **Support tickets** — clients can raise a ticket, admins see every ticket
   in one inbox and reply from the portal.
 - **Email notifications** — client invites, admin-triggered password
   resets, self-service "forgot password" links, and ticket
   creation/replies are all emailed automatically once SMTP is configured
-  from the in-app Settings page.
+  from the in-app Settings page. Emails carry your actual logo (embedded
+  directly in the email, not a hotlinked image, so it displays reliably
+  across mail clients).
 - **Encrypted server credentials** — SSH passwords/keys and the SMTP
-  password are encrypted at rest (AES-256-GCM) with a key you control. The
-  restart button only ever runs the single fixed command configured for
-  that account — there is no free-form remote command execution anywhere
-  in the app.
+  password are encrypted at rest (AES-256-GCM) with a key you control.
+- **Mobile-friendly throughout** — every page (login, dashboard, admin)
+  is responsive, with a collapsible menu on small screens. The login page
+  is sized to fit the screen without scrolling on typical phone/desktop
+  viewports.
 - **Built by GitHub, deployed by Compose** — a GitHub Actions workflow
   builds the Docker image and publishes it to GitHub Container Registry
   (GHCR) on every push to `main`, so your server just pulls a ready-made
@@ -40,30 +53,13 @@ one dashboard, styled to match the existing KyberBOX site.
    repository** — GitHub Desktop will pick up the included `.gitignore`
    automatically (so `node_modules/`, `.env`, and the SQLite database
    never get committed).
-4. Write a commit summary (e.g. "Initial commit") and click **Commit to main**.
-5. Click **Publish repository**. Set the name to `kyberbox`, make sure it's
-   published under your **KyberDot** account, then click **Publish**.
+4. Write a commit summary and click **Commit to main**, then **Publish repository**.
 
-That's it — no terminal/git commands needed. Publishing pushes to `main`,
-which automatically triggers `.github/workflows/docker-publish.yml` on
-GitHub. That workflow builds the image and pushes it to:
-
-```
-ghcr.io/kyberdot/kyberbox:latest
-```
-
-`docker-compose.yml` in this project is already set to that exact path, so
-you don't need to edit it. Go to the **Actions** tab on
-`github.com/KyberDot/kyberbox` to watch the build — first one takes a
-couple of minutes.
-
-> **Make the package pullable:** after the first successful build, go to
-> your GitHub profile → **Packages** → the `kyberbox` package → **Package
-> settings**, and set visibility to **Public** (simplest for a single
-> server you control). If you'd rather keep it private, you'll instead
-> need to `docker login ghcr.io` on the server with a
-> [Personal Access Token](https://github.com/settings/tokens) that has
-> `read:packages` scope before running `docker compose pull`.
+Publishing pushes to `main`, which automatically triggers
+`.github/workflows/docker-publish.yml` on GitHub. That workflow builds the
+image and pushes it to GHCR. `docker-compose.yml` in this project is
+already pointed at `ghcr.io/kyberdot/kyberbox:latest` — check the
+**Actions** tab on GitHub to watch the build.
 
 ## 2. Configure the server that will run it
 
@@ -74,12 +70,13 @@ cp .env.example .env
 Edit `.env` and set:
 
 - `JWT_SECRET` — random string, e.g. `openssl rand -hex 32`
-- `CREDENTIAL_ENC_KEY` — random 64-char hex string, e.g. `openssl rand -hex 32`
+- `CREDENTIAL_ENC_KEY` — a **different** random 64-char hex string, e.g.
+  `openssl rand -hex 32` (run it twice — these two must not match each other)
 - `ADMIN_EMAIL` / `ADMIN_PASSWORD` — your first admin login (created
   automatically on first boot, only if no admin exists yet)
-
-`docker-compose.yml` already points at `ghcr.io/kyberdot/kyberbox:latest`,
-so nothing else to change here unless you rename the repo later.
+- `TRUST_PROXY` — only needed if you're running this behind more than one
+  reverse proxy hop; defaults to `1`, which is correct behind a single
+  proxy (e.g. Authentik, Traefik, Nginx)
 
 ## 3. Run it
 
@@ -88,43 +85,39 @@ docker compose pull
 docker compose up -d
 ```
 
-The portal will be available at `http://<your-server>:3000`. Log in with
-the admin credentials from `.env`, then immediately set a new password
-when prompted.
+Log in with the admin credentials from `.env`.
 
-To deploy an update after pushing new code to `main` (and waiting for the
-Actions build to finish):
+## 4. Set up your first Plan (Admin → Plans)
 
-```bash
-docker compose pull
-docker compose up -d
-```
+This replaces per-user server configuration entirely — you configure a
+plan once and every subscriber on it inherits its access and features.
 
-Your data (users, subscriptions, tickets, settings) lives in the
-`kyberbox-data` Docker volume and survives rebuilds/restarts/pulls.
+1. **Create the plan**: name (e.g. "Plex Standard"), service category, an
+   optional description, and a features list (one bullet per line — this
+   is exactly what subscribers see on their dashboard).
+2. **Server / SSH Access**: host, port, username, and either a password or
+   private key. This is shared by every client on this plan.
+3. **Action Buttons**: add as many as you want. Each needs a label (e.g.
+   "Restart Plex"), the exact command to run (e.g.
+   `docker compose restart plex`), and a cooldown in hours. Subscribers
+   only ever click the button — they can't see or edit the command.
+4. **Container Health**: add the exact container name(s) from your compose
+   file (e.g. `plex`) with a friendly label (e.g. "Plex Server"). Their
+   live status shows on the subscriber's dashboard.
 
-**Prefer to build locally instead of pulling from GHCR?** (e.g. for local
-development, or if you don't want to use GitHub Actions at all):
+Then go to **Admin → Users → Invite a New Client** and assign them to
+that plan — that's it, they'll see everything the plan defines the moment
+they log in.
 
-```bash
-docker compose -f docker-compose.build.yml up -d --build
-```
+**Security tip:** scope each plan's SSH account narrowly (e.g. a restricted
+key with `authorized_keys` `command=` locking it to only that plan's
+actions) so a compromised portal has minimal blast radius.
 
-## 4. Set up email (Admin → Settings)
+## 5. Set up email (Admin → Settings)
 
-Nothing is emailed until you configure SMTP. Log in as admin, go to
-**Settings**, and fill in:
-
-- **General**: site name and public site URL (used to build links inside
-  emails — e.g. `https://portal.kyberbox.app`). If left blank, the app
-  guesses it from the incoming request.
-- **Mail (SMTP)**: host, port, username, password, and the "from" name/
-  address. Works with any standard SMTP provider (Gmail app password,
-  SendGrid, Mailgun, Amazon SES, your own mail server, etc). Use the
-  **Send Test Email to Myself** button to confirm it works before relying
-  on it.
-
-Once configured, these are sent automatically:
+Nothing is emailed until you configure SMTP here: host, port, username,
+password, and the "from" name/address. Works with any standard SMTP
+provider. Use **Send Test Email to Myself** to confirm it works.
 
 | Event | Email sent to |
 |---|---|
@@ -135,24 +128,9 @@ Once configured, these are sent automatically:
 | Client replies to a ticket | All admin accounts |
 | Admin replies to a ticket | That client |
 
-If SMTP isn't configured yet, the portal still works — invite/reset
-passwords are shown once on-screen for you to copy, and the admin overview
-page shows a banner reminding you to finish mail setup.
-
-## 5. Day-to-day admin workflow
-
-1. **Admin → Users → Invite a New Client**: enter their name, email, and
-   initial subscription. A temporary password is generated and, once mail
-   is set up, emailed to them directly (also shown on-screen as a
-   fallback).
-2. **Server / SSH Access**: on that same user row, expand "Server / SSH
-   Access" and enter the host, SSH username, and either a password or a
-   private key, plus the exact restart command to run (defaults to
-   `docker compose restart plex`). This is what the client's "Restart
-   Plex" button triggers — nothing else.
-3. **Tickets**: any ticket a client raises shows up under **Admin →
-   Tickets** and triggers an email to all admins. Reply and mark it
-   answered/closed from there — the client gets emailed your reply.
+If SMTP isn't configured, the portal still works — invite/reset passwords
+are shown once on-screen for you to copy, and the admin overview page
+shows a banner reminding you to finish mail setup.
 
 ## 6. Security notes
 
@@ -160,34 +138,29 @@ page shows a banner reminding you to finish mail setup.
   `CREDENTIAL_ENC_KEY` and access to the running container can decrypt
   them — treat that key and your server the same way you'd treat any
   other secrets store.
-- Put this behind HTTPS (e.g. a reverse proxy like Caddy or Nginx with a
-  TLS certificate) before exposing it publicly — login cookies are only
-  marked `secure` when served over HTTPS.
-- Each client's SSH account should ideally be scoped to only run the
-  restart command (e.g. via a restricted shell or `authorized_keys`
-  `command=` directive) so that even a compromised portal server has
-  minimal blast radius.
+- Put this behind HTTPS before exposing it publicly — login cookies are
+  only marked `secure` when served over HTTPS.
+- Action commands and container names are always admin-supplied.
+  Subscribers can only trigger a predefined action; they never type or
+  influence any command that reaches a server.
 - Password reset links expire after 30 minutes and can only be used once.
-- Rotate a client's temporary password immediately if you suspect it was
-  seen by the wrong person — "Reset Password" on their row generates a
-  fresh one instantly (and emails it, if mail is set up).
 
 ## 7. Project structure
 
 ```
 kyberbox-portal/
 ├── .github/workflows/docker-publish.yml   # builds & pushes image to GHCR
-├── server.js              # Express app entry point
-├── db.js                  # SQLite schema + bootstrap admin
+├── server.js              # Express app entry point (trust proxy config lives here)
+├── db.js                  # SQLite schema: users, plans, subscriptions, tickets, settings
 ├── middleware/auth.js     # session/auth guards, injects site name
 ├── utils/crypto.js        # AES-256-GCM encrypt/decrypt for secrets
-├── utils/ssh.js           # runs the one allowed restart command via SSH
-├── utils/mailer.js        # nodemailer wrapper, reads settings from DB
+├── utils/ssh.js           # runs plan actions + container health checks over SSH
+├── utils/mailer.js        # nodemailer wrapper with embedded logo
 ├── utils/settings.js      # admin-configurable settings (SMTP, site URL)
 ├── routes/auth.js         # login / logout / password change / forgot-reset
-├── routes/dashboard.js    # client dashboard, restart, tickets
-├── routes/admin.js        # invite users, subscriptions, SSH, tickets, settings
-├── views/                 # EJS templates matching the KyberBOX design
+├── routes/dashboard.js    # client dashboard, plan actions, health checks, tickets
+├── routes/admin.js        # Plans CRUD, users, subscriptions, tickets, settings
+├── views/                 # EJS templates (mobile-responsive, matching KyberBOX design)
 ├── public/                # static assets (logo, favicon, CSS)
 ├── Dockerfile
 ├── docker-compose.yml         # production - pulls prebuilt image from GHCR

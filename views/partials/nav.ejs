@@ -1,21 +1,51 @@
-<nav class="max-w-7xl mx-auto px-8 py-6 w-full flex justify-between items-center">
-    <a href="<%= currentUser.role === 'admin' ? '/admin' : '/dashboard' %>" class="flex items-center gap-3">
-        <img src="/img/KY.svg" alt="KyberBOX Logo" class="h-9 w-auto">
-    </a>
-    <div class="flex items-center gap-6 text-sm">
+<nav class="max-w-7xl mx-auto px-4 sm:px-8 py-4 sm:py-6 w-full relative">
+    <div class="flex justify-between items-center">
+        <a href="<%= currentUser.role === 'admin' ? '/admin' : '/dashboard' %>" class="flex items-center gap-3">
+            <img src="/img/KY.svg" alt="KyberBOX Logo" class="h-8 sm:h-9 w-auto">
+        </a>
+
+        <!-- Desktop links -->
+        <div class="hidden md:flex items-center gap-6 text-sm">
+            <% if (currentUser.role === 'admin') { %>
+                <a href="/admin" class="text-slate-400 hover:text-white transition font-medium">Overview</a>
+                <a href="/admin/users" class="text-slate-400 hover:text-white transition font-medium">Users</a>
+                <a href="/admin/plans" class="text-slate-400 hover:text-white transition font-medium">Plans</a>
+                <a href="/admin/tickets" class="text-slate-400 hover:text-white transition font-medium">Tickets</a>
+                <a href="/admin/settings" class="text-slate-400 hover:text-white transition font-medium">Settings</a>
+            <% } else { %>
+                <a href="/dashboard" class="text-slate-400 hover:text-white transition font-medium">Dashboard</a>
+            <% } %>
+            <span class="text-slate-600">|</span>
+            <span class="text-slate-500"><%= currentUser.name %></span>
+            <form action="/logout" method="POST">
+                <button class="text-slate-400 hover:text-red-400 transition font-medium">
+                    <i class="fas fa-right-from-bracket mr-1"></i> Logout
+                </button>
+            </form>
+        </div>
+
+        <!-- Mobile hamburger -->
+        <button onclick="document.getElementById('mobileNavMenu').classList.toggle('hidden')" class="md:hidden text-slate-300 text-xl w-10 h-10 flex items-center justify-center rounded-lg hover:bg-white/5">
+            <i class="fas fa-bars"></i>
+        </button>
+    </div>
+
+    <!-- Mobile menu -->
+    <div id="mobileNavMenu" class="hidden md:hidden mt-4 glass rounded-2xl p-4 flex flex-col gap-1 text-sm">
         <% if (currentUser.role === 'admin') { %>
-            <a href="/admin" class="text-slate-400 hover:text-white transition font-medium">Overview</a>
-            <a href="/admin/users" class="text-slate-400 hover:text-white transition font-medium">Users</a>
-            <a href="/admin/tickets" class="text-slate-400 hover:text-white transition font-medium">Tickets</a>
-            <a href="/admin/settings" class="text-slate-400 hover:text-white transition font-medium">Settings</a>
+            <a href="/admin" class="text-slate-300 hover:text-white transition font-medium py-2 px-2 rounded-lg hover:bg-white/5">Overview</a>
+            <a href="/admin/users" class="text-slate-300 hover:text-white transition font-medium py-2 px-2 rounded-lg hover:bg-white/5">Users</a>
+            <a href="/admin/plans" class="text-slate-300 hover:text-white transition font-medium py-2 px-2 rounded-lg hover:bg-white/5">Plans</a>
+            <a href="/admin/tickets" class="text-slate-300 hover:text-white transition font-medium py-2 px-2 rounded-lg hover:bg-white/5">Tickets</a>
+            <a href="/admin/settings" class="text-slate-300 hover:text-white transition font-medium py-2 px-2 rounded-lg hover:bg-white/5">Settings</a>
         <% } else { %>
-            <a href="/dashboard" class="text-slate-400 hover:text-white transition font-medium">Dashboard</a>
+            <a href="/dashboard" class="text-slate-300 hover:text-white transition font-medium py-2 px-2 rounded-lg hover:bg-white/5">Dashboard</a>
         <% } %>
-        <span class="text-slate-600">|</span>
-        <span class="text-slate-500 hidden sm:inline"><%= currentUser.name %></span>
+        <div class="border-t border-white/10 my-2"></div>
+        <span class="text-slate-500 px-2 py-1"><%= currentUser.name %></span>
         <form action="/logout" method="POST">
-            <button class="text-slate-400 hover:text-red-400 transition font-medium">
-                <i class="fas fa-right-from-bracket mr-1"></i> Logout
+            <button class="w-full text-left text-slate-300 hover:text-red-400 transition font-medium py-2 px-2 rounded-lg hover:bg-white/5">
+                <i class="fas fa-right-from-bracket mr-2"></i> Logout
             </button>
         </form>
     </div>

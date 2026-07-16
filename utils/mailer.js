@@ -1,5 +1,9 @@
 const nodemailer = require('nodemailer');
+const path = require('path');
 const { getAllSettings } = require('./settings');
+
+const LOGO_PATH = path.join(__dirname, '..', 'public', 'img', 'fav.png');
+const LOGO_CID = 'kyberbox-logo';
 
 function isConfigured(settings) {
   return !!(settings.smtp_host && settings.smtp_user && settings.smtp_pass && settings.smtp_from_email);
@@ -18,7 +22,9 @@ function wrapHtml(siteName, bodyHtml) {
   return `
   <div style="font-family:'Segoe UI',Arial,sans-serif;background:#0b0f1a;padding:32px;">
     <div style="max-width:520px;margin:0 auto;background:#111827;border:1px solid rgba(255,255,255,0.08);border-radius:16px;padding:32px;color:#e2e8f0;">
-      <h2 style="color:#38bdf8;margin-top:0;">${siteName}</h2>
+      <div style="margin-bottom:20px;">
+        <img src="cid:${LOGO_CID}" alt="${siteName}" height="40" style="height:40px;width:auto;display:block;">
+      </div>
       ${bodyHtml}
       <p style="color:#64748b;font-size:12px;margin-top:32px;">This is an automated message from ${siteName}.</p>
     </div>
@@ -45,6 +51,13 @@ async function sendMail({ to, subject, bodyHtml }) {
       to,
       subject,
       html: wrapHtml(settings.site_name, bodyHtml),
+      attachments: [
+        {
+          filename: 'logo.png',
+          path: LOGO_PATH,
+          cid: LOGO_CID,
+        },
+      ],
     });
     return { sent: true };
   } catch (err) {

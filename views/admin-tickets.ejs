@@ -7,14 +7,14 @@
 <body class="antialiased overflow-x-hidden">
     <%- include('partials/nav') %>
 
-    <main class="max-w-5xl mx-auto px-6 py-10">
-        <h1 class="text-3xl font-extrabold mb-8">Support Tickets</h1>
+    <main class="max-w-5xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
+        <h1 class="text-2xl sm:text-3xl font-extrabold mb-8">Support Tickets</h1>
 
-        <div class="glass rounded-2xl overflow-hidden">
+        <div class="glass rounded-2xl overflow-x-auto">
             <% if (tickets.length === 0) { %>
                 <p class="text-slate-500 text-sm p-6">No tickets yet.</p>
             <% } else { %>
-                <table class="kb-table">
+                <table class="kb-table min-w-[640px]">
                     <thead><tr><th>Subject</th><th>Client</th><th>Category</th><th>Status</th><th>Updated</th></tr></thead>
                     <tbody>
                         <% tickets.forEach(function(t) { %>

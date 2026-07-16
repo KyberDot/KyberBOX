@@ -7,96 +7,126 @@
 <body class="antialiased overflow-x-hidden">
     <%- include('partials/nav') %>
 
-    <main class="max-w-5xl mx-auto px-6 py-10 relative">
+    <main class="max-w-5xl mx-auto px-4 sm:px-6 py-8 sm:py-10 relative">
         <div class="hero-glow" style="top:0;"></div>
 
         <div class="relative z-10">
-            <h1 class="text-3xl font-extrabold mb-1">Welcome back, <%= currentUser.name.split(' ')[0] %></h1>
-            <p class="text-slate-400 mb-10">Here's what's happening with your account.</p>
+            <h1 class="text-2xl sm:text-3xl font-extrabold mb-1">Welcome back, <%= currentUser.name.split(' ')[0] %></h1>
+            <p class="text-slate-400 mb-8 sm:mb-10 text-sm sm:text-base">Here's what's happening with your account.</p>
 
-            <!-- Subscriptions -->
-            <h2 class="text-sm uppercase tracking-widest text-slate-500 font-bold mb-4">Your Subscriptions</h2>
-            <div class="grid md:grid-cols-2 gap-5 mb-12">
-                <% if (subscriptions.length === 0) { %>
-                    <div class="glass rounded-2xl p-6 md:col-span-2 text-slate-400 text-sm">
-                        No subscriptions on file yet. Please contact support if this seems wrong.
-                    </div>
-                <% } %>
-                <% subscriptions.forEach(function(sub) { %>
-                    <div class="glass rounded-2xl p-6">
-                        <div class="flex items-start justify-between mb-3">
-                            <div>
-                                <p class="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-1"><%= sub.service %></p>
-                                <h3 class="text-lg font-bold text-white"><%= sub.plan_name %></h3>
-                            </div>
-                            <span class="badge badge-<%= sub.status %>">
-                                <i class="fas fa-circle text-[6px]"></i> <%= sub.status %>
-                            </span>
-                        </div>
-                        <% if (sub.expires_at) { %>
-                            <p class="text-slate-400 text-xs">Renews / expires: <%= sub.expires_at %></p>
-                        <% } %>
-                        <% if (sub.notes) { %>
-                            <p class="text-slate-500 text-xs mt-2"><%= sub.notes %></p>
-                        <% } %>
-                    </div>
-                <% }); %>
-            </div>
+            <% if (legacySubscriptions.length > 0) { %>
+                <div class="mb-8 px-4 sm:px-5 py-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400 text-sm">
+                    <i class="fas fa-triangle-exclamation mr-2"></i>Some of your subscriptions haven't been assigned to a plan yet — contact support if you don't see the features you expect below.
+                </div>
+            <% } %>
 
-            <!-- Plex Tools -->
-            <h2 class="text-sm uppercase tracking-widest text-slate-500 font-bold mb-4">Plex Server Tools</h2>
-            <div class="glass rounded-3xl p-8 mb-12">
-                <% if (!hasPlex) { %>
-                    <p class="text-slate-400 text-sm">You don't have an active Plex subscription, so server tools aren't available here.</p>
-                <% } else { %>
-                    <div class="flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <% if (planViews.length === 0 && legacySubscriptions.length === 0) { %>
+                <div class="glass rounded-2xl p-6 text-slate-400 text-sm mb-10">
+                    No subscriptions on file yet. Please contact support if this seems wrong.
+                </div>
+            <% } %>
+
+            <!-- One card per active plan subscription -->
+            <% planViews.forEach(function(pv) { %>
+                <div class="glass rounded-3xl p-5 sm:p-8 mb-8">
+                    <div class="flex flex-wrap items-start justify-between gap-3 mb-5">
                         <div>
-                            <h3 class="text-lg font-bold text-white mb-1">Plex not working?</h3>
-                            <p class="text-slate-400 text-sm max-w-md">Try restarting the Plex service on your server. You can do this once every 6 hours.</p>
-                            <% if (!sshConfigured) { %>
-                                <p class="text-amber-400 text-xs mt-2"><i class="fas fa-circle-info mr-1"></i> Server access hasn't been configured yet — raise a ticket below and we'll set it up.</p>
+                            <p class="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-1"><%= pv.plan.service %></p>
+                            <h2 class="text-lg sm:text-xl font-bold text-white"><%= pv.plan.name %></h2>
+                            <% if (pv.plan.description) { %>
+                                <p class="text-slate-400 text-sm mt-1"><%= pv.plan.description %></p>
                             <% } %>
                         </div>
-                        <div class="flex flex-col gap-3 min-w-[220px]">
-                            <button id="restartBtn" onclick="openRestartModal()" <%= nextAllowedAt ? 'disabled' : '' %>
-                                class="btn-amber px-6 py-4 rounded-2xl text-sm w-full">
-                                <i class="fas fa-rotate mr-2"></i>
-                                <%= nextAllowedAt ? 'Restart Unavailable' : 'Restart Plex' %>
-                            </button>
-                            <% if (nextAllowedAt) { %>
-                                <p class="text-slate-500 text-xs text-center">Available again after <span id="nextAllowed" data-time="<%= nextAllowedAt %>"><%= nextAllowedAt %></span></p>
-                            <% } %>
-                            <a href="#raise-ticket" onclick="document.getElementById('category').value='plex'"
-                               class="btn-outline text-center px-6 py-3 rounded-2xl text-sm w-full">
-                                <i class="fas fa-life-ring mr-2"></i> Still not working? Raise a ticket
-                            </a>
-                        </div>
+                        <span class="badge badge-<%= pv.subscription.status %>"><%= pv.subscription.status %></span>
                     </div>
-                    <div id="restartResult" class="mt-5 hidden text-sm rounded-xl p-4"></div>
-                <% } %>
-            </div>
+                    <% if (pv.subscription.expires_at) { %>
+                        <p class="text-slate-500 text-xs mb-5">Renews / expires: <%= pv.subscription.expires_at %></p>
+                    <% } %>
+
+                    <!-- Features -->
+                    <% if (pv.plan.features) { %>
+                        <div class="mb-6">
+                            <p class="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-3">Included with this plan</p>
+                            <ul class="grid sm:grid-cols-2 gap-2">
+                                <% pv.plan.features.split('\n').filter(f => f.trim()).forEach(function(feature) { %>
+                                    <li class="flex items-start gap-2 text-sm text-slate-300">
+                                        <i class="fas fa-check text-emerald-400 mt-1 text-xs"></i>
+                                        <span><%= feature.trim() %></span>
+                                    </li>
+                                <% }); %>
+                            </ul>
+                        </div>
+                    <% } %>
+
+                    <!-- Container health -->
+                    <% if (pv.containers.length > 0) { %>
+                        <div class="mb-6" data-plan-id="<%= pv.plan.id %>" data-health-container>
+                            <p class="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-3">Server Status</p>
+                            <div class="grid sm:grid-cols-2 gap-2">
+                                <% pv.containers.forEach(function(c) { %>
+                                    <div class="flex items-center justify-between bg-slate-900/40 rounded-xl px-4 py-3" data-container-name="<%= c.container_name %>">
+                                        <span class="text-sm text-slate-300"><%= c.label %></span>
+                                        <span class="badge badge-suspended" data-status-pill><i class="fas fa-circle-notch fa-spin"></i> checking</span>
+                                    </div>
+                                <% }); %>
+                            </div>
+                        </div>
+                    <% } %>
+
+                    <!-- Actions -->
+                    <% if (pv.actions.length > 0) { %>
+                        <div class="flex flex-col sm:flex-row sm:flex-wrap gap-3">
+                            <% pv.actions.forEach(function(action) { %>
+                                <button
+                                    class="btn-amber px-6 py-3 rounded-2xl text-sm w-full sm:w-auto"
+                                    data-action-btn
+                                    data-action-id="<%= action.id %>"
+                                    data-action-label="<%= action.label %>"
+                                    data-cooldown-hours="<%= action.cooldown_hours %>"
+                                    <%= action.nextAllowedAt ? 'disabled' : '' %>
+                                >
+                                    <i class="fas <%= action.icon %> mr-2"></i>
+                                    <%= action.nextAllowedAt ? action.label + ' Unavailable' : action.label %>
+                                </button>
+                            <% }); %>
+                        </div>
+                        <div class="mt-4 flex flex-wrap gap-4">
+                            <% pv.actions.forEach(function(action) { %>
+                                <% if (action.nextAllowedAt) { %>
+                                    <p class="text-slate-500 text-xs">"<%= action.label %>" available again after <span data-next-allowed="<%= action.nextAllowedAt %>"><%= action.nextAllowedAt %></span></p>
+                                <% } %>
+                            <% }); %>
+                        </div>
+                        <div id="actionResult-<%= pv.plan.id %>" class="mt-4 hidden text-sm rounded-xl p-4"></div>
+                        <a href="#raise-ticket" onclick="document.getElementById('category').value='<%= pv.plan.service %>'"
+                           class="btn-outline inline-block text-center px-6 py-3 rounded-2xl text-sm mt-4">
+                            <i class="fas fa-life-ring mr-2"></i> Still having issues? Raise a ticket
+                        </a>
+                    <% } %>
+                </div>
+            <% }); %>
 
             <!-- Tickets -->
             <h2 id="tickets" class="text-sm uppercase tracking-widest text-slate-500 font-bold mb-4">Support Tickets</h2>
-            <div class="glass rounded-3xl p-8 mb-8">
+            <div class="glass rounded-3xl p-5 sm:p-8 mb-8">
                 <% if (tickets.length === 0) { %>
                     <p class="text-slate-500 text-sm mb-2">No tickets yet.</p>
                 <% } else { %>
                     <div class="space-y-3 mb-2">
                         <% tickets.forEach(function(t) { %>
-                            <a href="/dashboard/tickets/<%= t.id %>" class="flex items-center justify-between p-4 rounded-xl bg-slate-900/40 hover:bg-slate-900/70 transition">
-                                <div>
-                                    <p class="font-semibold text-white text-sm"><%= t.subject %></p>
+                            <a href="/dashboard/tickets/<%= t.id %>" class="flex items-center justify-between gap-3 p-4 rounded-xl bg-slate-900/40 hover:bg-slate-900/70 transition">
+                                <div class="min-w-0">
+                                    <p class="font-semibold text-white text-sm truncate"><%= t.subject %></p>
                                     <p class="text-slate-500 text-xs"><%= t.category %> · opened <%= t.created_at %></p>
                                 </div>
-                                <span class="badge badge-<%= t.status %>"><%= t.status %></span>
+                                <span class="badge badge-<%= t.status %> flex-shrink-0"><%= t.status %></span>
                             </a>
                         <% }); %>
                     </div>
                 <% } %>
             </div>
 
-            <div id="raise-ticket" class="glass rounded-3xl p-8 mb-16">
+            <div id="raise-ticket" class="glass rounded-3xl p-5 sm:p-8 mb-16">
                 <h3 class="text-lg font-bold text-white mb-4">Raise a New Ticket</h3>
                 <form method="POST" action="/dashboard/tickets" class="space-y-4">
                     <input type="text" name="subject" required class="input" placeholder="Subject">
@@ -109,7 +139,7 @@
                         <option value="hosting">Web Hosting</option>
                     </select>
                     <textarea name="message" required rows="4" class="input" placeholder="Describe the issue..."></textarea>
-                    <button type="submit" class="btn-primary px-8 py-3 rounded-2xl text-sm">
+                    <button type="submit" class="btn-primary px-8 py-3 rounded-2xl text-sm w-full sm:w-auto">
                         <i class="fas fa-paper-plane mr-2"></i> Submit Ticket
                     </button>
                 </form>
@@ -117,58 +147,111 @@
         </div>
     </main>
 
-    <!-- Confirmation Modal -->
-    <div id="restartModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden items-center justify-center z-50 px-6">
+    <!-- Confirmation Modal (shared by all action buttons) -->
+    <div id="actionModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden items-center justify-center z-50 px-6">
         <div class="glass rounded-3xl p-8 max-w-sm w-full text-center">
             <div class="w-16 h-16 mx-auto rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center mb-5">
                 <i class="fas fa-triangle-exclamation text-amber-400 text-2xl"></i>
             </div>
-            <h3 class="text-lg font-bold text-white mb-2">Restart Plex now?</h3>
-            <p class="text-slate-400 text-sm mb-6">This will restart the Plex service on your server. You'll only be able to do this again in 6 hours.</p>
+            <h3 id="actionModalTitle" class="text-lg font-bold text-white mb-2">Run this action?</h3>
+            <p id="actionModalBody" class="text-slate-400 text-sm mb-6"></p>
             <div class="flex gap-3">
-                <button onclick="closeRestartModal()" class="btn-outline flex-1 py-3 rounded-xl text-sm">Cancel</button>
-                <button onclick="confirmRestart()" class="btn-amber flex-1 py-3 rounded-xl text-sm">Yes, Restart</button>
+                <button onclick="closeActionModal()" class="btn-outline flex-1 py-3 rounded-xl text-sm">Cancel</button>
+                <button onclick="confirmAction()" class="btn-amber flex-1 py-3 rounded-xl text-sm">Yes, Continue</button>
             </div>
         </div>
     </div>
 
     <script>
-        function openRestartModal() {
-            document.getElementById('restartModal').classList.remove('hidden');
-            document.getElementById('restartModal').classList.add('flex');
+        let pendingActionBtn = null;
+
+        document.querySelectorAll('[data-action-btn]').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                if (btn.disabled) return;
+                pendingActionBtn = btn;
+                const label = btn.getAttribute('data-action-label');
+                const hours = btn.getAttribute('data-cooldown-hours');
+                document.getElementById('actionModalTitle').textContent = label + ' now?';
+                document.getElementById('actionModalBody').textContent =
+                    'This will run "' + label + '" on your server. You\'ll only be able to do this again in ' + hours + ' hour(s).';
+                const modal = document.getElementById('actionModal');
+                modal.classList.remove('hidden');
+                modal.classList.add('flex');
+            });
+        });
+
+        function closeActionModal() {
+            const modal = document.getElementById('actionModal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+            pendingActionBtn = null;
         }
-        function closeRestartModal() {
-            document.getElementById('restartModal').classList.add('hidden');
-            document.getElementById('restartModal').classList.remove('flex');
-        }
-        async function confirmRestart() {
-            closeRestartModal();
-            const btn = document.getElementById('restartBtn');
-            const resultBox = document.getElementById('restartResult');
+
+        async function confirmAction() {
+            const btn = pendingActionBtn;
+            closeActionModal();
+            if (!btn) return;
+
+            const actionId = btn.getAttribute('data-action-id');
+            const card = btn.closest('.glass');
+            const resultBox = card ? card.querySelector('[id^="actionResult-"]') : null;
+
             btn.disabled = true;
-            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Restarting...';
+            const originalHtml = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Working...';
 
             try {
-                const res = await fetch('/dashboard/plex-restart', { method: 'POST' });
+                const res = await fetch('/dashboard/actions/' + actionId + '/run', { method: 'POST' });
                 const data = await res.json();
-                resultBox.classList.remove('hidden');
-                if (data.ok) {
-                    resultBox.className = 'mt-5 text-sm rounded-xl p-4 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400';
-                    btn.innerHTML = '<i class="fas fa-check mr-2"></i> Restart Sent';
-                } else {
-                    resultBox.className = 'mt-5 text-sm rounded-xl p-4 bg-red-500/10 border border-red-500/30 text-red-400';
-                    btn.disabled = false;
-                    btn.innerHTML = '<i class="fas fa-rotate mr-2"></i> Restart Plex';
+                if (resultBox) {
+                    resultBox.classList.remove('hidden');
+                    resultBox.className = 'mt-4 text-sm rounded-xl p-4 ' + (data.ok
+                        ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400'
+                        : 'bg-red-500/10 border border-red-500/30 text-red-400');
+                    resultBox.textContent = data.message;
                 }
-                resultBox.textContent = data.message;
+                if (data.ok) {
+                    btn.innerHTML = '<i class="fas fa-check mr-2"></i> Done';
+                } else {
+                    btn.disabled = false;
+                    btn.innerHTML = originalHtml;
+                }
             } catch (e) {
-                resultBox.classList.remove('hidden');
-                resultBox.className = 'mt-5 text-sm rounded-xl p-4 bg-red-500/10 border border-red-500/30 text-red-400';
-                resultBox.textContent = 'Something went wrong sending the restart request.';
+                if (resultBox) {
+                    resultBox.classList.remove('hidden');
+                    resultBox.className = 'mt-4 text-sm rounded-xl p-4 bg-red-500/10 border border-red-500/30 text-red-400';
+                    resultBox.textContent = 'Something went wrong sending that request.';
+                }
                 btn.disabled = false;
-                btn.innerHTML = '<i class="fas fa-rotate mr-2"></i> Restart Plex';
+                btn.innerHTML = originalHtml;
             }
         }
+
+        // Fetch live container health for each plan card without blocking page load
+        document.querySelectorAll('[data-health-container]').forEach(async function(el) {
+            const planId = el.getAttribute('data-plan-id');
+            try {
+                const res = await fetch('/dashboard/plans/' + planId + '/health');
+                const data = await res.json();
+                if (!data.ok) return;
+                data.containers.forEach(function(c) {
+                    const row = el.querySelector('[data-container-name="' + c.container_name + '"] [data-status-pill]');
+                    if (!row) return;
+                    const map = {
+                        up: ['badge-active', 'fa-circle-check', 'Online'],
+                        starting: ['badge-suspended', 'fa-circle-notch fa-spin', 'Starting'],
+                        unhealthy: ['badge-expired', 'fa-triangle-exclamation', 'Unhealthy'],
+                        down: ['badge-expired', 'fa-circle-xmark', 'Offline'],
+                        unknown: ['badge-closed', 'fa-question', 'Unknown'],
+                    };
+                    const chosen = map[c.status] || map.unknown;
+                    row.className = 'badge ' + chosen[0];
+                    row.innerHTML = '<i class="fas ' + chosen[1] + '"></i> ' + chosen[2];
+                });
+            } catch (e) {
+                // leave "checking" state as-is on failure
+            }
+        });
     </script>
 </body>
 </html>

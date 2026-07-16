@@ -7,12 +7,12 @@
 <body class="antialiased overflow-x-hidden">
     <%- include('partials/nav') %>
 
-    <main class="max-w-3xl mx-auto px-6 py-10">
+    <main class="max-w-3xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
         <a href="<%= backUrl %>" class="text-slate-400 hover:text-white text-sm mb-6 inline-block"><i class="fas fa-arrow-left mr-2"></i>Back</a>
 
-        <div class="flex items-center justify-between mb-6">
-            <h1 class="text-2xl font-extrabold"><%= ticket.subject %></h1>
-            <span class="badge badge-<%= ticket.status %>"><%= ticket.status %></span>
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-4 sm:mb-6">
+            <h1 class="text-xl sm:text-2xl font-extrabold break-words"><%= ticket.subject %></h1>
+            <span class="badge badge-<%= ticket.status %> flex-shrink-0"><%= ticket.status %></span>
         </div>
         <% if (typeof isAdminView !== 'undefined' && isAdminView) { %>
             <p class="text-slate-500 text-sm mb-8">From <%= ticket.user_name %> (<%= ticket.user_email %>) · <%= ticket.category %></p>
@@ -39,8 +39,8 @@
                 <form method="POST" action="<%= replyAction %>" class="space-y-4">
                     <textarea name="message" rows="4" class="input" placeholder="Write a reply..."></textarea>
                     <% if (typeof isAdminView !== 'undefined' && isAdminView) { %>
-                        <div class="flex items-center gap-3">
-                            <select name="status" class="input md:w-auto">
+                        <div class="flex flex-col sm:flex-row sm:items-center gap-3">
+                            <select name="status" class="input sm:w-auto">
                                 <option value="answered">Mark as Answered</option>
                                 <option value="open">Keep Open</option>
                                 <option value="closed">Close Ticket</option>
@@ -48,7 +48,7 @@
                             <button type="submit" class="btn-primary px-6 py-3 rounded-xl text-sm">Send Reply</button>
                         </div>
                     <% } else { %>
-                        <button type="submit" class="btn-primary px-6 py-3 rounded-xl text-sm">Send Reply</button>
+                        <button type="submit" class="btn-primary px-6 py-3 rounded-xl text-sm w-full sm:w-auto">Send Reply</button>
                     <% } %>
                 </form>
             </div>
