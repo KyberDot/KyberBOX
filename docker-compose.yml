@@ -1,0 +1,21 @@
+# Production deployment - pulls the image built by GitHub Actions
+# (see .github/workflows/docker-publish.yml) from GitHub Container Registry.
+# Image path is set for github.com/KyberDot/kyberbox -> ghcr.io/kyberdot/kyberbox
+#
+# If you'd rather build locally instead of pulling a prebuilt image,
+# use docker-compose.build.yml instead (see README).
+
+services:
+  kyberbox-portal:
+    image: ghcr.io/kyberdot/kyberbox:latest
+    container_name: kyberbox-portal
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    volumes:
+      - kyberbox-data:/app/data
+
+volumes:
+  kyberbox-data:

@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <% pageTitle = 'Error' %>
+    <%- include('partials/head') %>
+</head>
+<body class="antialiased overflow-x-hidden flex items-center justify-center min-h-screen">
+    <div class="glass rounded-3xl p-10 max-w-md text-center">
+        <div class="w-16 h-16 mx-auto rounded-full bg-red-500/10 border border-red-500/30 flex items-center justify-center mb-5">
+            <i class="fas fa-triangle-exclamation text-red-400 text-2xl"></i>
+        </div>
+        <p class="text-white font-semibold mb-6"><%= message %></p>
+        <a href="/" class="btn-primary px-6 py-3 rounded-xl text-sm inline-block">Go Home</a>
+    </div>
+</body>
+</html>

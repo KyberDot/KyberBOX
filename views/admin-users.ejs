@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <% pageTitle = 'Manage Users' %>
+    <%- include('partials/head') %>
+</head>
+<body class="antialiased overflow-x-hidden">
+    <%- include('partials/nav') %>
+
+    <main class="max-w-6xl mx-auto px-6 py-10 pb-24">
+        <h1 class="text-3xl font-extrabold mb-8">Manage Users</h1>
+
+        <% if (newUser) { %>
+            <div class="glass rounded-2xl p-6 mb-8 border border-emerald-500/30">
+                <p class="text-emerald-400 font-bold mb-2"><i class="fas fa-circle-check mr-2"></i>Account ready for <%= newUser.name %></p>
+                <p class="text-slate-300 text-sm">Email: <span class="font-mono"><%= newUser.email %></span></p>
+                <p class="text-slate-300 text-sm mb-2">Temporary password: <span class="font-mono bg-slate-900/60 px-2 py-1 rounded"><%= newUser.tempPassword %></span></p>
+                <% if (newUser.emailSent) { %>
+                    <p class="text-emerald-400 text-xs"><i class="fas fa-envelope-circle-check mr-1"></i>This was also emailed to the client automatically.</p>
+                <% } else { %>
+                    <p class="text-amber-400 text-xs"><i class="fas fa-triangle-exclamation mr-1"></i>Email not sent (<%= newUser.emailReason || 'mail not configured' %>) — share these details with the client yourself, or set up SMTP under <a href="/admin/settings" class="underline">Settings</a>.</p>
+                <% } %>
+                <p class="text-slate-500 text-xs mt-2">Shown only once — copy it now if needed.</p>
+            </div>
+        <% } %>
+
+        <!-- Invite form -->
+        <div class="glass rounded-3xl p-8 mb-12">
+            <h2 class="text-lg font-bold text-white mb-4"><i class="fas fa-user-plus mr-2 text-sky-400"></i>Invite a New Client</h2>
+            <form method="POST" action="/admin/users/invite" class="grid md:grid-cols-4 gap-4">
+                <input type="text" name="name" required class="input" placeholder="Full name">
+                <input type="email" name="email" required class="input" placeholder="Email address">
+                <select name="service" class="input">
+                    <option value="docker">Docker Hosting</option>
+                    <option value="plex">Plex Servers</option>
+                    <option value="stream">Stream Addons</option>
+                    <option value="indexers">Indexers</option>
+                    <option value="hosting">Web Hosting</option>
+                    <option value="multiple">Multiple Services</option>
+                </select>
+                <input type="text" name="plan_name" class="input" placeholder="Plan name (e.g. Standard)">
+                <button type="submit" class="btn-primary py-3 rounded-xl text-sm md:col-span-4">
+                    <i class="fas fa-paper-plane mr-2"></i>Create Account
+                </button>
+            </form>
+        </div>
+
+        <!-- Users list -->
+        <h2 class="text-sm uppercase tracking-widest text-slate-500 font-bold mb-4">All Clients (<%= users.length %>)</h2>
+        <div class="space-y-4">
+            <% users.forEach(function(u) { %>
+                <div class="glass rounded-2xl p-6">
+                    <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+                        <div>
+                            <p class="font-bold text-white"><%= u.name %></p>
+                            <p class="text-slate-500 text-xs"><%= u.email %></p>
+                        </div>
+                        <div class="flex flex-wrap gap-2">
+                            <% (subsByUser[u.id] || []).forEach(function(s) { %>
+                                <span class="badge badge-<%= s.status %>"><%= s.service %>: <%= s.status %></span>
+                            <% }); %>
+                            <% if (sshByUser[u.id]) { %>
+                                <span class="badge badge-answered"><i class="fas fa-terminal"></i> SSH configured</span>
+                            <% } else { %>
+                                <span class="badge badge-suspended"><i class="fas fa-triangle-exclamation"></i> No SSH</span>
+                            <% } %>
+                        </div>
+                    </div>
+
+                    <details class="mb-2">
+                        <summary class="cursor-pointer text-sky-400 text-xs font-semibold uppercase tracking-wide">Manage Subscription</summary>
+                        <form method="POST" action="/admin/users/<%= u.id %>/subscription" class="grid md:grid-cols-5 gap-3 mt-3">
+                            <select name="service" class="input">
+                                <option value="docker">Docker Hosting</option>
+                                <option value="plex">Plex Servers</option>
+                                <option value="stream">Stream Addons</option>
+                                <option value="indexers">Indexers</option>
+                                <option value="hosting">Web Hosting</option>
+                                <option value="multiple">Multiple Services</option>
+                            </select>
+                            <input type="text" name="plan_name" class="input" placeholder="Plan name">
+                            <select name="status" class="input">
+                                <option value="active">Active</option>
+                                <option value="suspended">Suspended</option>
+                                <option value="expired">Expired</option>
+                            </select>
+                            <input type="date" name="expires_at" class="input">
+                            <button type="submit" class="btn-primary rounded-xl text-sm">Save</button>
+                        </form>
+                        <% if ((subsByUser[u.id] || []).length > 0) { %>
+                            <div class="mt-3 space-y-1">
+                                <% subsByUser[u.id].forEach(function(s) { %>
+                                    <form method="POST" action="/admin/users/<%= u.id %>/subscription/<%= s.id %>/delete" class="flex items-center justify-between text-xs text-slate-500 bg-slate-900/40 rounded-lg px-3 py-2">
+                                        <span><%= s.service %> — <%= s.plan_name %> (<%= s.status %>)</span>
+                                        <button class="text-red-400 hover:text-red-300"><i class="fas fa-trash"></i></button>
+                                    </form>
+                                <% }); %>
+                            </div>
+                        <% } %>
+                    </details>
+
+                    <details class="mb-2">
+                        <summary class="cursor-pointer text-sky-400 text-xs font-semibold uppercase tracking-wide">Server / SSH Access</summary>
+                        <form method="POST" action="/admin/users/<%= u.id %>/ssh" class="grid md:grid-cols-3 gap-3 mt-3">
+                            <input type="text" name="host" required class="input" placeholder="Host / IP" value="<%= sshByUser[u.id] ? sshByUser[u.id].host : '' %>">
+                            <input type="number" name="port" class="input" placeholder="Port (22)" value="<%= sshByUser[u.id] ? sshByUser[u.id].port : 22 %>">
+                            <input type="text" name="username" required class="input" placeholder="SSH username" value="<%= sshByUser[u.id] ? sshByUser[u.id].username : '' %>">
+                            <select name="auth_type" class="input">
+                                <option value="password" <%= sshByUser[u.id] && sshByUser[u.id].auth_type === 'password' ? 'selected' : '' %>>Password</option>
+                                <option value="key" <%= sshByUser[u.id] && sshByUser[u.id].auth_type === 'key' ? 'selected' : '' %>>Private Key</option>
+                            </select>
+                            <input type="text" name="secret" class="input md:col-span-2" placeholder="Password or private key (leave blank to keep current)">
+                            <input type="text" name="restart_command" class="input md:col-span-3" placeholder="Restart command" value="<%= sshByUser[u.id] ? sshByUser[u.id].restart_command : 'docker compose restart plex' %>">
+                            <button type="submit" class="btn-primary rounded-xl text-sm md:col-span-3">
+                                <i class="fas fa-lock mr-2"></i>Save (encrypted at rest)
+                            </button>
+                        </form>
+                    </details>
+
+                    <div class="flex gap-4 mt-4 text-xs">
+                        <form method="POST" action="/admin/users/<%= u.id %>/reset-password" onsubmit="return confirm('Reset this user\'s password?');">
+                            <button class="text-amber-400 hover:text-amber-300"><i class="fas fa-key mr-1"></i>Reset Password</button>
+                        </form>
+                        <form method="POST" action="/admin/users/<%= u.id %>/delete" onsubmit="return confirm('Delete this user permanently? This cannot be undone.');">
+                            <button class="text-red-400 hover:text-red-300"><i class="fas fa-user-slash mr-1"></i>Delete User</button>
+                        </form>
+                    </div>
+                </div>
+            <% }); %>
+        </div>
+    </main>
+</body>
+</html>

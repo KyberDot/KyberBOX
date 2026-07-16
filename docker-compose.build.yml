@@ -1,0 +1,20 @@
+# Local-build alternative to docker-compose.yml - use this if you don't want
+# to wait on / rely on GitHub Actions and GHCR, e.g. for local development
+# or a quick test. Run with:
+#   docker compose -f docker-compose.build.yml up -d --build
+
+services:
+  kyberbox-portal:
+    build: .
+    image: kyberbox-portal:local
+    container_name: kyberbox-portal
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    volumes:
+      - kyberbox-data:/app/data
+
+volumes:
+  kyberbox-data:

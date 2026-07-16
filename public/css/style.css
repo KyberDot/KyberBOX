@@ -1,0 +1,119 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
+
+body {
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    background-color: #0b0f1a;
+    color: #e2e8f0;
+    min-height: 100vh;
+}
+
+.glass {
+    background: rgba(30, 41, 59, 0.7);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.gradient-text {
+    background: linear-gradient(135deg, #0ea5e9, #6366f1);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.hero-glow {
+    position: absolute;
+    width: 800px;
+    height: 800px;
+    background: radial-gradient(circle, rgba(14, 165, 233, 0.1) 0%, rgba(99, 102, 241, 0.05) 50%, transparent 70%);
+    top: 20%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+}
+
+.float { animation: float 6s ease-in-out infinite; }
+@keyframes float {
+    0%, 100% { transform: translateY(0px); }
+    50% { transform: translateY(-15px); }
+}
+
+.status-dot { animation: statusPulse 2s infinite; }
+@keyframes statusPulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.6); }
+    50% { box-shadow: 0 0 0 8px rgba(52, 211, 153, 0); }
+}
+.status-dot.amber { animation-name: statusPulseAmber; }
+@keyframes statusPulseAmber {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.7); }
+    50% { box-shadow: 0 0 0 10px rgba(251, 191, 36, 0); }
+}
+.status-dot.red { animation-name: statusPulseRed; }
+@keyframes statusPulseRed {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.7); }
+    50% { box-shadow: 0 0 0 10px rgba(248, 113, 113, 0); }
+}
+
+.progress-bar {
+    background: linear-gradient(90deg, #0ea5e9, #6366f1, #0ea5e9);
+    background-size: 200% 100%;
+    animation: shimmer 2s linear infinite;
+}
+@keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+}
+
+.btn-primary {
+    background: #0ea5e9;
+    color: #0b0f1a;
+    font-weight: 800;
+    transition: background 0.2s;
+}
+.btn-primary:hover { background: #38bdf8; }
+.btn-primary:disabled { background: #334155; color: #64748b; cursor: not-allowed; }
+
+.btn-emerald { background: #10b981; color: #052e21; font-weight: 700; }
+.btn-emerald:hover { background: #34d399; }
+
+.btn-amber { background: #f59e0b; color: #1c1300; font-weight: 700; }
+.btn-amber:hover { background: #fbbf24; }
+
+.btn-outline {
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.15);
+    color: #cbd5e1;
+}
+.btn-outline:hover { border-color: #0ea5e9; color: #38bdf8; }
+
+.badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.2rem 0.7rem;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+.badge-active { background: rgba(16,185,129,0.1); color: #34d399; border: 1px solid rgba(16,185,129,0.3); }
+.badge-suspended { background: rgba(251,191,36,0.1); color: #fbbf24; border: 1px solid rgba(251,191,36,0.3); }
+.badge-expired { background: rgba(248,113,113,0.1); color: #f87171; border: 1px solid rgba(248,113,113,0.3); }
+.badge-open { background: rgba(248,113,113,0.1); color: #f87171; border: 1px solid rgba(248,113,113,0.3); }
+.badge-answered { background: rgba(14,165,233,0.1); color: #38bdf8; border: 1px solid rgba(14,165,233,0.3); }
+.badge-closed { background: rgba(100,116,139,0.15); color: #94a3b8; border: 1px solid rgba(100,116,139,0.3); }
+
+.input {
+    background: rgba(15, 23, 42, 0.5);
+    border: 1px solid rgba(255,255,255,0.1);
+    padding: 0.85rem 1rem;
+    border-radius: 1rem;
+    font-size: 0.875rem;
+    color: white;
+    width: 100%;
+}
+.input:focus { outline: none; border-color: #0ea5e9; }
+
+table.kb-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+table.kb-table th { text-align: left; padding: 0.75rem 1rem; color: #64748b; font-weight: 600; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.05em; border-bottom: 1px solid rgba(255,255,255,0.08); }
+table.kb-table td { padding: 0.85rem 1rem; border-bottom: 1px solid rgba(255,255,255,0.05); vertical-align: middle; }
+table.kb-table tr:hover td { background: rgba(255,255,255,0.02); }

@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <% pageTitle = 'Support Tickets' %>
+    <%- include('partials/head') %>
+</head>
+<body class="antialiased overflow-x-hidden">
+    <%- include('partials/nav') %>
+
+    <main class="max-w-5xl mx-auto px-6 py-10">
+        <h1 class="text-3xl font-extrabold mb-8">Support Tickets</h1>
+
+        <div class="glass rounded-2xl overflow-hidden">
+            <% if (tickets.length === 0) { %>
+                <p class="text-slate-500 text-sm p-6">No tickets yet.</p>
+            <% } else { %>
+                <table class="kb-table">
+                    <thead><tr><th>Subject</th><th>Client</th><th>Category</th><th>Status</th><th>Updated</th></tr></thead>
+                    <tbody>
+                        <% tickets.forEach(function(t) { %>
+                            <tr onclick="window.location='/admin/tickets/<%= t.id %>'" class="cursor-pointer">
+                                <td class="font-semibold text-white"><%= t.subject %></td>
+                                <td class="text-slate-400"><%= t.user_name %><br><span class="text-xs text-slate-600"><%= t.user_email %></span></td>
+                                <td class="text-slate-400"><%= t.category %></td>
+                                <td><span class="badge badge-<%= t.status %>"><%= t.status %></span></td>
+                                <td class="text-slate-500 text-xs"><%= t.updated_at %></td>
+                            </tr>
+                        <% }); %>
+                    </tbody>
+                </table>
+            <% } %>
+        </div>
+    </main>
+</body>
+</html>

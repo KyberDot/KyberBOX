@@ -1,0 +1,22 @@
+<nav class="max-w-7xl mx-auto px-8 py-6 w-full flex justify-between items-center">
+    <a href="<%= currentUser.role === 'admin' ? '/admin' : '/dashboard' %>" class="flex items-center gap-3">
+        <img src="/img/KY.svg" alt="KyberBOX Logo" class="h-9 w-auto">
+    </a>
+    <div class="flex items-center gap-6 text-sm">
+        <% if (currentUser.role === 'admin') { %>
+            <a href="/admin" class="text-slate-400 hover:text-white transition font-medium">Overview</a>
+            <a href="/admin/users" class="text-slate-400 hover:text-white transition font-medium">Users</a>
+            <a href="/admin/tickets" class="text-slate-400 hover:text-white transition font-medium">Tickets</a>
+            <a href="/admin/settings" class="text-slate-400 hover:text-white transition font-medium">Settings</a>
+        <% } else { %>
+            <a href="/dashboard" class="text-slate-400 hover:text-white transition font-medium">Dashboard</a>
+        <% } %>
+        <span class="text-slate-600">|</span>
+        <span class="text-slate-500 hidden sm:inline"><%= currentUser.name %></span>
+        <form action="/logout" method="POST">
+            <button class="text-slate-400 hover:text-red-400 transition font-medium">
+                <i class="fas fa-right-from-bracket mr-1"></i> Logout
+            </button>
+        </form>
+    </div>
+</nav>

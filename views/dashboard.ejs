@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <% pageTitle = 'My Account | ' + siteName %>
+    <%- include('partials/head') %>
+</head>
+<body class="antialiased overflow-x-hidden">
+    <%- include('partials/nav') %>
+
+    <main class="max-w-5xl mx-auto px-6 py-10 relative">
+        <div class="hero-glow" style="top:0;"></div>
+
+        <div class="relative z-10">
+            <h1 class="text-3xl font-extrabold mb-1">Welcome back, <%= currentUser.name.split(' ')[0] %></h1>
+            <p class="text-slate-400 mb-10">Here's what's happening with your account.</p>
+
+            <!-- Subscriptions -->
+            <h2 class="text-sm uppercase tracking-widest text-slate-500 font-bold mb-4">Your Subscriptions</h2>
+            <div class="grid md:grid-cols-2 gap-5 mb-12">
+                <% if (subscriptions.length === 0) { %>
+                    <div class="glass rounded-2xl p-6 md:col-span-2 text-slate-400 text-sm">
+                        No subscriptions on file yet. Please contact support if this seems wrong.
+                    </div>
+                <% } %>
+                <% subscriptions.forEach(function(sub) { %>
+                    <div class="glass rounded-2xl p-6">
+                        <div class="flex items-start justify-between mb-3">
+                            <div>
+                                <p class="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-1"><%= sub.service %></p>
+                                <h3 class="text-lg font-bold text-white"><%= sub.plan_name %></h3>
+                            </div>
+                            <span class="badge badge-<%= sub.status %>">
+                                <i class="fas fa-circle text-[6px]"></i> <%= sub.status %>
+                            </span>
+                        </div>
+                        <% if (sub.expires_at) { %>
+                            <p class="text-slate-400 text-xs">Renews / expires: <%= sub.expires_at %></p>
+                        <% } %>
+                        <% if (sub.notes) { %>
+                            <p class="text-slate-500 text-xs mt-2"><%= sub.notes %></p>
+                        <% } %>
+                    </div>
+                <% }); %>
+            </div>
+
+            <!-- Plex Tools -->
+            <h2 class="text-sm uppercase tracking-widest text-slate-500 font-bold mb-4">Plex Server Tools</h2>
+            <div class="glass rounded-3xl p-8 mb-12">
+                <% if (!hasPlex) { %>
+                    <p class="text-slate-400 text-sm">You don't have an active Plex subscription, so server tools aren't available here.</p>
+                <% } else { %>
+                    <div class="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                        <div>
+                            <h3 class="text-lg font-bold text-white mb-1">Plex not working?</h3>
+                            <p class="text-slate-400 text-sm max-w-md">Try restarting the Plex service on your server. You can do this once every 6 hours.</p>
+                            <% if (!sshConfigured) { %>
+                                <p class="text-amber-400 text-xs mt-2"><i class="fas fa-circle-info mr-1"></i> Server access hasn't been configured yet — raise a ticket below and we'll set it up.</p>
+                            <% } %>
+                        </div>
+                        <div class="flex flex-col gap-3 min-w-[220px]">
+                            <button id="restartBtn" onclick="openRestartModal()" <%= nextAllowedAt ? 'disabled' : '' %>
+                                class="btn-amber px-6 py-4 rounded-2xl text-sm w-full">
+                                <i class="fas fa-rotate mr-2"></i>
+                                <%= nextAllowedAt ? 'Restart Unavailable' : 'Restart Plex' %>
+                            </button>
+                            <% if (nextAllowedAt) { %>
+                                <p class="text-slate-500 text-xs text-center">Available again after <span id="nextAllowed" data-time="<%= nextAllowedAt %>"><%= nextAllowedAt %></span></p>
+                            <% } %>
+                            <a href="#raise-ticket" onclick="document.getElementById('category').value='plex'"
+                               class="btn-outline text-center px-6 py-3 rounded-2xl text-sm w-full">
+                                <i class="fas fa-life-ring mr-2"></i> Still not working? Raise a ticket
+                            </a>
+                        </div>
+                    </div>
+                    <div id="restartResult" class="mt-5 hidden text-sm rounded-xl p-4"></div>
+                <% } %>
+            </div>
+
+            <!-- Tickets -->
+            <h2 id="tickets" class="text-sm uppercase tracking-widest text-slate-500 font-bold mb-4">Support Tickets</h2>
+            <div class="glass rounded-3xl p-8 mb-8">
+                <% if (tickets.length === 0) { %>
+                    <p class="text-slate-500 text-sm mb-2">No tickets yet.</p>
+                <% } else { %>
+                    <div class="space-y-3 mb-2">
+                        <% tickets.forEach(function(t) { %>
+                            <a href="/dashboard/tickets/<%= t.id %>" class="flex items-center justify-between p-4 rounded-xl bg-slate-900/40 hover:bg-slate-900/70 transition">
+                                <div>
+                                    <p class="font-semibold text-white text-sm"><%= t.subject %></p>
+                                    <p class="text-slate-500 text-xs"><%= t.category %> · opened <%= t.created_at %></p>
+                                </div>
+                                <span class="badge badge-<%= t.status %>"><%= t.status %></span>
+                            </a>
+                        <% }); %>
+                    </div>
+                <% } %>
+            </div>
+
+            <div id="raise-ticket" class="glass rounded-3xl p-8 mb-16">
+                <h3 class="text-lg font-bold text-white mb-4">Raise a New Ticket</h3>
+                <form method="POST" action="/dashboard/tickets" class="space-y-4">
+                    <input type="text" name="subject" required class="input" placeholder="Subject">
+                    <select id="category" name="category" class="input">
+                        <option value="general">General</option>
+                        <option value="plex">Plex</option>
+                        <option value="docker">Docker Hosting</option>
+                        <option value="stream">Stream Addons</option>
+                        <option value="indexers">Indexers</option>
+                        <option value="hosting">Web Hosting</option>
+                    </select>
+                    <textarea name="message" required rows="4" class="input" placeholder="Describe the issue..."></textarea>
+                    <button type="submit" class="btn-primary px-8 py-3 rounded-2xl text-sm">
+                        <i class="fas fa-paper-plane mr-2"></i> Submit Ticket
+                    </button>
+                </form>
+            </div>
+        </div>
+    </main>
+
+    <!-- Confirmation Modal -->
+    <div id="restartModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden items-center justify-center z-50 px-6">
+        <div class="glass rounded-3xl p-8 max-w-sm w-full text-center">
+            <div class="w-16 h-16 mx-auto rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center mb-5">
+                <i class="fas fa-triangle-exclamation text-amber-400 text-2xl"></i>
+            </div>
+            <h3 class="text-lg font-bold text-white mb-2">Restart Plex now?</h3>
+            <p class="text-slate-400 text-sm mb-6">This will restart the Plex service on your server. You'll only be able to do this again in 6 hours.</p>
+            <div class="flex gap-3">
+                <button onclick="closeRestartModal()" class="btn-outline flex-1 py-3 rounded-xl text-sm">Cancel</button>
+                <button onclick="confirmRestart()" class="btn-amber flex-1 py-3 rounded-xl text-sm">Yes, Restart</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function openRestartModal() {
+            document.getElementById('restartModal').classList.remove('hidden');
+            document.getElementById('restartModal').classList.add('flex');
+        }
+        function closeRestartModal() {
+            document.getElementById('restartModal').classList.add('hidden');
+            document.getElementById('restartModal').classList.remove('flex');
+        }
+        async function confirmRestart() {
+            closeRestartModal();
+            const btn = document.getElementById('restartBtn');
+            const resultBox = document.getElementById('restartResult');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Restarting...';
+
+            try {
+                const res = await fetch('/dashboard/plex-restart', { method: 'POST' });
+                const data = await res.json();
+                resultBox.classList.remove('hidden');
+                if (data.ok) {
+                    resultBox.className = 'mt-5 text-sm rounded-xl p-4 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400';
+                    btn.innerHTML = '<i class="fas fa-check mr-2"></i> Restart Sent';
+                } else {
+                    resultBox.className = 'mt-5 text-sm rounded-xl p-4 bg-red-500/10 border border-red-500/30 text-red-400';
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fas fa-rotate mr-2"></i> Restart Plex';
+                }
+                resultBox.textContent = data.message;
+            } catch (e) {
+                resultBox.classList.remove('hidden');
+                resultBox.className = 'mt-5 text-sm rounded-xl p-4 bg-red-500/10 border border-red-500/30 text-red-400';
+                resultBox.textContent = 'Something went wrong sending the restart request.';
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-rotate mr-2"></i> Restart Plex';
+            }
+        }
+    </script>
+</body>
+</html>

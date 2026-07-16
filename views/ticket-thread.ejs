@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <% pageTitle = ticket.subject %>
+    <%- include('partials/head') %>
+</head>
+<body class="antialiased overflow-x-hidden">
+    <%- include('partials/nav') %>
+
+    <main class="max-w-3xl mx-auto px-6 py-10">
+        <a href="<%= backUrl %>" class="text-slate-400 hover:text-white text-sm mb-6 inline-block"><i class="fas fa-arrow-left mr-2"></i>Back</a>
+
+        <div class="flex items-center justify-between mb-6">
+            <h1 class="text-2xl font-extrabold"><%= ticket.subject %></h1>
+            <span class="badge badge-<%= ticket.status %>"><%= ticket.status %></span>
+        </div>
+        <% if (typeof isAdminView !== 'undefined' && isAdminView) { %>
+            <p class="text-slate-500 text-sm mb-8">From <%= ticket.user_name %> (<%= ticket.user_email %>) · <%= ticket.category %></p>
+        <% } else { %>
+            <p class="text-slate-500 text-sm mb-8">Category: <%= ticket.category %></p>
+        <% } %>
+
+        <div class="space-y-4 mb-10">
+            <% messages.forEach(function(m) { %>
+                <div class="glass rounded-2xl p-5 <%= m.sender_role === 'admin' ? 'border-l-4 border-sky-500' : '' %>">
+                    <div class="flex justify-between mb-2">
+                        <span class="font-bold text-sm <%= m.sender_role === 'admin' ? 'text-sky-400' : 'text-white' %>">
+                            <%= m.sender_name %> <span class="text-slate-500 font-normal text-xs">(<%= m.sender_role %>)</span>
+                        </span>
+                        <span class="text-slate-500 text-xs"><%= m.created_at %></span>
+                    </div>
+                    <p class="text-slate-300 text-sm whitespace-pre-wrap"><%= m.message %></p>
+                </div>
+            <% }); %>
+        </div>
+
+        <% if (canReply) { %>
+            <div class="glass rounded-3xl p-6">
+                <form method="POST" action="<%= replyAction %>" class="space-y-4">
+                    <textarea name="message" rows="4" class="input" placeholder="Write a reply..."></textarea>
+                    <% if (typeof isAdminView !== 'undefined' && isAdminView) { %>
+                        <div class="flex items-center gap-3">
+                            <select name="status" class="input md:w-auto">
+                                <option value="answered">Mark as Answered</option>
+                                <option value="open">Keep Open</option>
+                                <option value="closed">Close Ticket</option>
+                            </select>
+                            <button type="submit" class="btn-primary px-6 py-3 rounded-xl text-sm">Send Reply</button>
+                        </div>
+                    <% } else { %>
+                        <button type="submit" class="btn-primary px-6 py-3 rounded-xl text-sm">Send Reply</button>
+                    <% } %>
+                </form>
+            </div>
+        <% } else { %>
+            <p class="text-slate-500 text-sm">This ticket is closed.</p>
+        <% } %>
+    </main>
+</body>
+</html>

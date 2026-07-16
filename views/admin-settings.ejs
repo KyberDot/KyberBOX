@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <% pageTitle = 'Settings' %>
+    <%- include('partials/head') %>
+</head>
+<body class="antialiased overflow-x-hidden">
+    <%- include('partials/nav') %>
+
+    <main class="max-w-3xl mx-auto px-6 py-10 pb-24">
+        <h1 class="text-3xl font-extrabold mb-8">Settings</h1>
+
+        <% if (saved) { %>
+            <div class="mb-6 px-4 py-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-sm">
+                <i class="fas fa-circle-check mr-2"></i>Settings saved.
+            </div>
+        <% } %>
+        <% if (testResult) { %>
+            <div class="mb-6 px-4 py-3 rounded-xl <%= testResult.sent ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400' : 'bg-red-500/10 border border-red-500/30 text-red-400' %> text-sm">
+                <i class="fas <%= testResult.sent ? 'fa-circle-check' : 'fa-triangle-exclamation' %> mr-2"></i>
+                <%= testResult.sent ? 'Test email sent — check your inbox.' : ('Failed to send: ' + testResult.reason) %>
+            </div>
+        <% } %>
+
+        <!-- General -->
+        <div class="glass rounded-3xl p-8 mb-8">
+            <h2 class="text-lg font-bold text-white mb-4"><i class="fas fa-sliders mr-2 text-sky-400"></i>General</h2>
+            <form method="POST" action="/admin/settings/general" class="space-y-4">
+                <div>
+                    <label class="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-2 block">Site Name</label>
+                    <input type="text" name="site_name" class="input" value="<%= settings.site_name %>">
+                </div>
+                <div>
+                    <label class="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-2 block">Public Site URL</label>
+                    <input type="text" name="site_url" class="input" placeholder="https://portal.kyberbox.app" value="<%= settings.site_url %>">
+                    <p class="text-slate-500 text-xs mt-2">Used to build links in emails (invites, password resets, ticket notifications). Leave blank to auto-detect from incoming requests.</p>
+                </div>
+                <button type="submit" class="btn-primary px-6 py-3 rounded-xl text-sm">Save General Settings</button>
+            </form>
+        </div>
+
+        <!-- Mail -->
+        <div class="glass rounded-3xl p-8 mb-8">
+            <h2 class="text-lg font-bold text-white mb-1"><i class="fas fa-envelope mr-2 text-sky-400"></i>Mail (SMTP)</h2>
+            <p class="text-slate-400 text-sm mb-4">Used for client invites, password resets, and ticket notifications.</p>
+            <form method="POST" action="/admin/settings/mail" class="grid md:grid-cols-2 gap-4">
+                <input type="text" name="smtp_host" class="input" placeholder="SMTP host (e.g. smtp.gmail.com)" value="<%= settings.smtp_host %>">
+                <input type="number" name="smtp_port" class="input" placeholder="Port (587)" value="<%= settings.smtp_port %>">
+                <input type="text" name="smtp_user" class="input" placeholder="SMTP username" value="<%= settings.smtp_user %>">
+                <input type="password" name="smtp_pass" class="input" placeholder="SMTP password (leave blank to keep current)">
+                <input type="text" name="smtp_from_name" class="input" placeholder="From name" value="<%= settings.smtp_from_name %>">
+                <input type="email" name="smtp_from_email" class="input" placeholder="From email address" value="<%= settings.smtp_from_email %>">
+                <label class="flex items-center gap-2 text-sm text-slate-400 md:col-span-2">
+                    <input type="checkbox" name="smtp_secure" value="1" <%= (settings.smtp_secure === '1') ? 'checked' : '' %>>
+                    Use implicit TLS (port 465). Leave unchecked for STARTTLS (port 587).
+                </label>
+                <button type="submit" class="btn-primary px-6 py-3 rounded-xl text-sm md:col-span-2">Save Mail Settings</button>
+            </form>
+            <form method="POST" action="/admin/settings/test-email" class="mt-4">
+                <button type="submit" class="btn-outline px-6 py-3 rounded-xl text-sm">
+                    <i class="fas fa-paper-plane mr-2"></i>Send Test Email to Myself
+                </button>
+            </form>
+        </div>
+    </main>
+</body>
+</html>
