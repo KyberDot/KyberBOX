@@ -8,7 +8,6 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   build-and-push:
@@ -20,6 +19,14 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+
+      # Docker/GHCR image references must be entirely lowercase, but
+      # github.repository preserves your account's exact case (e.g.
+      # "KyberDot/kyberbox"), which breaks image builds/pushes. This
+      # computes a safe, fully-lowercased name to use everywhere below.
+      - name: Compute lowercase image name
+        id: image
+        run: echo "name=${REGISTRY}/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -33,9 +40,9 @@ jobs:
 
       - name: Extract image metadata
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v5.5.1
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ steps.image.outputs.name }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=sha,format=short
