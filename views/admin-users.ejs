@@ -31,6 +31,27 @@
             </div>
         <% } %>
 
+        <!-- Payment Methods -->
+        <div class="glass rounded-3xl p-6 sm:p-8 mb-8">
+            <h2 class="text-lg font-bold text-white mb-4"><i class="fas fa-credit-card mr-2 text-sky-400"></i>Payment Methods</h2>
+            <p class="text-slate-400 text-sm mb-4">Names only for now — assign one to each client below.</p>
+            <div class="flex flex-wrap gap-2 mb-4">
+                <% paymentMethods.forEach(function(pm) { %>
+                    <form method="POST" action="/admin/payment-methods/<%= pm.id %>/delete" onsubmit="return confirm('Delete this payment method? Any clients using it will be unassigned.');" class="flex items-center gap-2 bg-slate-900/40 rounded-lg px-3 py-2 text-xs text-slate-300">
+                        <span><%= pm.name %></span>
+                        <button class="text-red-400 hover:text-red-300"><i class="fas fa-trash"></i></button>
+                    </form>
+                <% }); %>
+                <% if (paymentMethods.length === 0) { %>
+                    <p class="text-slate-500 text-sm">No payment methods added yet.</p>
+                <% } %>
+            </div>
+            <form method="POST" action="/admin/payment-methods" class="flex flex-col sm:flex-row gap-3">
+                <input type="text" name="name" required class="input" placeholder="Payment method name (e.g. Bank Transfer, PayPal)">
+                <button type="submit" class="btn-primary py-3 rounded-xl text-sm whitespace-nowrap">Add Method</button>
+            </form>
+        </div>
+
         <!-- Invite form -->
         <div class="glass rounded-3xl p-6 sm:p-8 mb-12">
             <h2 class="text-lg font-bold text-white mb-4"><i class="fas fa-user-plus mr-2 text-sky-400"></i>Invite a New Client</h2>
@@ -63,6 +84,10 @@
                             <% (subsByUser[u.id] || []).forEach(function(s) { %>
                                 <span class="badge badge-<%= s.status %>"><%= s.plan_display_name || s.plan_name %>: <%= s.status %></span>
                             <% }); %>
+                            <% if (u.payment_method_id) { %>
+                                <% const pm = paymentMethods.find(function(p) { return p.id === u.payment_method_id; }); %>
+                                <span class="badge badge-answered"><i class="fas fa-credit-card"></i> <%= pm ? pm.name : 'Payment method' %></span>
+                            <% } %>
                         </div>
                     </div>
 
@@ -87,12 +112,25 @@
                             <div class="mt-3 space-y-1">
                                 <% subsByUser[u.id].forEach(function(s) { %>
                                     <form method="POST" action="/admin/users/<%= u.id %>/subscription/<%= s.id %>/delete" class="flex items-center justify-between text-xs text-slate-500 bg-slate-900/40 rounded-lg px-3 py-2 gap-2">
-                                        <span class="truncate"><%= s.plan_display_name || s.plan_name %> (<%= s.status %>)<% if (s.expires_at) { %> — expires <%= s.expires_at %><% } %></span>
+                                        <span class="truncate"><%= s.plan_display_name || s.plan_name %> (<%= s.status %>)<% if (s.expires_at) { %> — renews <%= formatUKDate(s.expires_at) %><% } %></span>
                                         <button class="text-red-400 hover:text-red-300 flex-shrink-0"><i class="fas fa-trash"></i></button>
                                     </form>
                                 <% }); %>
                             </div>
                         <% } %>
+                    </details>
+
+                    <details class="mb-2">
+                        <summary class="cursor-pointer text-sky-400 text-xs font-semibold uppercase tracking-wide">Payment Method</summary>
+                        <form method="POST" action="/admin/users/<%= u.id %>/payment-method" class="flex flex-col sm:flex-row gap-3 mt-3">
+                            <select name="payment_method_id" class="input">
+                                <option value="">None</option>
+                                <% paymentMethods.forEach(function(pm) { %>
+                                    <option value="<%= pm.id %>" <%= u.payment_method_id === pm.id ? 'selected' : '' %>><%= pm.name %></option>
+                                <% }); %>
+                            </select>
+                            <button type="submit" class="btn-primary py-3 rounded-xl text-sm whitespace-nowrap">Save</button>
+                        </form>
                     </details>
 
                     <div class="flex flex-wrap gap-4 mt-4 text-xs">

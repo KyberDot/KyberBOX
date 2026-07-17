@@ -54,7 +54,7 @@
                             <tr>
                                 <td><%= r.name %><br><span class="text-slate-500 text-xs"><%= r.email %></span></td>
                                 <td class="text-slate-300"><%= r.action_label %></td>
-                                <td class="text-slate-400"><%= r.requested_at %></td>
+                                <td class="text-slate-400"><%= formatUK(r.requested_at) %></td>
                                 <td>
                                     <% if (r.success) { %>
                                         <span class="badge badge-active">Success</span>

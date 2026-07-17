@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const db = require('../db');
 const { getSetting } = require('../utils/settings');
+const { formatUK, formatUKDate, formatMoney, utcToLondonInputValue } = require('../utils/time');
 
 function attachUser(req, res, next) {
   const token = req.cookies.kb_session;
@@ -16,6 +17,12 @@ function attachUser(req, res, next) {
   }
   res.locals.currentUser = req.user;
   res.locals.siteName = getSetting('site_name', process.env.SITE_NAME || 'KyberBOX');
+  // Available in every EJS template so all dates/prices render consistently
+  // in UK time and the plan's chosen currency without each route wiring it up.
+  res.locals.formatUK = formatUK;
+  res.locals.formatUKDate = formatUKDate;
+  res.locals.formatMoney = formatMoney;
+  res.locals.utcToLondonInputValue = utcToLondonInputValue;
   next();
 }
 

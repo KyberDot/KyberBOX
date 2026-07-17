@@ -5,6 +5,8 @@ const db = require('../db');
 const { encrypt } = require('../utils/crypto');
 const { getAllSettings, setSetting, getSiteBaseUrl } = require('../utils/settings');
 const { sendMail, isConfigured } = require('../utils/mailer');
+const { londonInputToUtcIso } = require('../utils/time');
+const { runCommand, getContainerStatuses } = require('../utils/ssh');
 
 const router = express.Router();
 
@@ -45,8 +47,9 @@ function loadUsersPageData() {
   });
 
   const plans = db.prepare('SELECT * FROM plans ORDER BY name ASC').all();
+  const paymentMethods = db.prepare('SELECT * FROM payment_methods ORDER BY name ASC').all();
 
-  return { users, subsByUser, plans };
+  return { users, subsByUser, plans, paymentMethods };
 }
 
 router.get('/admin', (req, res) => {
@@ -78,12 +81,14 @@ router.post('/admin/plans', (req, res) => {
   const service = String(req.body.service || 'docker').trim();
   const description = String(req.body.description || '').trim();
   const features = String(req.body.features || '').trim();
+  const price = req.body.price ? Number(req.body.price) : null;
+  const currency = String(req.body.currency || 'GBP').trim();
 
   if (!name) return res.status(400).redirect('/admin/plans');
 
   const info = db
-    .prepare('INSERT INTO plans (name, service, description, features) VALUES (?, ?, ?, ?)')
-    .run(name, service, description, features);
+    .prepare('INSERT INTO plans (name, service, description, features, price, currency) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(name, service, description, features, price, currency);
 
   res.render('admin-plans', { ...loadPlans(), newPlanId: info.lastInsertRowid });
 });
@@ -93,10 +98,32 @@ router.post('/admin/plans/:id/update', (req, res) => {
   const service = String(req.body.service || 'docker').trim();
   const description = String(req.body.description || '').trim();
   const features = String(req.body.features || '').trim();
+  const price = req.body.price ? Number(req.body.price) : null;
+  const currency = String(req.body.currency || 'GBP').trim();
 
   db.prepare(
-    `UPDATE plans SET name = ?, service = ?, description = ?, features = ?, updated_at = datetime('now') WHERE id = ?`
-  ).run(name, service, description, features, req.params.id);
+    `UPDATE plans SET name = ?, service = ?, description = ?, features = ?, price = ?, currency = ?, updated_at = datetime('now') WHERE id = ?`
+  ).run(name, service, description, features, price, currency, req.params.id);
+
+  res.redirect('/admin/plans');
+});
+
+router.post('/admin/plans/:id/maintenance', (req, res) => {
+  const enable = req.body.maintenance_mode === 'on' || req.body.maintenance_mode === '1';
+  const resumeAt = String(req.body.maintenance_resume_at || '').trim(); // datetime-local, UK time as entered
+  const message = String(req.body.maintenance_message || '').trim();
+
+  // <input type="datetime-local"> gives "YYYY-MM-DDTHH:MM" with no timezone.
+  // The admin is filling this in while looking at UK time, so interpret it
+  // as Europe/London and convert to UTC for storage.
+  let resumeAtUtc = null;
+  if (enable && resumeAt) {
+    resumeAtUtc = londonInputToUtcIso(resumeAt);
+  }
+
+  db.prepare(
+    `UPDATE plans SET maintenance_mode = ?, maintenance_resume_at = ?, maintenance_message = ?, updated_at = datetime('now') WHERE id = ?`
+  ).run(enable ? 1 : 0, resumeAtUtc, message || null, req.params.id);
 
   res.redirect('/admin/plans');
 });
@@ -292,6 +319,26 @@ router.post('/admin/users/:id/delete', (req, res) => {
   res.redirect('/admin/users');
 });
 
+router.post('/admin/users/:id/payment-method', (req, res) => {
+  const paymentMethodId = req.body.payment_method_id ? Number(req.body.payment_method_id) : null;
+  db.prepare('UPDATE users SET payment_method_id = ? WHERE id = ?').run(paymentMethodId, req.params.id);
+  res.redirect('/admin/users');
+});
+
+// ---------- Payment Methods ----------
+
+router.post('/admin/payment-methods', (req, res) => {
+  const name = String(req.body.name || '').trim();
+  if (!name) return res.status(400).redirect('/admin/users');
+  db.prepare('INSERT INTO payment_methods (name) VALUES (?)').run(name);
+  res.redirect('/admin/users');
+});
+
+router.post('/admin/payment-methods/:id/delete', (req, res) => {
+  db.prepare('DELETE FROM payment_methods WHERE id = ?').run(req.params.id);
+  res.redirect('/admin/users');
+});
+
 // ---------- Tickets ----------
 
 router.get('/admin/tickets', (req, res) => {
@@ -400,5 +447,117 @@ router.post('/admin/settings/test-email', async (req, res) => {
   });
   res.render('admin-settings', { settings: getAllSettings(), saved: null, testResult: result });
 });
+
+// ---------- Health (admin-wide container monitor) ----------
+
+router.get('/admin/health', (req, res) => {
+  const sshTarget = db.prepare('SELECT id, host, port, username, auth_type FROM admin_ssh LIMIT 1').get();
+  const containers = db.prepare('SELECT * FROM admin_health_containers ORDER BY sort_order ASC, id ASC').all();
+  const recentLog = db
+    .prepare(
+      `SELECT l.*, u.name AS admin_name FROM admin_health_log l
+       JOIN users u ON u.id = l.admin_user_id
+       ORDER BY l.requested_at DESC LIMIT 10`
+    )
+    .all();
+
+  res.render('admin-health', { sshTarget, containers, recentLog });
+});
+
+router.post('/admin/health/ssh', (req, res) => {
+  const { host, port, username, auth_type, secret } = req.body;
+  if (!host || !username) return res.status(400).redirect('/admin/health');
+
+  const existing = db.prepare('SELECT * FROM admin_ssh LIMIT 1').get();
+
+  if (existing) {
+    if (secret) {
+      db.prepare(
+        `UPDATE admin_ssh SET host = ?, port = ?, username = ?, auth_type = ?, secret_encrypted = ?, updated_at = datetime('now') WHERE id = ?`
+      ).run(host, port || 22, username, auth_type || 'password', encrypt(secret), existing.id);
+    } else {
+      db.prepare(
+        `UPDATE admin_ssh SET host = ?, port = ?, username = ?, auth_type = ?, updated_at = datetime('now') WHERE id = ?`
+      ).run(host, port || 22, username, auth_type || 'password', existing.id);
+    }
+  } else {
+    if (!secret) return res.status(400).redirect('/admin/health');
+    db.prepare(
+      `INSERT INTO admin_ssh (host, port, username, auth_type, secret_encrypted) VALUES (?, ?, ?, ?, ?)`
+    ).run(host, port || 22, username, auth_type || 'password', encrypt(secret));
+  }
+
+  res.redirect('/admin/health');
+});
+
+router.post('/admin/health/containers', (req, res) => {
+  const containerName = String(req.body.container_name || '').trim();
+  const label = String(req.body.label || containerName).trim();
+
+  if (!containerName) return res.status(400).redirect('/admin/health');
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(containerName)) {
+    return res.status(400).render('error', { message: 'Container name can only contain letters, numbers, dots, dashes, and underscores.' });
+  }
+
+  db.prepare('INSERT INTO admin_health_containers (container_name, label) VALUES (?, ?)').run(containerName, label);
+  res.redirect('/admin/health');
+});
+
+router.post('/admin/health/containers/:id/delete', (req, res) => {
+  db.prepare('DELETE FROM admin_health_containers WHERE id = ?').run(req.params.id);
+  res.redirect('/admin/health');
+});
+
+router.get('/admin/health/status', async (req, res) => {
+  const containers = db.prepare('SELECT * FROM admin_health_containers').all();
+  if (containers.length === 0) return res.json({ ok: true, containers: [] });
+
+  const target = db.prepare('SELECT * FROM admin_ssh LIMIT 1').get();
+  if (!target) {
+    return res.json({
+      ok: true,
+      containers: containers.map((c) => ({ id: c.id, label: c.label, container_name: c.container_name, status: 'unknown' })),
+    });
+  }
+
+  const statuses = await getContainerStatuses(target, containers.map((c) => c.container_name));
+
+  res.json({
+    ok: true,
+    containers: containers.map((c) => ({
+      id: c.id,
+      label: c.label,
+      container_name: c.container_name,
+      status: statuses[c.container_name] || 'unknown',
+    })),
+  });
+});
+
+async function handleHealthAction(req, res, action) {
+  const container = db.prepare('SELECT * FROM admin_health_containers WHERE id = ?').get(req.params.id);
+  if (!container) return res.status(404).json({ ok: false, message: 'Container not found.' });
+
+  const target = db.prepare('SELECT * FROM admin_ssh LIMIT 1').get();
+  if (!target) {
+    return res.status(400).json({ ok: false, message: 'No admin SSH access configured yet. Set it up above first.' });
+  }
+
+  const command = `docker ${action} '${container.container_name}'`;
+  const result = await runCommand(target, command);
+
+  db.prepare(
+    'INSERT INTO admin_health_log (admin_user_id, container_name, action, success, output) VALUES (?, ?, ?, ?, ?)'
+  ).run(req.user.id, container.container_name, action, result.success ? 1 : 0, result.output);
+
+  res.json({
+    ok: result.success,
+    message: result.success
+      ? `${container.label} ${action === 'stop' ? 'stopped' : 'restarted'} successfully.`
+      : `Failed to ${action} ${container.label}: ${result.output}`,
+  });
+}
+
+router.post('/admin/health/containers/:id/stop', (req, res) => handleHealthAction(req, res, 'stop'));
+router.post('/admin/health/containers/:id/restart', (req, res) => handleHealthAction(req, res, 'restart'));
 
 module.exports = router;

@@ -11,6 +11,12 @@ db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 
 db.exec(`
+CREATE TABLE IF NOT EXISTS payment_methods (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
@@ -18,18 +24,25 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash TEXT NOT NULL,
   role TEXT NOT NULL DEFAULT 'subscriber', -- 'admin' | 'subscriber'
   must_change_password INTEGER NOT NULL DEFAULT 0,
+  payment_method_id INTEGER REFERENCES payment_methods(id) ON DELETE SET NULL,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 -- A Plan is the admin-defined bundle a subscriber is assigned to: it owns
 -- the feature list shown on login, the SSH target used for its actions,
--- which containers' health is displayed, and which action buttons appear.
+-- which containers' health is displayed, which action buttons appear,
+-- pricing, and maintenance-mode state.
 CREATE TABLE IF NOT EXISTS plans (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
   service TEXT NOT NULL, -- docker | plex | stream | indexers | hosting | multiple
   description TEXT,
   features TEXT,         -- one feature per line, shown as a bullet list to subscribers
+  price REAL,
+  currency TEXT NOT NULL DEFAULT 'GBP', -- GBP | USD | CAD
+  maintenance_mode INTEGER NOT NULL DEFAULT 0,
+  maintenance_resume_at TEXT,  -- UTC datetime string; shown to subscribers in UK time
+  maintenance_message TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -131,6 +144,41 @@ CREATE TABLE IF NOT EXISTS password_reset_tokens (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Admin-wide SSH target used only by the Admin Health page - separate from
+-- any per-plan SSH target, since the health page can monitor the entire
+-- compose stack rather than just one plan's containers.
+CREATE TABLE IF NOT EXISTS admin_ssh (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  host TEXT NOT NULL,
+  port INTEGER NOT NULL DEFAULT 22,
+  username TEXT NOT NULL,
+  auth_type TEXT NOT NULL DEFAULT 'password',
+  secret_encrypted TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- The list of containers shown on the Admin Health page (independent of
+-- any plan's own container list, though the same container can appear in both).
+CREATE TABLE IF NOT EXISTS admin_health_containers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  container_name TEXT NOT NULL,
+  label TEXT NOT NULL,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Audits every Stop/Restart click on the Admin Health page.
+CREATE TABLE IF NOT EXISTS admin_health_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  admin_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  container_name TEXT NOT NULL,
+  action TEXT NOT NULL, -- stop | restart
+  requested_at TEXT NOT NULL DEFAULT (datetime('now')),
+  success INTEGER NOT NULL DEFAULT 0,
+  output TEXT
+);
+
 -- Deprecated as of the Plans feature - kept only so existing installs don't
 -- error out on startup. No longer read from or written to by the app;
 -- server access is now configured per-Plan via plan_ssh/plan_actions instead.
@@ -156,12 +204,22 @@ CREATE TABLE IF NOT EXISTS restart_log (
 );
 `);
 
-// Migration for installs created before the Plans feature existed:
-// subscriptions predates the plan_id column, so add it if missing.
-const subscriptionColumns = db.prepare("PRAGMA table_info(subscriptions)").all().map((c) => c.name);
-if (!subscriptionColumns.includes('plan_id')) {
-  db.exec('ALTER TABLE subscriptions ADD COLUMN plan_id INTEGER REFERENCES plans(id)');
+// ---- Migrations for installs created before newer columns existed ----
+
+function ensureColumn(table, column, ddl) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+  if (!cols.includes(column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
+  }
 }
+
+ensureColumn('subscriptions', 'plan_id', 'plan_id INTEGER REFERENCES plans(id)');
+ensureColumn('plans', 'price', 'price REAL');
+ensureColumn('plans', 'currency', "currency TEXT NOT NULL DEFAULT 'GBP'");
+ensureColumn('plans', 'maintenance_mode', 'maintenance_mode INTEGER NOT NULL DEFAULT 0');
+ensureColumn('plans', 'maintenance_resume_at', 'maintenance_resume_at TEXT');
+ensureColumn('plans', 'maintenance_message', 'maintenance_message TEXT');
+ensureColumn('users', 'payment_method_id', 'payment_method_id INTEGER REFERENCES payment_methods(id)');
 
 // Bootstrap the first admin account from env vars if no admin exists yet.
 function ensureBootstrapAdmin() {

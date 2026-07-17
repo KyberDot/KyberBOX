@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <% pageTitle = 'Health' %>
+    <%- include('partials/head') %>
+</head>
+<body class="antialiased overflow-x-hidden">
+    <%- include('partials/nav') %>
+
+    <main class="max-w-5xl mx-auto px-4 sm:px-6 py-8 sm:py-10 pb-24">
+        <h1 class="text-2xl sm:text-3xl font-extrabold mb-2">Server Health</h1>
+        <p class="text-slate-400 text-sm mb-8">A live view of any container in your compose stack, independent of any single plan. Uses its own admin-wide SSH access.</p>
+
+        <!-- SSH config -->
+        <div class="glass rounded-2xl sm:rounded-3xl p-5 sm:p-8 mb-8">
+            <h2 class="text-lg font-bold text-white mb-1"><i class="fas fa-terminal mr-2 text-sky-400"></i>Admin Server Access</h2>
+            <p class="text-slate-400 text-sm mb-4">Used only by this page to check status and run Stop/Restart.</p>
+            <form method="POST" action="/admin/health/ssh" class="grid sm:grid-cols-3 gap-3">
+                <input type="text" name="host" required class="input" placeholder="Host / IP" value="<%= sshTarget ? sshTarget.host : '' %>">
+                <input type="number" name="port" class="input" placeholder="Port (22)" value="<%= sshTarget ? sshTarget.port : 22 %>">
+                <input type="text" name="username" required class="input" placeholder="SSH username" value="<%= sshTarget ? sshTarget.username : '' %>">
+                <select name="auth_type" class="input sm:col-span-3">
+                    <option value="password" <%= sshTarget && sshTarget.auth_type === 'password' ? 'selected' : '' %>>Password</option>
+                    <option value="key" <%= sshTarget && sshTarget.auth_type === 'key' ? 'selected' : '' %>>Private Key</option>
+                </select>
+                <textarea name="secret" rows="2" class="input sm:col-span-3" placeholder="Password or private key (leave blank to keep current)"></textarea>
+                <button type="submit" class="btn-primary py-3 rounded-xl text-sm sm:col-span-3">
+                    <i class="fas fa-lock mr-2"></i>Save (encrypted at rest)
+                </button>
+            </form>
+        </div>
+
+        <!-- Add container -->
+        <div class="glass rounded-2xl sm:rounded-3xl p-5 sm:p-8 mb-8">
+            <h2 class="text-lg font-bold text-white mb-4"><i class="fas fa-plus mr-2 text-sky-400"></i>Add a Container to Monitor</h2>
+            <form method="POST" action="/admin/health/containers" class="grid sm:grid-cols-3 gap-3">
+                <input type="text" name="label" required class="input" placeholder="Display label (e.g. Plex Server)">
+                <input type="text" name="container_name" required class="input" placeholder="Exact container name (e.g. plex)">
+                <button type="submit" class="btn-primary py-3 rounded-xl text-sm">Add Container</button>
+            </form>
+        </div>
+
+        <!-- Containers -->
+        <h2 class="text-sm uppercase tracking-widest text-slate-500 font-bold mb-4">Containers (<%= containers.length %>)</h2>
+        <div class="space-y-3 mb-10" id="healthContainerList">
+            <% containers.forEach(function(c) { %>
+                <div class="glass rounded-2xl p-4 sm:p-5 flex flex-wrap items-center justify-between gap-3" data-container-row data-container-id="<%= c.id %>">
+                    <div class="min-w-0">
+                        <p class="font-semibold text-white text-sm"><%= c.label %></p>
+                        <p class="text-slate-500 text-xs font-mono"><%= c.container_name %></p>
+                    </div>
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <span class="badge badge-suspended" data-status-pill><i class="fas fa-circle-notch fa-spin"></i> checking</span>
+                        <button class="btn-outline px-4 py-2 rounded-lg text-xs" data-health-btn data-health-action="stop" data-health-id="<%= c.id %>" data-health-label="<%= c.label %>">
+                            <i class="fas fa-stop mr-1"></i>Stop
+                        </button>
+                        <button class="btn-amber px-4 py-2 rounded-lg text-xs" data-health-btn data-health-action="restart" data-health-id="<%= c.id %>" data-health-label="<%= c.label %>">
+                            <i class="fas fa-rotate mr-1"></i>Restart
+                        </button>
+                        <form method="POST" action="/admin/health/containers/<%= c.id %>/delete" onsubmit="return confirm('Stop monitoring this container?');">
+                            <button class="text-red-400 hover:text-red-300 text-xs px-2"><i class="fas fa-trash"></i></button>
+                        </form>
+                    </div>
+                </div>
+            <% }); %>
+            <% if (containers.length === 0) { %>
+                <p class="text-slate-500 text-sm">No containers added yet.</p>
+            <% } %>
+        </div>
+        <div id="healthActionResult" class="hidden text-sm rounded-xl p-4 mb-10"></div>
+
+        <!-- Recent actions -->
+        <h2 class="text-sm uppercase tracking-widest text-slate-500 font-bold mb-4">Recent Stop/Restart Requests</h2>
+        <div class="glass rounded-2xl overflow-x-auto">
+            <% if (recentLog.length === 0) { %>
+                <p class="text-slate-500 text-sm p-6">No requests yet.</p>
+            <% } else { %>
+                <table class="kb-table min-w-[560px]">
+                    <thead><tr><th>Admin</th><th>Container</th><th>Action</th><th>Time (UK)</th><th>Result</th></tr></thead>
+                    <tbody>
+                        <% recentLog.forEach(function(l) { %>
+                            <tr>
+                                <td class="text-slate-300"><%= l.admin_name %></td>
+                                <td class="text-slate-400 font-mono"><%= l.container_name %></td>
+                                <td class="text-slate-400 capitalize"><%= l.action %></td>
+                                <td class="text-slate-500 text-xs"><%= formatUK(l.requested_at) %></td>
+                                <td><span class="badge <%= l.success ? 'badge-active' : 'badge-expired' %>"><%= l.success ? 'Success' : 'Failed' %></span></td>
+                            </tr>
+                        <% }); %>
+                    </tbody>
+                </table>
+            <% } %>
+        </div>
+    </main>
+
+    <script>
+        const STATUS_MAP = {
+            up: ['badge-active', 'fa-circle-check', 'Online'],
+            starting: ['badge-suspended', 'fa-circle-notch fa-spin', 'Starting'],
+            unhealthy: ['badge-expired', 'fa-triangle-exclamation', 'Unhealthy'],
+            down: ['badge-expired', 'fa-circle-xmark', 'Offline'],
+            unknown: ['badge-closed', 'fa-question', 'Unknown'],
+        };
+
+        async function refreshHealth() {
+            try {
+                const res = await fetch('/admin/health/status');
+                const data = await res.json();
+                if (!data.ok) return;
+                data.containers.forEach(function(c) {
+                    const row = document.querySelector('[data-container-id="' + c.id + '"] [data-status-pill]');
+                    if (!row) return;
+                    const chosen = STATUS_MAP[c.status] || STATUS_MAP.unknown;
+                    row.className = 'badge ' + chosen[0];
+                    row.innerHTML = '<i class="fas ' + chosen[1] + '"></i> ' + chosen[2];
+                });
+            } catch (e) {
+                // leave "checking" state as-is
+            }
+        }
+        refreshHealth();
+
+        document.querySelectorAll('[data-health-btn]').forEach(function(btn) {
+            btn.addEventListener('click', async function() {
+                const action = btn.getAttribute('data-health-action');
+                const label = btn.getAttribute('data-health-label');
+                const id = btn.getAttribute('data-health-id');
+                if (!confirm((action === 'stop' ? 'Stop' : 'Restart') + ' "' + label + '" now?')) return;
+
+                const resultBox = document.getElementById('healthActionResult');
+                const originalHtml = btn.innerHTML;
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+
+                try {
+                    const res = await fetch('/admin/health/containers/' + id + '/' + action, { method: 'POST' });
+                    const data = await res.json();
+                    resultBox.classList.remove('hidden');
+                    resultBox.className = 'text-sm rounded-xl p-4 mb-10 ' + (data.ok
+                        ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400'
+                        : 'bg-red-500/10 border border-red-500/30 text-red-400');
+                    resultBox.textContent = data.message;
+                    refreshHealth();
+                } catch (e) {
+                    resultBox.classList.remove('hidden');
+                    resultBox.className = 'text-sm rounded-xl p-4 mb-10 bg-red-500/10 border border-red-500/30 text-red-400';
+                    resultBox.textContent = 'Something went wrong sending that request.';
+                } finally {
+                    btn.disabled = false;
+                    btn.innerHTML = originalHtml;
+                }
+            });
+        });
+    </script>
+</body>
+</html>

@@ -23,7 +23,7 @@
                                 <td class="text-slate-400"><%= t.user_name %><br><span class="text-xs text-slate-600"><%= t.user_email %></span></td>
                                 <td class="text-slate-400"><%= t.category %></td>
                                 <td><span class="badge badge-<%= t.status %>"><%= t.status %></span></td>
-                                <td class="text-slate-500 text-xs"><%= t.updated_at %></td>
+                                <td class="text-slate-500 text-xs"><%= formatUK(t.updated_at) %></td>
                             </tr>
                         <% }); %>
                     </tbody>

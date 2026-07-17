@@ -80,7 +80,15 @@ router.get('/dashboard', (req, res) => {
     .prepare('SELECT * FROM tickets WHERE user_id = ? ORDER BY updated_at DESC')
     .all(req.user.id);
 
-  res.render('dashboard', { subscriptions, planViews, legacySubscriptions, tickets });
+  const userRecord = db
+    .prepare(
+      `SELECT u.*, pm.name AS payment_method_name FROM users u
+       LEFT JOIN payment_methods pm ON pm.id = u.payment_method_id
+       WHERE u.id = ?`
+    )
+    .get(req.user.id);
+
+  res.render('dashboard', { subscriptions, planViews, legacySubscriptions, tickets, paymentMethodName: userRecord ? userRecord.payment_method_name : null });
 });
 
 // Container health is checked over SSH, so it's fetched asynchronously
@@ -122,6 +130,14 @@ router.post('/dashboard/actions/:actionId/run', async (req, res) => {
     .prepare("SELECT * FROM subscriptions WHERE user_id = ? AND plan_id = ? AND status = 'active'")
     .get(req.user.id, action.plan_id);
   if (!subscription) return res.status(403).json({ ok: false, message: 'No active subscription for this action.' });
+
+  const plan = db.prepare('SELECT * FROM plans WHERE id = ?').get(action.plan_id);
+  if (plan && plan.maintenance_mode) {
+    return res.status(423).json({
+      ok: false,
+      message: `This plan is currently in scheduled maintenance. Actions are unavailable until it's resolved.`,
+    });
+  }
 
   const lastRun = db
     .prepare('SELECT * FROM action_log WHERE user_id = ? AND plan_action_id = ? ORDER BY requested_at DESC LIMIT 1')

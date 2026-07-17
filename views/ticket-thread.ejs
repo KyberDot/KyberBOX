@@ -27,7 +27,7 @@
                         <span class="font-bold text-sm <%= m.sender_role === 'admin' ? 'text-sky-400' : 'text-white' %>">
                             <%= m.sender_name %> <span class="text-slate-500 font-normal text-xs">(<%= m.sender_role %>)</span>
                         </span>
-                        <span class="text-slate-500 text-xs"><%= m.created_at %></span>
+                        <span class="text-slate-500 text-xs"><%= formatUK(m.created_at) %></span>
                     </div>
                     <p class="text-slate-300 text-sm whitespace-pre-wrap"><%= m.message %></p>
                 </div>

@@ -14,6 +14,23 @@ existing KyberBOX site and built to work on phones as well as desktop.
   action buttons appear (e.g. "Restart Plex"), and which containers' live
   health is shown. Assigning a client to that plan gives them all of it
   instantly — no per-user server setup.
+- **Pricing & renewal dates** — each plan can have a price in GBP, USD, or
+  CAD, shown to subscribers alongside their renewal date.
+- **Payment methods** — admin can add payment methods (name only for now,
+  e.g. "Bank Transfer", "PayPal") and assign one to each client; it shows
+  on their dashboard.
+- **Maintenance mode** — admin can flip a plan into maintenance mode with
+  an expected resume time (entered in UK time); subscribers on that plan
+  see a banner on login and its action buttons are disabled until it's
+  turned off.
+- **Admin Health page** — a global, admin-only view of any container in
+  your compose stack (not tied to a single plan), with live status and a
+  Stop/Restart button for each, using its own admin-wide SSH access. A
+  container that's genuinely down (stopped, removed) shows as **Offline**;
+  **Unknown** is reserved for when the server itself can't be reached at all.
+- **Everything in UK time** — all dates, renewal dates, cooldown timers,
+  and maintenance resume times are displayed in Europe/London time
+  (handling BST/GMT automatically), regardless of server or visitor timezone.
 - **Invite-only accounts** — no public signup. Admin creates each client
   account and assigns it to a Plan (or leaves it unassigned for later).
 - **Live container health** — each plan can list containers (e.g. `plex`,
