@@ -3,62 +3,62 @@
 <head>
     <% pageTitle = 'Client Access | ' + siteName %>
     <%- include('partials/head') %>
-    <style>
-        html, body { height: 100%; }
-        .login-viewport { height: 100dvh; }
-    </style>
 </head>
-<body class="antialiased overflow-x-hidden overflow-y-hidden">
-    <div class="login-viewport flex flex-col">
+<body class="antialiased overflow-x-hidden flex flex-col min-h-screen">
 
-        <nav class="max-w-7xl mx-auto px-4 sm:px-8 py-3 sm:py-6 w-full flex-shrink-0">
-            <img src="/img/KY.svg" alt="KyberBOX Logo" class="h-7 sm:h-10 w-auto">
-        </nav>
+    <nav class="max-w-7xl mx-auto px-8 py-6 w-full">
+        <div class="flex justify-between items-center">
+            <img src="/img/KY.svg" alt="KyberBOX Logo" class="h-10 w-auto">
+        </div>
+    </nav>
 
-        <main class="flex-1 min-h-0 flex items-center justify-center px-4 sm:px-6 relative overflow-y-auto">
-            <div class="hero-glow"></div>
+    <main class="flex-grow flex items-center justify-center px-6 py-12 relative">
+        <div class="hero-glow"></div>
 
-            <div class="max-w-md w-full relative z-10 py-2">
-                <div class="text-center mb-4 sm:mb-8">
-                    <div class="flex w-10 h-10 sm:w-20 sm:h-20 mx-auto rounded-full bg-sky-500/10 border border-sky-500/30 items-center justify-center float mb-3 sm:mb-6">
-                        <i class="fas fa-shield-halved text-sky-400 text-base sm:text-3xl"></i>
-                    </div>
-                    <h1 class="text-2xl sm:text-4xl font-extrabold mb-1 sm:mb-2 tracking-tight">
-                        Client <span class="gradient-text">Portal</span>
-                    </h1>
-                    <p class="text-slate-400 text-xs sm:text-sm">Sign in to manage your subscription.</p>
+        <div class="max-w-md w-full relative z-10">
+            <div class="text-center mb-8">
+                <div class="w-20 h-20 mx-auto rounded-full bg-sky-500/10 border border-sky-500/30 flex items-center justify-center float mb-6">
+                    <i class="fas fa-shield-halved text-sky-400 text-3xl"></i>
                 </div>
-
-                <div class="glass rounded-2xl sm:rounded-3xl p-5 sm:p-8">
-                    <% if (error) { %>
-                        <div class="mb-4 sm:mb-5 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
-                            <i class="fas fa-triangle-exclamation mr-2"></i><%= error %>
-                        </div>
-                    <% } %>
-                    <form method="POST" action="/login" class="space-y-3 sm:space-y-4">
-                        <div>
-                            <label class="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-1.5 sm:mb-2 block">Email</label>
-                            <input type="email" name="email" required class="input" placeholder="you@example.com">
-                        </div>
-                        <div>
-                            <div class="flex items-center justify-between mb-1.5 sm:mb-2">
-                                <label class="text-xs uppercase tracking-widest text-slate-500 font-semibold">Password</label>
-                                <a href="/forgot-password" class="text-xs text-sky-400 hover:text-sky-300">Forgot password?</a>
-                            </div>
-                            <input type="password" name="password" required class="input" placeholder="••••••••">
-                        </div>
-                        <button type="submit" class="w-full btn-primary py-3 sm:py-4 rounded-2xl text-sm mt-1 sm:mt-2">
-                            <i class="fas fa-right-to-bracket mr-2"></i> Sign In
-                        </button>
-                    </form>
-                </div>
-
-                <p class="text-center text-slate-500 text-xs sm:text-sm mt-4 sm:mt-8">
-                    Don't have access yet? Portal accounts are invite-only —
-                    <a href="mailto:support@kyberbox.app" class="text-sky-400 hover:text-sky-300">contact support</a>.
-                </p>
+                <h1 class="text-3xl md:text-4xl font-extrabold mb-2 tracking-tight">
+                    Client <span class="gradient-text">Portal</span>
+                </h1>
+                <p class="text-slate-400 text-sm">Sign in to manage your subscription.</p>
             </div>
-        </main>
-    </div>
+
+            <div class="glass rounded-3xl p-8">
+                <% if (error) { %>
+                    <div class="mb-5 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
+                        <i class="fas fa-triangle-exclamation mr-2"></i><%= error %>
+                    </div>
+                <% } %>
+                <form method="POST" action="/login" class="space-y-4">
+                    <div>
+                        <label class="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-2 block">Email</label>
+                        <input type="email" name="email" required class="input" placeholder="you@example.com">
+                    </div>
+                    <div>
+                        <div class="flex items-center justify-between mb-2">
+                            <label class="text-xs uppercase tracking-widest text-slate-500 font-semibold">Password</label>
+                            <a href="/forgot-password" class="text-xs text-sky-400 hover:text-sky-300">Forgot password?</a>
+                        </div>
+                        <input type="password" name="password" required class="input" placeholder="••••••••">
+                    </div>
+                    <button type="submit" class="w-full btn-primary py-4 rounded-2xl text-sm mt-2">
+                        <i class="fas fa-right-to-bracket mr-2"></i> Sign In
+                    </button>
+                </form>
+            </div>
+
+            <p class="text-center text-slate-500 text-sm mt-8">
+                Don't have access yet? Portal accounts are invite-only —
+                <a href="mailto:support@kyberbox.app" class="text-sky-400 hover:text-sky-300">contact support</a>.
+            </p>
+        </div>
+    </main>
+
+    <footer class="py-6 text-center border-t border-white/5">
+        <p class="text-slate-600 text-xs uppercase tracking-widest">&copy; 2026 KyberBOX. All Rights Reserved.</p>
+    </footer>
 </body>
 </html>
