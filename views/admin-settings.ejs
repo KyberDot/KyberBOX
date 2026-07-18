@@ -22,6 +22,12 @@
             </div>
         <% } %>
 
+        <% if (typeof brandingError !== 'undefined' && brandingError) { %>
+            <div class="mb-6 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
+                <i class="fas fa-triangle-exclamation mr-2"></i><%= brandingError %>
+            </div>
+        <% } %>
+
         <!-- General -->
         <div class="glass rounded-2xl sm:rounded-3xl p-5 sm:p-8 mb-8">
             <h2 class="text-lg font-bold text-white mb-4"><i class="fas fa-sliders mr-2 text-sky-400"></i>General</h2>
@@ -39,10 +45,59 @@
             </form>
         </div>
 
+        <!-- Branding -->
+        <div class="glass rounded-2xl sm:rounded-3xl p-5 sm:p-8 mb-8">
+            <h2 class="text-lg font-bold text-white mb-1"><i class="fas fa-icons mr-2 text-sky-400"></i>Branding</h2>
+            <p class="text-slate-400 text-sm mb-4">Browser favicon, and the icon used when a client adds this site to their iPhone home screen via Safari.</p>
+            <form method="POST" action="/admin/settings/branding" enctype="multipart/form-data" class="grid sm:grid-cols-2 gap-6">
+                <div>
+                    <label class="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-2 block">Favicon</label>
+                    <div class="flex items-center gap-3 mb-3">
+                        <img src="<%= faviconPath %>" alt="Current favicon" class="w-8 h-8 rounded bg-slate-800 object-contain">
+                        <span class="text-slate-500 text-xs">Current favicon</span>
+                    </div>
+                    <input type="file" name="favicon" accept="image/png,image/x-icon,image/vnd.microsoft.icon,.ico,image/svg+xml" class="input text-xs">
+                    <p class="text-slate-500 text-xs mt-2">PNG or ICO recommended, square, at least 32×32.</p>
+                </div>
+                <div>
+                    <label class="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-2 block">Apple Touch Icon (iOS "Add to Home Screen")</label>
+                    <div class="flex items-center gap-3 mb-3">
+                        <img src="<%= appleIconPath %>" alt="Current apple touch icon" class="w-8 h-8 rounded bg-slate-800 object-contain">
+                        <span class="text-slate-500 text-xs">Current icon</span>
+                    </div>
+                    <input type="file" name="apple_icon" accept="image/png,image/jpeg" class="input text-xs">
+                    <p class="text-slate-500 text-xs mt-2">PNG recommended, square, 180×180 works best - this is what shows on a client's phone when they add the site to their home screen in Safari.</p>
+                </div>
+                <button type="submit" class="btn-primary px-6 py-3 rounded-xl text-sm sm:col-span-2">
+                    <i class="fas fa-upload mr-2"></i>Upload
+                </button>
+            </form>
+        </div>
+
+        <!-- Health Page SSH -->
+        <div class="glass rounded-2xl sm:rounded-3xl p-5 sm:p-8 mb-8">
+            <h2 class="text-lg font-bold text-white mb-1"><i class="fas fa-terminal mr-2 text-sky-400"></i>Server Access (Health Page)</h2>
+            <p class="text-slate-400 text-sm mb-4">Used by Admin → Health to check container status and run Stop/Restart. Separate from any plan's own SSH access.</p>
+            <form method="POST" action="/admin/settings/health-ssh" class="grid sm:grid-cols-3 gap-3">
+                <input type="text" name="host" required class="input" placeholder="Host / IP" value="<%= healthSsh ? healthSsh.host : '' %>">
+                <input type="number" name="port" class="input" placeholder="Port (22)" value="<%= healthSsh ? healthSsh.port : 22 %>">
+                <input type="text" name="username" required class="input" placeholder="SSH username" value="<%= healthSsh ? healthSsh.username : '' %>">
+                <select name="auth_type" class="input sm:col-span-3">
+                    <option value="password" <%= healthSsh && healthSsh.auth_type === 'password' ? 'selected' : '' %>>Password</option>
+                    <option value="key" <%= healthSsh && healthSsh.auth_type === 'key' ? 'selected' : '' %>>Private Key</option>
+                </select>
+                <textarea name="secret" rows="2" class="input sm:col-span-3" placeholder="Password or private key (leave blank to keep current)"></textarea>
+                <button type="submit" class="btn-primary py-3 rounded-xl text-sm sm:col-span-3">
+                    <i class="fas fa-lock mr-2"></i>Save (encrypted at rest)
+                </button>
+            </form>
+            <p class="text-slate-500 text-xs mt-4">Manage which containers show up on the Health page from <a href="/admin/health" class="text-sky-400 hover:text-sky-300">Admin → Health</a>.</p>
+        </div>
+
         <!-- Mail -->
         <div class="glass rounded-2xl sm:rounded-3xl p-5 sm:p-8 mb-8">
             <h2 class="text-lg font-bold text-white mb-1"><i class="fas fa-envelope mr-2 text-sky-400"></i>Mail (SMTP)</h2>
-            <p class="text-slate-400 text-sm mb-4">Used for client invites, password resets, and ticket notifications.</p>
+            <p class="text-slate-400 text-sm mb-4">Used for client invites, password resets, ticket notifications, and maintenance-mode alerts.</p>
             <form method="POST" action="/admin/settings/mail" class="grid md:grid-cols-2 gap-4">
                 <input type="text" name="smtp_host" class="input" placeholder="SMTP host (e.g. smtp.gmail.com)" value="<%= settings.smtp_host %>">
                 <input type="number" name="smtp_port" class="input" placeholder="Port (587)" value="<%= settings.smtp_port %>">

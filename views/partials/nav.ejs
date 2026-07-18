@@ -13,8 +13,11 @@
                 <a href="/admin/health" class="text-slate-400 hover:text-white transition font-medium">Health</a>
                 <a href="/admin/tickets" class="text-slate-400 hover:text-white transition font-medium">Tickets</a>
                 <a href="/admin/settings" class="text-slate-400 hover:text-white transition font-medium">Settings</a>
+                <a href="/account" class="text-slate-400 hover:text-white transition font-medium">Account</a>
             <% } else { %>
                 <a href="/dashboard" class="text-slate-400 hover:text-white transition font-medium">Dashboard</a>
+                <a href="/support" class="text-slate-400 hover:text-white transition font-medium">Support</a>
+                <a href="/account" class="text-slate-400 hover:text-white transition font-medium">Account</a>
             <% } %>
             <span class="text-slate-600">|</span>
             <span class="text-slate-500"><%= currentUser.name %></span>
@@ -40,8 +43,11 @@
             <a href="/admin/health" class="text-slate-300 hover:text-white transition font-medium py-2 px-2 rounded-lg hover:bg-white/5">Health</a>
             <a href="/admin/tickets" class="text-slate-300 hover:text-white transition font-medium py-2 px-2 rounded-lg hover:bg-white/5">Tickets</a>
             <a href="/admin/settings" class="text-slate-300 hover:text-white transition font-medium py-2 px-2 rounded-lg hover:bg-white/5">Settings</a>
+            <a href="/account" class="text-slate-300 hover:text-white transition font-medium py-2 px-2 rounded-lg hover:bg-white/5">Account</a>
         <% } else { %>
             <a href="/dashboard" class="text-slate-300 hover:text-white transition font-medium py-2 px-2 rounded-lg hover:bg-white/5">Dashboard</a>
+            <a href="/support" class="text-slate-300 hover:text-white transition font-medium py-2 px-2 rounded-lg hover:bg-white/5">Support</a>
+            <a href="/account" class="text-slate-300 hover:text-white transition font-medium py-2 px-2 rounded-lg hover:bg-white/5">Account</a>
         <% } %>
         <div class="border-t border-white/10 my-2"></div>
         <span class="text-slate-500 px-2 py-1"><%= currentUser.name %></span>

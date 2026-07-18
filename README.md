@@ -24,9 +24,11 @@ existing KyberBOX site and built to work on phones as well as desktop.
   see a banner on login and its action buttons are disabled until it's
   turned off.
 - **Admin Health page** — a global, admin-only view of any container in
-  your compose stack (not tied to a single plan), with live status and a
-  Stop/Restart button for each, using its own admin-wide SSH access. A
-  container that's genuinely down (stopped, removed) shows as **Offline**;
+  your compose stack (not tied to a single plan), shown as a grid of
+  cards with an optional logo per container, live status, Stop/Restart
+  buttons, and arrows to reorder them. Its SSH access (separate from any
+  plan's own) is configured once from Admin → Settings. A container
+  that's genuinely down (stopped, removed) shows as **Offline**;
   **Unknown** is reserved for when the server itself can't be reached at all.
 - **Everything in UK time** — all dates, renewal dates, cooldown timers,
   and maintenance resume times are displayed in Europe/London time
@@ -42,14 +44,32 @@ existing KyberBOX site and built to work on phones as well as desktop.
   command, each with its own cooldown (e.g. once every 6 hours). Subscribers
   only ever click a button; they never type or influence the command that
   runs on the server.
-- **Support tickets** — clients can raise a ticket, admins see every ticket
-  in one inbox and reply from the portal.
+- **Support tickets, on their own page** — clients raise and track tickets
+  from a dedicated **Support** page (next to Dashboard), separate from
+  their plan cards. Admins see every ticket in one inbox and reply from
+  the portal.
+- **Self-service Account page** — clients can change their own password
+  or email address from **Account**, without admin help.
+- **Admin can edit any client's details** — name and email can be updated
+  by an admin at any time from Admin → Users, not just at invite time.
+- **Auto-renew / manual renew / mark expired** — when an admin sets a
+  client's renewal date, they choose whether it auto-renews monthly on
+  its own, needs the admin to manually renew it, or should be marked
+  expired immediately.
+- **Maintenance-mode email alerts** — the moment a plan is switched into
+  maintenance mode, every active subscriber on it gets an email (using
+  the same branded template) explaining what's affected and when it's
+  expected back.
+- **Custom favicon & iOS home-screen icon** — set both from Admin →
+  Settings → Branding; the iOS icon is what shows when a client adds the
+  site to their iPhone home screen via Safari, making it look like a
+  real app.
 - **Email notifications** — client invites, admin-triggered password
-  resets, self-service "forgot password" links, and ticket
-  creation/replies are all emailed automatically once SMTP is configured
-  from the in-app Settings page. Emails carry your actual logo (embedded
-  directly in the email, not a hotlinked image, so it displays reliably
-  across mail clients).
+  resets, self-service "forgot password" links, ticket creation/replies,
+  and maintenance-mode alerts are all emailed automatically once SMTP is
+  configured from the in-app Settings page. Emails carry your actual logo
+  (embedded directly in the email, not a hotlinked image, so it displays
+  reliably across mail clients).
 - **Encrypted server credentials** — SSH passwords/keys and the SMTP
   password are encrypted at rest (AES-256-GCM) with a key you control.
 - **Mobile-friendly throughout** — every page (login, dashboard, admin)
@@ -167,22 +187,33 @@ shows a banner reminding you to finish mail setup.
 ```
 kyberbox-portal/
 ├── .github/workflows/docker-publish.yml   # builds & pushes image to GHCR
-├── server.js              # Express app entry point (trust proxy config lives here)
+├── server.js              # Express app entry point (trust proxy, uploads static mount)
 ├── db.js                  # SQLite schema: users, plans, subscriptions, tickets, settings
-├── middleware/auth.js     # session/auth guards, injects site name
+├── middleware/auth.js     # session/auth guards, injects site name/branding/formatters
 ├── utils/crypto.js        # AES-256-GCM encrypt/decrypt for secrets
-├── utils/ssh.js           # runs plan actions + container health checks over SSH
+├── utils/ssh.js           # runs plan/admin actions + container health checks over SSH
 ├── utils/mailer.js        # nodemailer wrapper with embedded logo
-├── utils/settings.js      # admin-configurable settings (SMTP, site URL)
+├── utils/settings.js      # admin-configurable settings (SMTP, site URL, branding)
+├── utils/time.js          # UK (Europe/London) date/time and currency formatting
+├── utils/renewals.js      # auto-renew logic for subscriptions
+├── utils/labels.js        # friendly service-category labels (for maintenance banners etc.)
+├── utils/uploads.js       # multer config for favicon/apple-touch-icon uploads
 ├── routes/auth.js         # login / logout / password change / forgot-reset
-├── routes/dashboard.js    # client dashboard, plan actions, health checks, tickets
-├── routes/admin.js        # Plans CRUD, users, subscriptions, tickets, settings
+├── routes/dashboard.js    # client dashboard: plan features, health checks, actions
+├── routes/support.js      # client Support page: tickets list, raise/reply to tickets
+├── routes/account.js      # client self-service: change password / email
+├── routes/admin.js        # Plans, Users, Payment Methods, Tickets, Settings, Health
 ├── views/                 # EJS templates (mobile-responsive, matching KyberBOX design)
-├── public/                # static assets (logo, favicon, CSS)
+├── public/                # static assets (logo, default favicon, CSS)
 ├── Dockerfile
 ├── docker-compose.yml         # production - pulls prebuilt image from GHCR
 └── docker-compose.build.yml   # alternative - builds the image locally
 ```
+
+Admin-uploaded branding (favicon, Apple touch icon) and the SQLite database
+both live in the `data/` directory inside the container, which is the
+`kyberbox-data` Docker volume — so they persist across image rebuilds and
+redeploys, unlike anything under `public/`.
 
 ## 8. Local development (without Docker)
 

@@ -4,8 +4,11 @@ const cookieParser = require('cookie-parser');
 const path = require('path');
 
 const { attachUser, requireLogin, requireAdmin } = require('./middleware/auth');
+const { UPLOADS_DIR } = require('./utils/uploads');
 const authRoutes = require('./routes/auth');
 const dashboardRoutes = require('./routes/dashboard');
+const supportRoutes = require('./routes/support');
+const accountRoutes = require('./routes/account');
 const adminRoutes = require('./routes/admin');
 
 if (!process.env.JWT_SECRET || !process.env.CREDENTIAL_ENC_KEY) {
@@ -29,6 +32,9 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
+// Admin-uploaded branding (favicon, apple touch icon) lives in the data
+// volume so it survives image rebuilds/redeploys, unlike /public.
+app.use('/uploads', express.static(UPLOADS_DIR));
 app.use(attachUser);
 
 app.get('/', (req, res) => {
@@ -38,6 +44,8 @@ app.get('/', (req, res) => {
 
 app.use(authRoutes);
 app.use(requireLogin, dashboardRoutes);
+app.use(requireLogin, supportRoutes);
+app.use(requireLogin, accountRoutes);
 app.use(requireAdmin, adminRoutes);
 
 app.use((req, res) => {

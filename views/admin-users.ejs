@@ -92,6 +92,15 @@
                     </div>
 
                     <details class="mb-2">
+                        <summary class="cursor-pointer text-sky-400 text-xs font-semibold uppercase tracking-wide">Edit Details</summary>
+                        <form method="POST" action="/admin/users/<%= u.id %>/update" class="grid sm:grid-cols-3 gap-3 mt-3">
+                            <input type="text" name="name" required class="input" value="<%= u.name %>" placeholder="Full name">
+                            <input type="email" name="email" required class="input sm:col-span-2" value="<%= u.email %>" placeholder="Email address">
+                            <button type="submit" class="btn-primary rounded-xl text-sm sm:col-span-3">Save Details</button>
+                        </form>
+                    </details>
+
+                    <details class="mb-2">
                         <summary class="cursor-pointer text-sky-400 text-xs font-semibold uppercase tracking-wide">Assign / Manage Plan</summary>
                         <form method="POST" action="/admin/users/<%= u.id %>/subscription" class="grid sm:grid-cols-4 gap-3 mt-3">
                             <select name="plan_id" required class="input sm:col-span-2">
@@ -105,14 +114,23 @@
                                 <option value="suspended">Suspended</option>
                                 <option value="expired">Expired</option>
                             </select>
-                            <input type="date" name="expires_at" class="input">
-                            <button type="submit" class="btn-primary rounded-xl text-sm sm:col-span-4">Assign Plan</button>
+                            <input type="date" name="expires_at" class="input" placeholder="Renewal date">
+                            <select name="renewal_mode" class="input sm:col-span-2">
+                                <option value="manual">Manual renewal (admin renews each time)</option>
+                                <option value="auto">Auto-renew (rolls forward automatically each month)</option>
+                                <option value="expired">Mark as expired now</option>
+                            </select>
+                            <button type="submit" class="btn-primary rounded-xl text-sm sm:col-span-2">Assign Plan</button>
                         </form>
                         <% if ((subsByUser[u.id] || []).length > 0) { %>
                             <div class="mt-3 space-y-1">
                                 <% subsByUser[u.id].forEach(function(s) { %>
                                     <form method="POST" action="/admin/users/<%= u.id %>/subscription/<%= s.id %>/delete" class="flex items-center justify-between text-xs text-slate-500 bg-slate-900/40 rounded-lg px-3 py-2 gap-2">
-                                        <span class="truncate"><%= s.plan_display_name || s.plan_name %> (<%= s.status %>)<% if (s.expires_at) { %> — renews <%= formatUKDate(s.expires_at) %><% } %></span>
+                                        <span class="truncate">
+                                            <%= s.plan_display_name || s.plan_name %> (<%= s.status %>)
+                                            <% if (s.expires_at) { %> — <%= s.renewal_mode === 'auto' ? 'auto-renews' : 'renews' %> <%= formatUKDate(s.expires_at) %><% } %>
+                                            <% if (s.renewal_mode) { %> <span class="text-slate-600">[<%= s.renewal_mode %>]</span><% } %>
+                                        </span>
                                         <button class="text-red-400 hover:text-red-300 flex-shrink-0"><i class="fas fa-trash"></i></button>
                                     </form>
                                 <% }); %>

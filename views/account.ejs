@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <% pageTitle = 'My Account | ' + siteName %>
+    <%- include('partials/head') %>
+</head>
+<body class="antialiased overflow-x-hidden">
+    <%- include('partials/nav') %>
+
+    <main class="max-w-2xl mx-auto px-4 sm:px-6 py-8 sm:py-10 pb-24">
+        <h1 class="text-2xl sm:text-3xl font-extrabold mb-1">Manage Account</h1>
+        <p class="text-slate-400 mb-8 sm:mb-10 text-sm sm:text-base">Update your password or email address.</p>
+
+        <!-- Change password -->
+        <div class="glass rounded-2xl sm:rounded-3xl p-5 sm:p-8 mb-8">
+            <h2 class="text-lg font-bold text-white mb-4"><i class="fas fa-lock mr-2 text-sky-400"></i>Change Password</h2>
+            <% if (passwordSuccess) { %>
+                <div class="mb-4 px-4 py-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-sm">
+                    <i class="fas fa-circle-check mr-2"></i>Password updated.
+                </div>
+            <% } %>
+            <% if (passwordError) { %>
+                <div class="mb-4 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
+                    <i class="fas fa-triangle-exclamation mr-2"></i><%= passwordError %>
+                </div>
+            <% } %>
+            <form method="POST" action="/account/password" class="space-y-4">
+                <input type="password" name="current_password" required class="input" placeholder="Current password">
+                <input type="password" name="new_password" required class="input" placeholder="New password (min 8 characters)">
+                <input type="password" name="confirm_password" required class="input" placeholder="Confirm new password">
+                <button type="submit" class="btn-primary py-3 rounded-xl text-sm w-full sm:w-auto px-8">Update Password</button>
+            </form>
+        </div>
+
+        <!-- Change email -->
+        <div class="glass rounded-2xl sm:rounded-3xl p-5 sm:p-8 mb-16">
+            <h2 class="text-lg font-bold text-white mb-1"><i class="fas fa-envelope mr-2 text-sky-400"></i>Change Email Address</h2>
+            <p class="text-slate-400 text-sm mb-4">Current: <span class="text-slate-300"><%= currentUser.email %></span></p>
+            <% if (emailSuccess) { %>
+                <div class="mb-4 px-4 py-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-sm">
+                    <i class="fas fa-circle-check mr-2"></i>Email address updated. Use your new email to sign in next time.
+                </div>
+            <% } %>
+            <% if (emailError) { %>
+                <div class="mb-4 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
+                    <i class="fas fa-triangle-exclamation mr-2"></i><%= emailError %>
+                </div>
+            <% } %>
+            <form method="POST" action="/account/email" class="space-y-4">
+                <input type="email" name="new_email" required class="input" placeholder="New email address">
+                <input type="password" name="current_password" required class="input" placeholder="Current password (to confirm)">
+                <button type="submit" class="btn-primary py-3 rounded-xl text-sm w-full sm:w-auto px-8">Update Email</button>
+            </form>
+        </div>
+    </main>
+</body>
+</html>

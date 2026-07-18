@@ -94,6 +94,7 @@ CREATE TABLE IF NOT EXISTS subscriptions (
   service TEXT NOT NULL,        -- docker | plex | stream | indexers | hosting | multiple
   plan_name TEXT NOT NULL DEFAULT 'Standard',
   status TEXT NOT NULL DEFAULT 'active', -- active | suspended | expired
+  renewal_mode TEXT NOT NULL DEFAULT 'manual', -- auto | manual | expired
   expires_at TEXT,
   notes TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -164,6 +165,7 @@ CREATE TABLE IF NOT EXISTS admin_health_containers (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   container_name TEXT NOT NULL,
   label TEXT NOT NULL,
+  logo_path TEXT,
   sort_order INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -220,6 +222,8 @@ ensureColumn('plans', 'maintenance_mode', 'maintenance_mode INTEGER NOT NULL DEF
 ensureColumn('plans', 'maintenance_resume_at', 'maintenance_resume_at TEXT');
 ensureColumn('plans', 'maintenance_message', 'maintenance_message TEXT');
 ensureColumn('users', 'payment_method_id', 'payment_method_id INTEGER REFERENCES payment_methods(id)');
+ensureColumn('subscriptions', 'renewal_mode', "renewal_mode TEXT NOT NULL DEFAULT 'manual'"); // auto | manual | expired
+ensureColumn('admin_health_containers', 'logo_path', 'logo_path TEXT');
 
 // Bootstrap the first admin account from env vars if no admin exists yet.
 function ensureBootstrapAdmin() {

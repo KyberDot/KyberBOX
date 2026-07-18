@@ -24,7 +24,7 @@
                 <% if (pv.plan.maintenance_mode) { %>
                     <div class="mb-6 px-4 sm:px-5 py-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400 text-sm">
                         <i class="fas fa-screwdriver-wrench mr-2"></i>
-                        <strong><%= pv.plan.name %></strong> is currently running scheduled maintenance.
+                        <strong><%= serviceLabel(pv.plan.service) %> is under maintenance.</strong>
                         <% if (pv.plan.maintenance_message) { %>
                             <%= pv.plan.maintenance_message %>
                         <% } %>
@@ -66,7 +66,15 @@
                         </div>
                     </div>
                     <% if (pv.subscription.expires_at) { %>
-                        <p class="text-slate-500 text-xs mb-5">Renews on <%= formatUKDate(pv.subscription.expires_at) %></p>
+                        <p class="text-slate-500 text-xs mb-5">
+                            <% if (pv.subscription.renewal_mode === 'auto') { %>
+                                <i class="fas fa-rotate mr-1"></i>Auto-renews on <%= formatUKDate(pv.subscription.expires_at) %>
+                            <% } else if (pv.subscription.status === 'expired' || pv.subscription.renewal_mode === 'expired') { %>
+                                <i class="fas fa-triangle-exclamation mr-1 text-red-400"></i>Expired <%= formatUKDate(pv.subscription.expires_at) %>
+                            <% } else { %>
+                                <i class="fas fa-calendar mr-1"></i>Renews on <%= formatUKDate(pv.subscription.expires_at) %> (manual renewal)
+                            <% } %>
+                        </p>
                     <% } %>
 
                     <!-- Features -->
@@ -112,64 +120,31 @@
                                     <%= (action.nextAllowedAt || pv.plan.maintenance_mode) ? 'disabled' : '' %>
                                 >
                                     <i class="fas <%= action.icon %> mr-2"></i>
-                                    <%= pv.plan.maintenance_mode ? action.label + ' Unavailable' : (action.nextAllowedAt ? action.label + ' Unavailable' : action.label) %>
+                                    <span data-action-btn-label><%= pv.plan.maintenance_mode ? 'Unavailable (Maintenance)' : (action.nextAllowedAt ? action.label + ' Unavailable' : action.label) %></span>
                                 </button>
                             <% }); %>
                         </div>
-                        <div class="mt-4 flex flex-wrap gap-4">
+                        <div class="mt-4 flex flex-col gap-1">
                             <% pv.actions.forEach(function(action) { %>
-                                <% if (action.nextAllowedAt && !pv.plan.maintenance_mode) { %>
-                                    <p class="text-slate-500 text-xs">"<%= action.label %>" available again after <span><%= formatUK(action.nextAllowedAt) %></span></p>
+                                <% if (!pv.plan.maintenance_mode) { %>
+                                    <p class="text-slate-500 text-xs <%= action.nextAllowedAt ? '' : 'hidden' %>"
+                                       data-cooldown-timer
+                                       data-action-id="<%= action.id %>"
+                                       data-action-label="<%= action.label %>"
+                                       data-next-allowed-at="<%= action.nextAllowedAt || '' %>">
+                                        "<%= action.label %>" available again in <span data-countdown-text>—</span>
+                                    </p>
                                 <% } %>
                             <% }); %>
                         </div>
                         <div id="actionResult-<%= pv.plan.id %>" class="mt-4 hidden text-sm rounded-xl p-4"></div>
-                        <a href="#raise-ticket" onclick="document.getElementById('category').value='<%= pv.plan.service %>'"
+                        <a href="/support?category=<%= pv.plan.service %>"
                            class="btn-outline inline-block text-center px-6 py-3 rounded-2xl text-sm mt-4">
                             <i class="fas fa-life-ring mr-2"></i> Still having issues? Raise a ticket
                         </a>
                     <% } %>
                 </div>
             <% }); %>
-
-            <!-- Tickets -->
-            <h2 id="tickets" class="text-sm uppercase tracking-widest text-slate-500 font-bold mb-4">Support Tickets</h2>
-            <div class="glass rounded-3xl p-5 sm:p-8 mb-8">
-                <% if (tickets.length === 0) { %>
-                    <p class="text-slate-500 text-sm mb-2">No tickets yet.</p>
-                <% } else { %>
-                    <div class="space-y-3 mb-2">
-                        <% tickets.forEach(function(t) { %>
-                            <a href="/dashboard/tickets/<%= t.id %>" class="flex items-center justify-between gap-3 p-4 rounded-xl bg-slate-900/40 hover:bg-slate-900/70 transition">
-                                <div class="min-w-0">
-                                    <p class="font-semibold text-white text-sm truncate"><%= t.subject %></p>
-                                    <p class="text-slate-500 text-xs"><%= t.category %> · opened <%= formatUK(t.created_at) %></p>
-                                </div>
-                                <span class="badge badge-<%= t.status %> flex-shrink-0"><%= t.status %></span>
-                            </a>
-                        <% }); %>
-                    </div>
-                <% } %>
-            </div>
-
-            <div id="raise-ticket" class="glass rounded-3xl p-5 sm:p-8 mb-16">
-                <h3 class="text-lg font-bold text-white mb-4">Raise a New Ticket</h3>
-                <form method="POST" action="/dashboard/tickets" class="space-y-4">
-                    <input type="text" name="subject" required class="input" placeholder="Subject">
-                    <select id="category" name="category" class="input">
-                        <option value="general">General</option>
-                        <option value="plex">Plex</option>
-                        <option value="docker">Docker Hosting</option>
-                        <option value="stream">Stream Addons</option>
-                        <option value="indexers">Indexers</option>
-                        <option value="hosting">Web Hosting</option>
-                    </select>
-                    <textarea name="message" required rows="4" class="input" placeholder="Describe the issue..."></textarea>
-                    <button type="submit" class="btn-primary px-8 py-3 rounded-2xl text-sm w-full sm:w-auto">
-                        <i class="fas fa-paper-plane mr-2"></i> Submit Ticket
-                    </button>
-                </form>
-            </div>
         </div>
     </main>
 
@@ -213,6 +188,46 @@
             pendingActionBtn = null;
         }
 
+        function startCooldown(actionId, nextAllowedAtIso) {
+            const timerEl = document.querySelector('[data-cooldown-timer][data-action-id="' + actionId + '"]');
+            if (!timerEl || !nextAllowedAtIso) return;
+            timerEl.setAttribute('data-next-allowed-at', nextAllowedAtIso);
+            timerEl.classList.remove('hidden');
+        }
+
+        // Ticks every second, updating any visible cooldown timers and
+        // re-enabling their button the moment the cooldown actually expires.
+        function tickCountdowns() {
+            document.querySelectorAll('[data-cooldown-timer]').forEach(function(el) {
+                const iso = el.getAttribute('data-next-allowed-at');
+                if (!iso) return;
+                const remainingMs = new Date(iso).getTime() - Date.now();
+                const textEl = el.querySelector('[data-countdown-text]');
+
+                if (remainingMs <= 0) {
+                    el.classList.add('hidden');
+                    const actionId = el.getAttribute('data-action-id');
+                    const btn = document.querySelector('[data-action-btn][data-action-id="' + actionId + '"]');
+                    if (btn && btn.disabled) {
+                        btn.disabled = false;
+                        const labelEl = btn.querySelector('[data-action-btn-label]');
+                        if (labelEl) labelEl.textContent = btn.getAttribute('data-action-label');
+                    }
+                    return;
+                }
+
+                const totalSeconds = Math.floor(remainingMs / 1000);
+                const hrs = Math.floor(totalSeconds / 3600);
+                const mins = Math.floor((totalSeconds % 3600) / 60);
+                const secs = totalSeconds % 60;
+                if (textEl) {
+                    textEl.textContent = (hrs > 0 ? hrs + 'h ' : '') + (hrs > 0 || mins > 0 ? mins + 'm ' : '') + secs + 's';
+                }
+            });
+        }
+        tickCountdowns();
+        setInterval(tickCountdowns, 1000);
+
         async function confirmAction() {
             const btn = pendingActionBtn;
             closeActionModal();
@@ -221,10 +236,11 @@
             const actionId = btn.getAttribute('data-action-id');
             const card = btn.closest('.glass');
             const resultBox = card ? card.querySelector('[id^="actionResult-"]') : null;
+            const labelEl = btn.querySelector('[data-action-btn-label]');
 
             btn.disabled = true;
-            const originalHtml = btn.innerHTML;
-            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Working...';
+            const originalLabel = btn.getAttribute('data-action-label');
+            if (labelEl) labelEl.textContent = 'Working...';
 
             try {
                 const res = await fetch('/dashboard/actions/' + actionId + '/run', { method: 'POST' });
@@ -236,11 +252,16 @@
                         : 'bg-red-500/10 border border-red-500/30 text-red-400');
                     resultBox.textContent = data.message;
                 }
+                if (data.nextAllowedAt) {
+                    startCooldown(actionId, data.nextAllowedAt);
+                    tickCountdowns();
+                }
                 if (data.ok) {
-                    btn.innerHTML = '<i class="fas fa-check mr-2"></i> Done';
+                    if (labelEl) labelEl.textContent = 'Done';
+                    if (!data.nextAllowedAt) btn.disabled = false;
                 } else {
-                    btn.disabled = false;
-                    btn.innerHTML = originalHtml;
+                    btn.disabled = !!data.nextAllowedAt;
+                    if (labelEl) labelEl.textContent = data.nextAllowedAt ? originalLabel + ' Unavailable' : originalLabel;
                 }
             } catch (e) {
                 if (resultBox) {
@@ -249,7 +270,7 @@
                     resultBox.textContent = 'Something went wrong sending that request.';
                 }
                 btn.disabled = false;
-                btn.innerHTML = originalHtml;
+                if (labelEl) labelEl.textContent = originalLabel;
             }
         }
 

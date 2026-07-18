@@ -5,10 +5,14 @@ const db = require('../db');
 const { encrypt } = require('../utils/crypto');
 const { getAllSettings, setSetting, getSiteBaseUrl } = require('../utils/settings');
 const { sendMail, isConfigured } = require('../utils/mailer');
-const { londonInputToUtcIso } = require('../utils/time');
+const { londonInputToUtcIso, formatUK } = require('../utils/time');
+const { serviceLabel } = require('../utils/labels');
 const { runCommand, getContainerStatuses } = require('../utils/ssh');
+const { upload } = require('../utils/uploads');
 
 const router = express.Router();
+const brandingUpload = upload.fields([{ name: 'favicon', maxCount: 1 }, { name: 'apple_icon', maxCount: 1 }]);
+const containerLogoUpload = upload.single('logo');
 
 function generateTempPassword() {
   return crypto.randomBytes(9).toString('base64').replace(/[+/=]/g, '').slice(0, 12);
@@ -108,7 +112,10 @@ router.post('/admin/plans/:id/update', (req, res) => {
   res.redirect('/admin/plans');
 });
 
-router.post('/admin/plans/:id/maintenance', (req, res) => {
+router.post('/admin/plans/:id/maintenance', async (req, res) => {
+  const plan = db.prepare('SELECT * FROM plans WHERE id = ?').get(req.params.id);
+  if (!plan) return res.status(404).render('error', { message: 'Plan not found.' });
+
   const enable = req.body.maintenance_mode === 'on' || req.body.maintenance_mode === '1';
   const resumeAt = String(req.body.maintenance_resume_at || '').trim(); // datetime-local, UK time as entered
   const message = String(req.body.maintenance_message || '').trim();
@@ -121,9 +128,43 @@ router.post('/admin/plans/:id/maintenance', (req, res) => {
     resumeAtUtc = londonInputToUtcIso(resumeAt);
   }
 
+  const wasAlreadyOn = !!plan.maintenance_mode;
+
   db.prepare(
     `UPDATE plans SET maintenance_mode = ?, maintenance_resume_at = ?, maintenance_message = ?, updated_at = datetime('now') WHERE id = ?`
   ).run(enable ? 1 : 0, resumeAtUtc, message || null, req.params.id);
+
+  // Only notify on the OFF -> ON transition, not on every subsequent edit
+  // while it's already on (avoids spamming subscribers).
+  if (enable && !wasAlreadyOn) {
+    const affected = db
+      .prepare(
+        `SELECT u.email, u.name FROM subscriptions s
+         JOIN users u ON u.id = s.user_id
+         WHERE s.plan_id = ? AND s.status = 'active'`
+      )
+      .all(req.params.id);
+
+    const siteName = getAllSettings().site_name;
+    const label = serviceLabel(plan.service);
+    const resumeLine = resumeAtUtc ? `We expect to resume by <strong>${formatUK(resumeAtUtc)}</strong> (UK time).` : '';
+
+    await Promise.all(
+      affected.map((sub) =>
+        sendMail({
+          to: sub.email,
+          subject: `${label} - Scheduled Maintenance`,
+          bodyHtml: `
+            <p>Hi ${sub.name},</p>
+            <p><strong>${label}</strong> is currently undergoing scheduled maintenance on ${siteName}.</p>
+            ${message ? `<p>${message}</p>` : ''}
+            <p>${resumeLine}</p>
+            <p style="color:#94a3b8;font-size:13px;">You may notice temporary interruptions until this is complete. Sorry for any inconvenience.</p>
+          `,
+        })
+      )
+    );
+  }
 
   res.redirect('/admin/plans');
 });
@@ -263,20 +304,25 @@ router.post('/admin/users/invite', async (req, res) => {
 });
 
 router.post('/admin/users/:id/subscription', (req, res) => {
-  const { plan_id, status, expires_at, notes } = req.body;
+  const { plan_id, status, expires_at, notes, renewal_mode } = req.body;
   const plan = db.prepare('SELECT * FROM plans WHERE id = ?').get(plan_id);
   if (!plan) return res.status(400).redirect('/admin/users');
+
+  const mode = ['auto', 'manual', 'expired'].includes(renewal_mode) ? renewal_mode : 'manual';
+  // Choosing "Mark as Expired" as the renewal mode is a direct instruction
+  // to expire the subscription now, regardless of what status was picked.
+  const finalStatus = mode === 'expired' ? 'expired' : status;
 
   const existing = db.prepare('SELECT id FROM subscriptions WHERE user_id = ? AND plan_id = ?').get(req.params.id, plan.id);
 
   if (existing) {
     db.prepare(
-      `UPDATE subscriptions SET service = ?, plan_name = ?, status = ?, expires_at = ?, notes = ?, updated_at = datetime('now') WHERE id = ?`
-    ).run(plan.service, plan.name, status, expires_at || null, notes || null, existing.id);
+      `UPDATE subscriptions SET service = ?, plan_name = ?, status = ?, renewal_mode = ?, expires_at = ?, notes = ?, updated_at = datetime('now') WHERE id = ?`
+    ).run(plan.service, plan.name, finalStatus, mode, expires_at || null, notes || null, existing.id);
   } else {
     db.prepare(
-      `INSERT INTO subscriptions (user_id, plan_id, service, plan_name, status, expires_at, notes) VALUES (?, ?, ?, ?, ?, ?, ?)`
-    ).run(req.params.id, plan.id, plan.service, plan.name, status, expires_at || null, notes || null);
+      `INSERT INTO subscriptions (user_id, plan_id, service, plan_name, status, renewal_mode, expires_at, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(req.params.id, plan.id, plan.service, plan.name, finalStatus, mode, expires_at || null, notes || null);
   }
 
   res.redirect('/admin/users');
@@ -312,6 +358,21 @@ router.post('/admin/users/:id/reset-password', async (req, res) => {
     ...loadUsersPageData(),
     newUser: { name: user.name, email: user.email, tempPassword, emailSent: emailResult.sent, emailReason: emailResult.reason },
   });
+});
+
+router.post('/admin/users/:id/update', (req, res) => {
+  const name = String(req.body.name || '').trim();
+  const email = String(req.body.email || '').toLowerCase().trim();
+  if (!name || !email) return res.status(400).redirect('/admin/users');
+
+  try {
+    db.prepare('UPDATE users SET name = ?, email = ? WHERE id = ?').run(name, email, req.params.id);
+    res.redirect('/admin/users');
+  } catch (err) {
+    res.status(400).render('error', {
+      message: err.message.includes('UNIQUE') ? 'Another user already has that email address.' : 'Could not update user.',
+    });
+  }
 });
 
 router.post('/admin/users/:id/delete', (req, res) => {
@@ -393,7 +454,7 @@ router.post('/admin/tickets/:id/reply', async (req, res) => {
 
   if (message) {
     const siteName = getAllSettings().site_name;
-    const ticketUrl = `${getSiteBaseUrl(req)}/dashboard/tickets/${ticket.id}`;
+    const ticketUrl = `${getSiteBaseUrl(req)}/support/tickets/${ticket.id}`;
     await sendMail({
       to: ticket.user_email,
       subject: `Re: ${ticket.subject}`,
@@ -413,13 +474,15 @@ router.post('/admin/tickets/:id/reply', async (req, res) => {
 
 router.get('/admin/settings', (req, res) => {
   const settings = getAllSettings();
-  res.render('admin-settings', { settings, saved: null, testResult: null });
+  const healthSsh = db.prepare('SELECT id, host, port, username, auth_type FROM admin_ssh LIMIT 1').get();
+  res.render('admin-settings', { settings, healthSsh, saved: null, testResult: null });
 });
 
 router.post('/admin/settings/general', (req, res) => {
   setSetting('site_name', String(req.body.site_name || 'KyberBOX').trim());
   setSetting('site_url', String(req.body.site_url || '').trim());
-  res.render('admin-settings', { settings: getAllSettings(), saved: 'general', testResult: null });
+  const healthSsh = db.prepare('SELECT id, host, port, username, auth_type FROM admin_ssh LIMIT 1').get();
+  res.render('admin-settings', { settings: getAllSettings(), healthSsh, saved: 'general', testResult: null });
 });
 
 router.post('/admin/settings/mail', (req, res) => {
@@ -436,7 +499,8 @@ router.post('/admin/settings/mail', (req, res) => {
   // the settings form always shows this field blank for security.
   if (smtp_pass) setSetting('smtp_pass', smtp_pass);
 
-  res.render('admin-settings', { settings: getAllSettings(), saved: 'mail', testResult: null });
+  const healthSsh = db.prepare('SELECT id, host, port, username, auth_type FROM admin_ssh LIMIT 1').get();
+  res.render('admin-settings', { settings: getAllSettings(), healthSsh, saved: 'mail', testResult: null });
 });
 
 router.post('/admin/settings/test-email', async (req, res) => {
@@ -445,28 +509,38 @@ router.post('/admin/settings/test-email', async (req, res) => {
     subject: 'Test email from your portal',
     bodyHtml: `<p>If you're reading this, your SMTP settings are working correctly.</p>`,
   });
-  res.render('admin-settings', { settings: getAllSettings(), saved: null, testResult: result });
+  const healthSsh = db.prepare('SELECT id, host, port, username, auth_type FROM admin_ssh LIMIT 1').get();
+  res.render('admin-settings', { settings: getAllSettings(), healthSsh, saved: null, testResult: result });
 });
 
-// ---------- Health (admin-wide container monitor) ----------
+router.post('/admin/settings/branding', (req, res) => {
+  brandingUpload(req, res, (err) => {
+    const healthSsh = db.prepare('SELECT id, host, port, username, auth_type FROM admin_ssh LIMIT 1').get();
 
-router.get('/admin/health', (req, res) => {
-  const sshTarget = db.prepare('SELECT id, host, port, username, auth_type FROM admin_ssh LIMIT 1').get();
-  const containers = db.prepare('SELECT * FROM admin_health_containers ORDER BY sort_order ASC, id ASC').all();
-  const recentLog = db
-    .prepare(
-      `SELECT l.*, u.name AS admin_name FROM admin_health_log l
-       JOIN users u ON u.id = l.admin_user_id
-       ORDER BY l.requested_at DESC LIMIT 10`
-    )
-    .all();
+    if (err) {
+      return res.status(400).render('admin-settings', {
+        settings: getAllSettings(),
+        healthSsh,
+        saved: null,
+        testResult: null,
+        brandingError: err.message,
+      });
+    }
 
-  res.render('admin-health', { sshTarget, containers, recentLog });
+    if (req.files && req.files.favicon && req.files.favicon[0]) {
+      setSetting('favicon_path', `/uploads/${req.files.favicon[0].filename}`);
+    }
+    if (req.files && req.files.apple_icon && req.files.apple_icon[0]) {
+      setSetting('apple_icon_path', `/uploads/${req.files.apple_icon[0].filename}`);
+    }
+
+    res.render('admin-settings', { settings: getAllSettings(), healthSsh, saved: 'branding', testResult: null, brandingError: null });
+  });
 });
 
-router.post('/admin/health/ssh', (req, res) => {
+router.post('/admin/settings/health-ssh', (req, res) => {
   const { host, port, username, auth_type, secret } = req.body;
-  if (!host || !username) return res.status(400).redirect('/admin/health');
+  if (!host || !username) return res.status(400).redirect('/admin/settings');
 
   const existing = db.prepare('SELECT * FROM admin_ssh LIMIT 1').get();
 
@@ -481,30 +555,87 @@ router.post('/admin/health/ssh', (req, res) => {
       ).run(host, port || 22, username, auth_type || 'password', existing.id);
     }
   } else {
-    if (!secret) return res.status(400).redirect('/admin/health');
+    if (!secret) return res.status(400).redirect('/admin/settings');
     db.prepare(
       `INSERT INTO admin_ssh (host, port, username, auth_type, secret_encrypted) VALUES (?, ?, ?, ?, ?)`
     ).run(host, port || 22, username, auth_type || 'password', encrypt(secret));
   }
 
-  res.redirect('/admin/health');
+  const healthSsh = db.prepare('SELECT id, host, port, username, auth_type FROM admin_ssh LIMIT 1').get();
+  res.render('admin-settings', { settings: getAllSettings(), healthSsh, saved: 'health-ssh', testResult: null });
+});
+
+// ---------- Health (admin-wide container monitor) ----------
+
+router.get('/admin/health', (req, res) => {
+  const sshConfigured = !!db.prepare('SELECT id FROM admin_ssh LIMIT 1').get();
+  const containers = db.prepare('SELECT * FROM admin_health_containers ORDER BY sort_order ASC, id ASC').all();
+  const recentLog = db
+    .prepare(
+      `SELECT l.*, u.name AS admin_name FROM admin_health_log l
+       JOIN users u ON u.id = l.admin_user_id
+       ORDER BY l.requested_at DESC LIMIT 10`
+    )
+    .all();
+
+  res.render('admin-health', { sshConfigured, containers, recentLog });
 });
 
 router.post('/admin/health/containers', (req, res) => {
-  const containerName = String(req.body.container_name || '').trim();
-  const label = String(req.body.label || containerName).trim();
+  containerLogoUpload(req, res, (err) => {
+    if (err) return res.status(400).render('error', { message: err.message });
 
-  if (!containerName) return res.status(400).redirect('/admin/health');
-  if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(containerName)) {
-    return res.status(400).render('error', { message: 'Container name can only contain letters, numbers, dots, dashes, and underscores.' });
-  }
+    const containerName = String(req.body.container_name || '').trim();
+    const label = String(req.body.label || containerName).trim();
 
-  db.prepare('INSERT INTO admin_health_containers (container_name, label) VALUES (?, ?)').run(containerName, label);
-  res.redirect('/admin/health');
+    if (!containerName) return res.status(400).redirect('/admin/health');
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(containerName)) {
+      return res.status(400).render('error', { message: 'Container name can only contain letters, numbers, dots, dashes, and underscores.' });
+    }
+
+    const maxOrder = db.prepare('SELECT MAX(sort_order) AS m FROM admin_health_containers').get().m || 0;
+    const logoPath = req.file ? `/uploads/${req.file.filename}` : null;
+
+    db.prepare('INSERT INTO admin_health_containers (container_name, label, logo_path, sort_order) VALUES (?, ?, ?, ?)').run(
+      containerName,
+      label,
+      logoPath,
+      maxOrder + 1
+    );
+    res.redirect('/admin/health');
+  });
+});
+
+router.post('/admin/health/containers/:id/logo', (req, res) => {
+  containerLogoUpload(req, res, (err) => {
+    if (err) return res.status(400).render('error', { message: err.message });
+    if (req.file) {
+      db.prepare('UPDATE admin_health_containers SET logo_path = ? WHERE id = ?').run(`/uploads/${req.file.filename}`, req.params.id);
+    }
+    res.redirect('/admin/health');
+  });
 });
 
 router.post('/admin/health/containers/:id/delete', (req, res) => {
   db.prepare('DELETE FROM admin_health_containers WHERE id = ?').run(req.params.id);
+  res.redirect('/admin/health');
+});
+
+router.post('/admin/health/containers/:id/move', (req, res) => {
+  const direction = req.body.direction === 'up' ? 'up' : 'down';
+  const containers = db.prepare('SELECT * FROM admin_health_containers ORDER BY sort_order ASC, id ASC').all();
+  const index = containers.findIndex((c) => c.id === Number(req.params.id));
+  if (index === -1) return res.redirect('/admin/health');
+
+  const swapIndex = direction === 'up' ? index - 1 : index + 1;
+  if (swapIndex < 0 || swapIndex >= containers.length) return res.redirect('/admin/health');
+
+  const current = containers[index];
+  const swap = containers[swapIndex];
+  const update = db.prepare('UPDATE admin_health_containers SET sort_order = ? WHERE id = ?');
+  update.run(swap.sort_order, current.id);
+  update.run(current.sort_order, swap.id);
+
   res.redirect('/admin/health');
 });
 
@@ -539,7 +670,7 @@ async function handleHealthAction(req, res, action) {
 
   const target = db.prepare('SELECT * FROM admin_ssh LIMIT 1').get();
   if (!target) {
-    return res.status(400).json({ ok: false, message: 'No admin SSH access configured yet. Set it up above first.' });
+    return res.status(400).json({ ok: false, message: 'No admin SSH access configured yet. Set it up in Settings first.' });
   }
 
   const command = `docker ${action} '${container.container_name}'`;

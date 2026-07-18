@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <% pageTitle = 'Support | ' + siteName %>
+    <%- include('partials/head') %>
+</head>
+<body class="antialiased overflow-x-hidden">
+    <%- include('partials/nav') %>
+
+    <main class="max-w-4xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
+        <h1 class="text-2xl sm:text-3xl font-extrabold mb-1">Support</h1>
+        <p class="text-slate-400 mb-8 sm:mb-10 text-sm sm:text-base">Raise a ticket or check on an existing one.</p>
+
+        <h2 class="text-sm uppercase tracking-widest text-slate-500 font-bold mb-4">Your Tickets</h2>
+        <div class="glass rounded-3xl p-5 sm:p-8 mb-8">
+            <% if (tickets.length === 0) { %>
+                <p class="text-slate-500 text-sm mb-2">No tickets yet.</p>
+            <% } else { %>
+                <div class="space-y-3 mb-2">
+                    <% tickets.forEach(function(t) { %>
+                        <a href="/support/tickets/<%= t.id %>" class="flex items-center justify-between gap-3 p-4 rounded-xl bg-slate-900/40 hover:bg-slate-900/70 transition">
+                            <div class="min-w-0">
+                                <p class="font-semibold text-white text-sm truncate"><%= t.subject %></p>
+                                <p class="text-slate-500 text-xs"><%= t.category %> · opened <%= formatUK(t.created_at) %></p>
+                            </div>
+                            <span class="badge badge-<%= t.status %> flex-shrink-0"><%= t.status %></span>
+                        </a>
+                    <% }); %>
+                </div>
+            <% } %>
+        </div>
+
+        <div class="glass rounded-3xl p-5 sm:p-8 mb-16">
+            <h3 class="text-lg font-bold text-white mb-4">Raise a New Ticket</h3>
+            <form method="POST" action="/support/tickets" class="space-y-4">
+                <input type="text" name="subject" required class="input" placeholder="Subject">
+                <select id="category" name="category" class="input">
+                    <option value="general" <%= presetCategory === 'general' || !presetCategory ? 'selected' : '' %>>General</option>
+                    <option value="plex" <%= presetCategory === 'plex' ? 'selected' : '' %>>Plex</option>
+                    <option value="docker" <%= presetCategory === 'docker' ? 'selected' : '' %>>Docker Hosting</option>
+                    <option value="stream" <%= presetCategory === 'stream' ? 'selected' : '' %>>Stream Addons</option>
+                    <option value="indexers" <%= presetCategory === 'indexers' ? 'selected' : '' %>>Indexers</option>
+                    <option value="hosting" <%= presetCategory === 'hosting' ? 'selected' : '' %>>Web Hosting</option>
+                </select>
+                <textarea name="message" required rows="4" class="input" placeholder="Describe the issue..."></textarea>
+                <button type="submit" class="btn-primary px-8 py-3 rounded-2xl text-sm w-full sm:w-auto">
+                    <i class="fas fa-paper-plane mr-2"></i> Submit Ticket
+                </button>
+            </form>
+        </div>
+    </main>
+</body>
+</html>

@@ -1,8 +1,18 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title><%= typeof pageTitle !== 'undefined' ? pageTitle : 'KyberBOX Portal' %></title>
-<link rel="icon" type="image/x-icon" href="/img/fav.ico">
-<link rel="icon" type="image/png" href="/img/fav.png">
+<title><%= typeof pageTitle !== 'undefined' ? pageTitle : siteName %></title>
+
+<link rel="icon" href="<%= faviconPath %>">
+<link rel="shortcut icon" href="<%= faviconPath %>">
+
+<!-- iOS "Add to Home Screen" support - makes it look/behave like an app -->
+<link rel="apple-touch-icon" href="<%= appleIconPath %>">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="<%= siteName %>">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0b0f1a">
+
 <script src="https://cdn.tailwindcss.com"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <link rel="stylesheet" href="/css/style.css">
