@@ -18,78 +18,75 @@
             </div>
         <% } %>
 
-        <!-- Add container -->
-        <div class="glass rounded-2xl sm:rounded-3xl p-5 sm:p-8 mb-8">
-            <h2 class="text-lg font-bold text-white mb-4"><i class="fas fa-plus mr-2 text-sky-400"></i>Add a Container to Monitor</h2>
-            <form method="POST" action="/admin/health/containers" enctype="multipart/form-data" class="grid sm:grid-cols-4 gap-3">
-                <input type="text" name="label" required class="input" placeholder="Display label (e.g. Plex Server)">
-                <input type="text" name="container_name" required class="input" placeholder="Exact container name (e.g. plex)">
-                <input type="file" name="logo" accept="image/png,image/jpeg,image/webp,image/svg+xml" class="input text-xs sm:col-span-1">
-                <button type="submit" class="btn-primary py-3 rounded-xl text-sm">Add Container</button>
-            </form>
-            <p class="text-slate-500 text-xs mt-2">Logo is optional - square images work best. You can add or change it later too.</p>
+        <!-- Add container trigger -->
+        <div class="flex items-center justify-between mb-6 flex-wrap gap-3">
+            <h2 class="text-sm uppercase tracking-widest text-slate-500 font-bold">Containers (<%= containers.length %>)</h2>
+            <button type="button" onclick="openModal('addContainerModal')" class="btn-primary px-5 py-2.5 rounded-xl text-sm">
+                <i class="fas fa-plus mr-2"></i>Add Container
+            </button>
         </div>
 
         <!-- Containers -->
-        <h2 class="text-sm uppercase tracking-widest text-slate-500 font-bold mb-4">Containers (<%= containers.length %>)</h2>
-        <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-5 mb-6" id="healthContainerList">
+        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4 mb-6" id="healthContainerList">
             <% containers.forEach(function(c, index) { %>
-                <div class="glass rounded-3xl p-6 flex flex-col items-center text-center gap-3" data-container-row data-container-id="<%= c.id %>">
-                    <div class="w-16 h-16 rounded-2xl bg-slate-900/60 border border-white/10 flex items-center justify-center overflow-hidden flex-shrink-0">
+                <div class="glass rounded-2xl p-3 sm:p-4 flex flex-col items-center text-center gap-2" data-container-row data-container-id="<%= c.id %>">
+                    <div class="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-slate-900/60 border border-white/10 flex items-center justify-center overflow-hidden flex-shrink-0">
                         <% if (c.logo_path) { %>
-                            <img src="<%= c.logo_path %>" alt="<%= c.label %>" class="w-full h-full object-contain p-2">
+                            <img src="<%= c.logo_path %>" alt="<%= c.label %>" class="w-full h-full object-cover">
                         <% } else { %>
-                            <i class="fas fa-cube text-slate-600 text-2xl"></i>
+                            <i class="fas fa-cube text-slate-600 text-lg"></i>
                         <% } %>
                     </div>
 
-                    <div>
-                        <p class="font-semibold text-white text-sm"><%= c.label %></p>
-                        <p class="text-slate-500 text-xs font-mono"><%= c.container_name %></p>
+                    <div class="w-full min-w-0">
+                        <p class="font-semibold text-white text-xs truncate"><%= c.label %></p>
+                        <p class="text-slate-500 text-[10px] font-mono truncate"><%= c.container_name %></p>
                     </div>
 
-                    <span class="badge badge-suspended" data-status-pill><i class="fas fa-circle-notch fa-spin"></i> checking</span>
+                    <span class="badge badge-suspended text-[10px] px-2 py-0.5" data-status-pill><i class="fas fa-circle-notch fa-spin"></i> checking</span>
 
-                    <div class="flex items-center gap-2 flex-wrap justify-center">
-                        <button class="btn-outline px-3 py-2 rounded-lg text-xs" data-health-btn data-health-action="stop" data-health-id="<%= c.id %>" data-health-label="<%= c.label %>">
-                            <i class="fas fa-stop mr-1"></i>Stop
+                    <div class="flex items-center gap-1.5 flex-wrap justify-center w-full">
+                        <button class="btn-outline flex-1 py-1.5 rounded-lg text-[11px]" data-health-btn data-health-action="stop" data-health-id="<%= c.id %>" data-health-label="<%= c.label %>" title="Stop">
+                            <i class="fas fa-stop"></i>
                         </button>
-                        <button class="btn-amber px-3 py-2 rounded-lg text-xs" data-health-btn data-health-action="restart" data-health-id="<%= c.id %>" data-health-label="<%= c.label %>">
-                            <i class="fas fa-rotate mr-1"></i>Restart
+                        <button class="btn-amber flex-1 py-1.5 rounded-lg text-[11px]" data-health-btn data-health-action="restart" data-health-id="<%= c.id %>" data-health-label="<%= c.label %>" title="Restart">
+                            <i class="fas fa-rotate"></i>
                         </button>
                     </div>
 
-                    <div class="flex items-center gap-1 flex-wrap justify-center pt-2 border-t border-white/5 w-full mt-1">
+                    <div class="flex items-center gap-0.5 flex-wrap justify-center pt-1.5 border-t border-white/5 w-full">
                         <form method="POST" action="/admin/health/containers/<%= c.id %>/move">
                             <input type="hidden" name="direction" value="up">
-                            <button class="w-7 h-7 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 text-xs" title="Move left/up" <%= index === 0 ? 'disabled style=opacity:0.3' : '' %>>
+                            <button class="w-6 h-6 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 text-[11px]" title="Move earlier" <%= index === 0 ? 'disabled style=opacity:0.3' : '' %>>
                                 <i class="fas fa-arrow-up"></i>
                             </button>
                         </form>
                         <form method="POST" action="/admin/health/containers/<%= c.id %>/move">
                             <input type="hidden" name="direction" value="down">
-                            <button class="w-7 h-7 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 text-xs" title="Move right/down" <%= index === containers.length - 1 ? 'disabled style=opacity:0.3' : '' %>>
+                            <button class="w-6 h-6 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 text-[11px]" title="Move later" <%= index === containers.length - 1 ? 'disabled style=opacity:0.3' : '' %>>
                                 <i class="fas fa-arrow-down"></i>
                             </button>
                         </form>
-                        <button type="button" class="w-7 h-7 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 text-xs" title="Change logo" onclick="document.getElementById('logoForm-<%= c.id %>').classList.toggle('hidden')">
-                            <i class="fas fa-image"></i>
+                        <button type="button" class="px-2.5 h-6 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 text-[11px]" title="Edit" onclick="document.getElementById('editPanel-<%= c.id %>').classList.toggle('hidden')">
+                            <i class="fas fa-pen mr-1"></i>Edit
                         </button>
+                    </div>
+
+                    <div id="editPanel-<%= c.id %>" class="hidden w-full flex flex-col gap-2 mt-1 pt-2 border-t border-white/5">
+                        <form method="POST" action="/admin/health/containers/<%= c.id %>/logo" enctype="multipart/form-data" class="w-full flex gap-1">
+                            <input type="file" name="logo" accept="image/png,image/jpeg,image/webp,image/svg+xml" class="input text-[10px] flex-1 px-2 py-1.5">
+                            <button type="submit" class="btn-primary px-2 py-1.5 rounded-lg text-[10px] whitespace-nowrap">Save Logo</button>
+                        </form>
                         <form method="POST" action="/admin/health/containers/<%= c.id %>/delete" onsubmit="return confirm('Stop monitoring this container?');">
-                            <button class="w-7 h-7 rounded-lg text-red-400 hover:text-red-300 hover:bg-red-500/10 text-xs" title="Remove">
-                                <i class="fas fa-trash"></i>
+                            <button class="w-full text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg text-[11px] py-1.5">
+                                <i class="fas fa-trash mr-1"></i>Remove Container
                             </button>
                         </form>
                     </div>
-
-                    <form id="logoForm-<%= c.id %>" method="POST" action="/admin/health/containers/<%= c.id %>/logo" enctype="multipart/form-data" class="hidden w-full flex gap-2 mt-1">
-                        <input type="file" name="logo" accept="image/png,image/jpeg,image/webp,image/svg+xml" class="input text-xs flex-1">
-                        <button type="submit" class="btn-primary px-3 py-2 rounded-lg text-xs whitespace-nowrap">Save</button>
-                    </form>
                 </div>
             <% }); %>
             <% if (containers.length === 0) { %>
-                <p class="text-slate-500 text-sm">No containers added yet.</p>
+                <p class="text-slate-500 text-sm col-span-full">No containers added yet.</p>
             <% } %>
         </div>
         <div id="healthActionResult" class="hidden text-sm rounded-xl p-4 mb-10"></div>
@@ -118,7 +115,42 @@
         </div>
     </main>
 
+    <!-- Add Container Modal -->
+    <div id="addContainerModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden items-center justify-center z-50 px-4 py-8 overflow-y-auto">
+        <div class="glass rounded-3xl p-6 sm:p-8 max-w-lg w-full my-auto">
+            <div class="flex items-center justify-between mb-5">
+                <h3 class="text-lg font-bold text-white"><i class="fas fa-plus mr-2 text-sky-400"></i>Add a Container to Monitor</h3>
+                <button type="button" onclick="closeModal('addContainerModal')" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5">
+                    <i class="fas fa-xmark"></i>
+                </button>
+            </div>
+            <form method="POST" action="/admin/health/containers" enctype="multipart/form-data" class="space-y-4">
+                <input type="text" name="label" required class="input" placeholder="Display label (e.g. Plex Server)">
+                <input type="text" name="container_name" required class="input" placeholder="Exact container name (e.g. plex)">
+                <div>
+                    <label class="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-1.5 block">Logo (optional)</label>
+                    <input type="file" name="logo" accept="image/png,image/jpeg,image/webp,image/svg+xml" class="input text-xs">
+                    <p class="text-slate-500 text-xs mt-2">Square images work best - you can add or change it later too.</p>
+                </div>
+                <button type="submit" class="btn-primary py-3 rounded-xl text-sm w-full">Add Container</button>
+            </form>
+        </div>
+    </div>
+
     <script>
+        function openModal(id) {
+            const m = document.getElementById(id);
+            if (!m) return;
+            m.classList.remove('hidden');
+            m.classList.add('flex');
+        }
+        function closeModal(id) {
+            const m = document.getElementById(id);
+            if (!m) return;
+            m.classList.add('hidden');
+            m.classList.remove('flex');
+        }
+
         const STATUS_MAP = {
             up: ['badge-active', 'fa-circle-check', 'Online'],
             starting: ['badge-suspended', 'fa-circle-notch fa-spin', 'Starting'],
@@ -136,7 +168,7 @@
                     const row = document.querySelector('[data-container-id="' + c.id + '"] [data-status-pill]');
                     if (!row) return;
                     const chosen = STATUS_MAP[c.status] || STATUS_MAP.unknown;
-                    row.className = 'badge ' + chosen[0];
+                    row.className = 'badge ' + chosen[0] + ' text-[10px] px-2 py-0.5';
                     row.innerHTML = '<i class="fas ' + chosen[1] + '"></i> ' + chosen[2];
                 });
             } catch (e) {

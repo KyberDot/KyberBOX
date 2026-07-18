@@ -253,6 +253,9 @@ router.post('/admin/users/invite', async (req, res) => {
   const name = String(req.body.name || '').trim();
   const email = String(req.body.email || '').toLowerCase().trim();
   const planId = req.body.plan_id ? Number(req.body.plan_id) : null;
+  const paymentMethodId = req.body.payment_method_id ? Number(req.body.payment_method_id) : null;
+  const expiresAt = String(req.body.expires_at || '').trim() || null;
+  const renewalMode = ['auto', 'manual', 'expired'].includes(req.body.renewal_mode) ? req.body.renewal_mode : 'manual';
 
   if (!name || !email) return res.status(400).redirect('/admin/users');
 
@@ -262,16 +265,17 @@ router.post('/admin/users/invite', async (req, res) => {
   try {
     const info = db
       .prepare(
-        `INSERT INTO users (name, email, password_hash, role, must_change_password) VALUES (?, ?, ?, 'subscriber', 1)`
+        `INSERT INTO users (name, email, password_hash, role, must_change_password, payment_method_id) VALUES (?, ?, ?, 'subscriber', 1, ?)`
       )
-      .run(name, email, hash);
+      .run(name, email, hash, paymentMethodId);
 
     if (planId) {
       const plan = db.prepare('SELECT * FROM plans WHERE id = ?').get(planId);
       if (plan) {
+        const status = renewalMode === 'expired' ? 'expired' : 'active';
         db.prepare(
-          `INSERT INTO subscriptions (user_id, plan_id, service, plan_name, status) VALUES (?, ?, ?, ?, 'active')`
-        ).run(info.lastInsertRowid, plan.id, plan.service, plan.name);
+          `INSERT INTO subscriptions (user_id, plan_id, service, plan_name, status, renewal_mode, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)`
+        ).run(info.lastInsertRowid, plan.id, plan.service, plan.name, status, renewalMode, expiresAt);
       }
     }
 

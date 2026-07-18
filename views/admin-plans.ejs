@@ -11,31 +11,11 @@
         <h1 class="text-2xl sm:text-3xl font-extrabold mb-2">Plans</h1>
         <p class="text-slate-400 text-sm mb-8">Each plan controls what subscribers on it see when they log in: its feature list, its server access, its action buttons (like a Plex restart), and which containers' health is shown.</p>
 
-        <!-- Create plan -->
-        <div class="glass rounded-3xl p-6 sm:p-8 mb-10">
-            <h2 class="text-lg font-bold text-white mb-4"><i class="fas fa-layer-group mr-2 text-sky-400"></i>Create a New Plan</h2>
-            <form method="POST" action="/admin/plans" class="grid sm:grid-cols-2 gap-4">
-                <input type="text" name="name" required class="input" placeholder="Plan name (e.g. Plex Premium)">
-                <select name="service" class="input">
-                    <option value="docker">Docker Hosting</option>
-                    <option value="plex">Plex Servers</option>
-                    <option value="stream">Stream Addons</option>
-                    <option value="indexers">Indexers</option>
-                    <option value="hosting">Web Hosting</option>
-                    <option value="multiple">Multiple Services</option>
-                </select>
-                <input type="text" name="description" class="input sm:col-span-2" placeholder="Short description (optional)">
-                <input type="number" step="0.01" min="0" name="price" class="input" placeholder="Price (e.g. 9.99, optional)">
-                <select name="currency" class="input">
-                    <option value="GBP">GBP (£)</option>
-                    <option value="USD">USD ($)</option>
-                    <option value="CAD">CAD ($)</option>
-                </select>
-                <textarea name="features" rows="3" class="input sm:col-span-2" placeholder="One feature per line, e.g.&#10;4K Transcoding&#10;5 simultaneous streams&#10;Priority support"></textarea>
-                <button type="submit" class="btn-primary py-3 rounded-xl text-sm sm:col-span-2">
-                    <i class="fas fa-plus mr-2"></i>Create Plan
-                </button>
-            </form>
+        <!-- Create plan trigger -->
+        <div class="flex justify-end mb-8">
+            <button type="button" onclick="openModal('createPlanModal')" class="btn-primary px-6 py-3 rounded-xl text-sm">
+                <i class="fas fa-plus mr-2"></i>Create a New Plan
+            </button>
         </div>
 
         <!-- Plans list -->
@@ -174,5 +154,54 @@
             <% } %>
         </div>
     </main>
+
+    <!-- Create Plan Modal -->
+    <div id="createPlanModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden items-center justify-center z-50 px-4 py-8 overflow-y-auto">
+        <div class="glass rounded-3xl p-6 sm:p-8 max-w-lg w-full my-auto">
+            <div class="flex items-center justify-between mb-5">
+                <h3 class="text-lg font-bold text-white"><i class="fas fa-layer-group mr-2 text-sky-400"></i>Create a New Plan</h3>
+                <button type="button" onclick="closeModal('createPlanModal')" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5">
+                    <i class="fas fa-xmark"></i>
+                </button>
+            </div>
+            <form method="POST" action="/admin/plans" class="grid sm:grid-cols-2 gap-4">
+                <input type="text" name="name" required class="input sm:col-span-2" placeholder="Plan name (e.g. Plex Premium)">
+                <select name="service" class="input sm:col-span-2">
+                    <option value="docker">Docker Hosting</option>
+                    <option value="plex">Plex Servers</option>
+                    <option value="stream">Stream Addons</option>
+                    <option value="indexers">Indexers</option>
+                    <option value="hosting">Web Hosting</option>
+                    <option value="multiple">Multiple Services</option>
+                </select>
+                <input type="text" name="description" class="input sm:col-span-2" placeholder="Short description (optional)">
+                <input type="number" step="0.01" min="0" name="price" class="input" placeholder="Price (e.g. 9.99, optional)">
+                <select name="currency" class="input">
+                    <option value="GBP">GBP (£)</option>
+                    <option value="USD">USD ($)</option>
+                    <option value="CAD">CAD ($)</option>
+                </select>
+                <textarea name="features" rows="3" class="input sm:col-span-2" placeholder="One feature per line, e.g.&#10;4K Transcoding&#10;5 simultaneous streams&#10;Priority support"></textarea>
+                <button type="submit" class="btn-primary py-3 rounded-xl text-sm sm:col-span-2 mt-2">
+                    <i class="fas fa-plus mr-2"></i>Create Plan
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        function openModal(id) {
+            const m = document.getElementById(id);
+            if (!m) return;
+            m.classList.remove('hidden');
+            m.classList.add('flex');
+        }
+        function closeModal(id) {
+            const m = document.getElementById(id);
+            if (!m) return;
+            m.classList.add('hidden');
+            m.classList.remove('flex');
+        }
+    </script>
 </body>
 </html>

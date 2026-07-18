@@ -52,22 +52,11 @@
             </form>
         </div>
 
-        <!-- Invite form -->
-        <div class="glass rounded-3xl p-6 sm:p-8 mb-12">
-            <h2 class="text-lg font-bold text-white mb-4"><i class="fas fa-user-plus mr-2 text-sky-400"></i>Invite a New Client</h2>
-            <form method="POST" action="/admin/users/invite" class="grid sm:grid-cols-2 gap-4">
-                <input type="text" name="name" required class="input" placeholder="Full name">
-                <input type="email" name="email" required class="input" placeholder="Email address">
-                <select name="plan_id" class="input sm:col-span-2">
-                    <option value="">No plan yet (assign later)</option>
-                    <% plans.forEach(function(p) { %>
-                        <option value="<%= p.id %>"><%= p.name %> (<%= p.service %>)</option>
-                    <% }); %>
-                </select>
-                <button type="submit" class="btn-primary py-3 rounded-xl text-sm sm:col-span-2">
-                    <i class="fas fa-paper-plane mr-2"></i>Create Account
-                </button>
-            </form>
+        <!-- Invite trigger -->
+        <div class="flex justify-end mb-8">
+            <button type="button" onclick="openModal('inviteModal')" class="btn-primary px-6 py-3 rounded-xl text-sm">
+                <i class="fas fa-user-plus mr-2"></i>Invite a New Client
+            </button>
         </div>
 
         <!-- Users list -->
@@ -166,5 +155,72 @@
             <% } %>
         </div>
     </main>
+
+    <!-- Invite Modal -->
+    <div id="inviteModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden items-center justify-center z-50 px-4 py-8 overflow-y-auto">
+        <div class="glass rounded-3xl p-6 sm:p-8 max-w-lg w-full my-auto">
+            <div class="flex items-center justify-between mb-5">
+                <h3 class="text-lg font-bold text-white"><i class="fas fa-user-plus mr-2 text-sky-400"></i>Invite a New Client</h3>
+                <button type="button" onclick="closeModal('inviteModal')" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5">
+                    <i class="fas fa-xmark"></i>
+                </button>
+            </div>
+            <form method="POST" action="/admin/users/invite" class="grid sm:grid-cols-2 gap-4">
+                <input type="text" name="name" required class="input sm:col-span-2" placeholder="Full name">
+                <input type="email" name="email" required class="input sm:col-span-2" placeholder="Email address">
+
+                <select name="plan_id" class="input sm:col-span-2">
+                    <option value="">No plan yet (assign later)</option>
+                    <% plans.forEach(function(p) { %>
+                        <option value="<%= p.id %>"><%= p.name %> (<%= p.service %>)</option>
+                    <% }); %>
+                </select>
+
+                <select name="payment_method_id" class="input sm:col-span-2">
+                    <option value="">No payment method yet</option>
+                    <% paymentMethods.forEach(function(pm) { %>
+                        <option value="<%= pm.id %>"><%= pm.name %></option>
+                    <% }); %>
+                </select>
+
+                <div>
+                    <label class="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-1.5 block">Renewal Date</label>
+                    <input type="date" name="expires_at" class="input">
+                </div>
+                <div>
+                    <label class="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-1.5 block">Renewal Method</label>
+                    <select name="renewal_mode" class="input">
+                        <option value="manual">Manual renewal</option>
+                        <option value="auto">Auto-renew monthly</option>
+                        <option value="expired">Mark as expired now</option>
+                    </select>
+                </div>
+
+                <button type="submit" class="btn-primary py-3 rounded-xl text-sm sm:col-span-2 mt-2">
+                    <i class="fas fa-paper-plane mr-2"></i>Create Account
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        function openModal(id) {
+            const m = document.getElementById(id);
+            if (!m) return;
+            m.classList.remove('hidden');
+            m.classList.add('flex');
+        }
+        function closeModal(id) {
+            const m = document.getElementById(id);
+            if (!m) return;
+            m.classList.add('hidden');
+            m.classList.remove('flex');
+        }
+        <% if (newUser) { %>
+        // A client was just created - the modal would otherwise be closed on
+        // page reload, but there's nothing to reopen since the credentials
+        // banner above already shows what's needed.
+        <% } %>
+    </script>
 </body>
 </html>
