@@ -1,4 +1,4 @@
-const db = require('./db');
+const db = require('../db');
 
 /**
  * For any active subscription set to auto-renew whose expiry date has
