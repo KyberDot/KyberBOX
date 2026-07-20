@@ -54,7 +54,25 @@
 
     try {
       const formData = new FormData(form);
-      const res = await fetch(form.action, { method: 'POST', body: formData });
+      let body;
+      const headers = {};
+
+      // FormData sent directly always forces multipart/form-data, which
+      // routes without file uploads can't parse (they only understand
+      // application/x-www-form-urlencoded) - that silently left req.body
+      // empty and let "successful" saves write blank/default values.
+      // Only forms that actually declare enctype="multipart/form-data"
+      // (i.e. ones with a file input, handled by multer server-side)
+      // should be sent as multipart; everything else goes urlencoded,
+      // matching what a normal <form> submission would have sent.
+      if (form.enctype === 'multipart/form-data') {
+        body = formData;
+      } else {
+        body = new URLSearchParams(formData);
+        headers['Content-Type'] = 'application/x-www-form-urlencoded';
+      }
+
+      const res = await fetch(form.action, { method: 'POST', body, headers });
       const html = await res.text();
       const doc = new DOMParser().parseFromString(html, 'text/html');
       const newMain = doc.querySelector('main');

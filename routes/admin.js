@@ -95,7 +95,7 @@ router.post('/admin/plans', (req, res) => {
   const price = req.body.price ? Number(req.body.price) : null;
   const currency = String(req.body.currency || 'GBP').trim();
 
-  if (!name) return res.status(400).redirect('/admin/plans');
+  if (!name) return res.status(400).render('error', { message: 'Missing required fields - please fill in everything marked required and try again.' });
 
   const info = db
     .prepare('INSERT INTO plans (name, service, description, features, price, currency) VALUES (?, ?, ?, ?, ?, ?)')
@@ -183,7 +183,7 @@ router.post('/admin/plans/:id/delete', (req, res) => {
 
 router.post('/admin/plans/:id/ssh', (req, res) => {
   const { host, port, username, auth_type, secret } = req.body;
-  if (!host || !username) return res.status(400).redirect('/admin/plans');
+  if (!host || !username) return res.status(400).render('error', { message: 'Missing required fields - please fill in everything marked required and try again.' });
 
   const existing = db.prepare('SELECT * FROM plan_ssh WHERE plan_id = ?').get(req.params.id);
 
@@ -198,7 +198,7 @@ router.post('/admin/plans/:id/ssh', (req, res) => {
       ).run(host, port || 22, username, auth_type || 'password', req.params.id);
     }
   } else {
-    if (!secret) return res.status(400).redirect('/admin/plans');
+    if (!secret) return res.status(400).render('error', { message: 'Missing required fields - please fill in everything marked required and try again.' });
     db.prepare(
       `INSERT INTO plan_ssh (plan_id, host, port, username, auth_type, secret_encrypted) VALUES (?, ?, ?, ?, ?, ?)`
     ).run(req.params.id, host, port || 22, username, auth_type || 'password', encrypt(secret));
@@ -213,7 +213,7 @@ router.post('/admin/plans/:id/actions', (req, res) => {
   const icon = String(req.body.icon || 'fa-rotate').trim();
   const cooldownHours = Math.max(0, parseInt(req.body.cooldown_hours, 10) || 6);
 
-  if (!label || !command) return res.status(400).redirect('/admin/plans');
+  if (!label || !command) return res.status(400).render('error', { message: 'Missing required fields - please fill in everything marked required and try again.' });
 
   db.prepare(
     'INSERT INTO plan_actions (plan_id, label, command, icon, cooldown_hours) VALUES (?, ?, ?, ?, ?)'
@@ -231,7 +231,7 @@ router.post('/admin/plans/:id/containers', (req, res) => {
   const containerName = String(req.body.container_name || '').trim();
   const label = String(req.body.label || containerName).trim();
 
-  if (!containerName) return res.status(400).redirect('/admin/plans');
+  if (!containerName) return res.status(400).render('error', { message: 'Missing required fields - please fill in everything marked required and try again.' });
   if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(containerName)) {
     return res.status(400).render('error', { message: 'Container name can only contain letters, numbers, dots, dashes, and underscores.' });
   }
@@ -264,7 +264,7 @@ router.post('/admin/users/invite', async (req, res) => {
   const expiresAt = String(req.body.expires_at || '').trim() || null;
   const renewalMode = ['auto', 'manual', 'expired'].includes(req.body.renewal_mode) ? req.body.renewal_mode : 'manual';
 
-  if (!name || !email) return res.status(400).redirect('/admin/users');
+  if (!name || !email) return res.status(400).render('error', { message: 'Missing required fields - please fill in everything marked required and try again.' });
 
   const tempPassword = generateTempPassword();
   const hash = bcrypt.hashSync(tempPassword, 12);
@@ -317,7 +317,7 @@ router.post('/admin/users/invite', async (req, res) => {
 router.post('/admin/users/:id/subscription', (req, res) => {
   const { plan_id, status, expires_at, notes, renewal_mode } = req.body;
   const plan = db.prepare('SELECT * FROM plans WHERE id = ?').get(plan_id);
-  if (!plan) return res.status(400).redirect('/admin/users');
+  if (!plan) return res.status(400).render('error', { message: 'Missing required fields - please fill in everything marked required and try again.' });
 
   const mode = ['auto', 'manual', 'expired'].includes(renewal_mode) ? renewal_mode : 'manual';
   // Choosing "Mark as Expired" as the renewal mode is a direct instruction
@@ -374,7 +374,7 @@ router.post('/admin/users/:id/reset-password', async (req, res) => {
 router.post('/admin/users/:id/update', (req, res) => {
   const name = String(req.body.name || '').trim();
   const email = String(req.body.email || '').toLowerCase().trim();
-  if (!name || !email) return res.status(400).redirect('/admin/users');
+  if (!name || !email) return res.status(400).render('error', { message: 'Missing required fields - please fill in everything marked required and try again.' });
 
   try {
     db.prepare('UPDATE users SET name = ?, email = ? WHERE id = ?').run(name, email, req.params.id);
@@ -467,6 +467,11 @@ router.post('/admin/tickets/:id/reply', async (req, res) => {
   res.redirect(`/admin/tickets/${ticket.id}`);
 });
 
+router.post('/admin/tickets/:id/delete', (req, res) => {
+  db.prepare('DELETE FROM tickets WHERE id = ?').run(req.params.id);
+  res.redirect('/admin/tickets');
+});
+
 // ---------- Settings (General, Branding, Mail, Health SSH, Payment Methods) ----------
 
 router.get('/admin/settings', (req, res) => {
@@ -524,7 +529,7 @@ router.post('/admin/settings/branding', (req, res) => {
 
 router.post('/admin/settings/health-ssh', (req, res) => {
   const { host, port, username, auth_type, secret } = req.body;
-  if (!host || !username) return res.status(400).redirect('/admin/settings');
+  if (!host || !username) return res.status(400).render('error', { message: 'Missing required fields - please fill in everything marked required and try again.' });
 
   const existing = db.prepare('SELECT * FROM admin_ssh LIMIT 1').get();
 
@@ -539,7 +544,7 @@ router.post('/admin/settings/health-ssh', (req, res) => {
       ).run(host, port || 22, username, auth_type || 'password', existing.id);
     }
   } else {
-    if (!secret) return res.status(400).redirect('/admin/settings');
+    if (!secret) return res.status(400).render('error', { message: 'Missing required fields - please fill in everything marked required and try again.' });
     db.prepare(
       `INSERT INTO admin_ssh (host, port, username, auth_type, secret_encrypted) VALUES (?, ?, ?, ?, ?)`
     ).run(host, port || 22, username, auth_type || 'password', encrypt(secret));
@@ -584,7 +589,7 @@ router.post('/admin/health/containers', (req, res) => {
     const linkUrl = String(req.body.link_url || '').trim() || null;
     const logoBg = ['default', 'white', 'none'].includes(req.body.logo_bg) ? req.body.logo_bg : 'default';
 
-    if (!containerName) return res.status(400).redirect('/admin/health');
+    if (!containerName) return res.status(400).render('error', { message: 'Missing required fields - please fill in everything marked required and try again.' });
     if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(containerName)) {
       return res.status(400).render('error', { message: 'Container name can only contain letters, numbers, dots, dashes, and underscores.' });
     }
@@ -604,7 +609,7 @@ router.post('/admin/health/containers/:id/update', (req, res) => {
   const linkUrl = String(req.body.link_url || '').trim() || null;
   const logoBg = ['default', 'white', 'none'].includes(req.body.logo_bg) ? req.body.logo_bg : 'default';
 
-  if (!label) return res.status(400).redirect('/admin/health');
+  if (!label) return res.status(400).render('error', { message: 'Missing required fields - please fill in everything marked required and try again.' });
 
   db.prepare('UPDATE admin_health_containers SET label = ?, link_url = ?, logo_bg = ? WHERE id = ?').run(
     label,
