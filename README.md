@@ -16,20 +16,32 @@ existing KyberBOX site and built to work on phones as well as desktop.
   instantly — no per-user server setup.
 - **Pricing & renewal dates** — each plan can have a price in GBP, USD, or
   CAD, shown to subscribers alongside their renewal date.
-- **Payment methods** — admin can add payment methods (name only for now,
-  e.g. "Bank Transfer", "PayPal") and assign one to each client; it shows
-  on their dashboard.
+- **Payment methods** — managed from Admin → Settings (name only for now,
+  e.g. "Bank Transfer", "PayPal"); assign one to each client from Admin →
+  Users and it shows on their dashboard.
 - **Maintenance mode** — admin can flip a plan into maintenance mode with
   an expected resume time (entered in UK time); subscribers on that plan
-  see a banner on login and its action buttons are disabled until it's
-  turned off.
+  see a banner reading e.g. "Plex is under maintenance" and its action
+  buttons are disabled until it's turned off.
 - **Admin Health page** — a global, admin-only view of any container in
   your compose stack (not tied to a single plan), shown as a grid of
-  cards with an optional logo per container, live status, Stop/Restart
-  buttons, and arrows to reorder them. Its SSH access (separate from any
-  plan's own) is configured once from Admin → Settings. A container
-  that's genuinely down (stopped, removed) shows as **Offline**;
-  **Unknown** is reserved for when the server itself can't be reached at all.
+  compact cards. Each container can have a logo (with a choice of dark
+  box, white background for transparent logos, or no border at all), an
+  optional link that opens when its name/image is clicked, a live log
+  snapshot viewer, Stop/Restart, and arrows to reorder them. A **Bulk
+  Actions** mode lets you select several containers and stop/restart them
+  all in one combined command. Its SSH access (separate from any plan's
+  own) is configured once from Admin → Settings. A container that's
+  genuinely down (stopped, removed) shows as **Offline**; **Unknown** is
+  reserved for when the server itself can't be reached at all.
+- **SSH Console** — a command runner auto-authenticated with the same
+  saved server access, for one-off commands without leaving the browser.
+  It runs one command per request (not a full interactive terminal), and
+  keeps a history of what was run and when.
+- **Nothing reloads the page** — creating/editing users, plans, and Health
+  containers all happen in place via background requests, so you stay
+  exactly where you were (scroll position, open sections) instead of
+  bouncing back to the top of a freshly reloaded page.
 - **Everything in UK time** — all dates, renewal dates, cooldown timers,
   and maintenance resume times are displayed in Europe/London time
   (handling BST/GMT automatically), regardless of server or visitor timezone.
@@ -205,6 +217,7 @@ kyberbox-portal/
 ├── routes/admin.js        # Plans, Users, Payment Methods, Tickets, Settings, Health
 ├── views/                 # EJS templates (mobile-responsive, matching KyberBOX design)
 ├── public/                # static assets (logo, default favicon, CSS)
+│   └── js/admin-ajax.js   # shared no-page-refresh form handling for the admin panel
 ├── Dockerfile
 ├── docker-compose.yml         # production - pulls prebuilt image from GHCR
 └── docker-compose.build.yml   # alternative - builds the image locally

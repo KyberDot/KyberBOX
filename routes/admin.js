@@ -56,6 +56,13 @@ function loadUsersPageData() {
   return { users, subsByUser, plans, paymentMethods };
 }
 
+function loadSettingsPageData() {
+  const settings = getAllSettings();
+  const healthSsh = db.prepare('SELECT id, host, port, username, auth_type FROM admin_ssh LIMIT 1').get();
+  const paymentMethods = db.prepare('SELECT * FROM payment_methods ORDER BY name ASC').all();
+  return { settings, healthSsh, paymentMethods };
+}
+
 router.get('/admin', (req, res) => {
   const userCount = db.prepare("SELECT COUNT(*) c FROM users WHERE role = 'subscriber'").get().c;
   const openTickets = db.prepare("SELECT COUNT(*) c FROM tickets WHERE status != 'closed'").get().c;
@@ -390,20 +397,6 @@ router.post('/admin/users/:id/payment-method', (req, res) => {
   res.redirect('/admin/users');
 });
 
-// ---------- Payment Methods ----------
-
-router.post('/admin/payment-methods', (req, res) => {
-  const name = String(req.body.name || '').trim();
-  if (!name) return res.status(400).redirect('/admin/users');
-  db.prepare('INSERT INTO payment_methods (name) VALUES (?)').run(name);
-  res.redirect('/admin/users');
-});
-
-router.post('/admin/payment-methods/:id/delete', (req, res) => {
-  db.prepare('DELETE FROM payment_methods WHERE id = ?').run(req.params.id);
-  res.redirect('/admin/users');
-});
-
 // ---------- Tickets ----------
 
 router.get('/admin/tickets', (req, res) => {
@@ -474,19 +467,16 @@ router.post('/admin/tickets/:id/reply', async (req, res) => {
   res.redirect(`/admin/tickets/${ticket.id}`);
 });
 
-// ---------- Settings ----------
+// ---------- Settings (General, Branding, Mail, Health SSH, Payment Methods) ----------
 
 router.get('/admin/settings', (req, res) => {
-  const settings = getAllSettings();
-  const healthSsh = db.prepare('SELECT id, host, port, username, auth_type FROM admin_ssh LIMIT 1').get();
-  res.render('admin-settings', { settings, healthSsh, saved: null, testResult: null });
+  res.render('admin-settings', { ...loadSettingsPageData(), saved: null, testResult: null, brandingError: null });
 });
 
 router.post('/admin/settings/general', (req, res) => {
   setSetting('site_name', String(req.body.site_name || 'KyberBOX').trim());
   setSetting('site_url', String(req.body.site_url || '').trim());
-  const healthSsh = db.prepare('SELECT id, host, port, username, auth_type FROM admin_ssh LIMIT 1').get();
-  res.render('admin-settings', { settings: getAllSettings(), healthSsh, saved: 'general', testResult: null });
+  res.render('admin-settings', { ...loadSettingsPageData(), saved: 'general', testResult: null, brandingError: null });
 });
 
 router.post('/admin/settings/mail', (req, res) => {
@@ -503,8 +493,7 @@ router.post('/admin/settings/mail', (req, res) => {
   // the settings form always shows this field blank for security.
   if (smtp_pass) setSetting('smtp_pass', smtp_pass);
 
-  const healthSsh = db.prepare('SELECT id, host, port, username, auth_type FROM admin_ssh LIMIT 1').get();
-  res.render('admin-settings', { settings: getAllSettings(), healthSsh, saved: 'mail', testResult: null });
+  res.render('admin-settings', { ...loadSettingsPageData(), saved: 'mail', testResult: null, brandingError: null });
 });
 
 router.post('/admin/settings/test-email', async (req, res) => {
@@ -513,22 +502,13 @@ router.post('/admin/settings/test-email', async (req, res) => {
     subject: 'Test email from your portal',
     bodyHtml: `<p>If you're reading this, your SMTP settings are working correctly.</p>`,
   });
-  const healthSsh = db.prepare('SELECT id, host, port, username, auth_type FROM admin_ssh LIMIT 1').get();
-  res.render('admin-settings', { settings: getAllSettings(), healthSsh, saved: null, testResult: result });
+  res.render('admin-settings', { ...loadSettingsPageData(), saved: null, testResult: result, brandingError: null });
 });
 
 router.post('/admin/settings/branding', (req, res) => {
   brandingUpload(req, res, (err) => {
-    const healthSsh = db.prepare('SELECT id, host, port, username, auth_type FROM admin_ssh LIMIT 1').get();
-
     if (err) {
-      return res.status(400).render('admin-settings', {
-        settings: getAllSettings(),
-        healthSsh,
-        saved: null,
-        testResult: null,
-        brandingError: err.message,
-      });
+      return res.status(400).render('admin-settings', { ...loadSettingsPageData(), saved: null, testResult: null, brandingError: err.message });
     }
 
     if (req.files && req.files.favicon && req.files.favicon[0]) {
@@ -538,7 +518,7 @@ router.post('/admin/settings/branding', (req, res) => {
       setSetting('apple_icon_path', `/uploads/${req.files.apple_icon[0].filename}`);
     }
 
-    res.render('admin-settings', { settings: getAllSettings(), healthSsh, saved: 'branding', testResult: null, brandingError: null });
+    res.render('admin-settings', { ...loadSettingsPageData(), saved: 'branding', testResult: null, brandingError: null });
   });
 });
 
@@ -565,8 +545,18 @@ router.post('/admin/settings/health-ssh', (req, res) => {
     ).run(host, port || 22, username, auth_type || 'password', encrypt(secret));
   }
 
-  const healthSsh = db.prepare('SELECT id, host, port, username, auth_type FROM admin_ssh LIMIT 1').get();
-  res.render('admin-settings', { settings: getAllSettings(), healthSsh, saved: 'health-ssh', testResult: null });
+  res.render('admin-settings', { ...loadSettingsPageData(), saved: 'health-ssh', testResult: null, brandingError: null });
+});
+
+router.post('/admin/settings/payment-methods', (req, res) => {
+  const name = String(req.body.name || '').trim();
+  if (name) db.prepare('INSERT INTO payment_methods (name) VALUES (?)').run(name);
+  res.render('admin-settings', { ...loadSettingsPageData(), saved: 'payment-method', testResult: null, brandingError: null });
+});
+
+router.post('/admin/settings/payment-methods/:id/delete', (req, res) => {
+  db.prepare('DELETE FROM payment_methods WHERE id = ?').run(req.params.id);
+  res.render('admin-settings', { ...loadSettingsPageData(), saved: null, testResult: null, brandingError: null });
 });
 
 // ---------- Health (admin-wide container monitor) ----------
@@ -591,6 +581,8 @@ router.post('/admin/health/containers', (req, res) => {
 
     const containerName = String(req.body.container_name || '').trim();
     const label = String(req.body.label || containerName).trim();
+    const linkUrl = String(req.body.link_url || '').trim() || null;
+    const logoBg = ['default', 'white', 'none'].includes(req.body.logo_bg) ? req.body.logo_bg : 'default';
 
     if (!containerName) return res.status(400).redirect('/admin/health');
     if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(containerName)) {
@@ -600,14 +592,27 @@ router.post('/admin/health/containers', (req, res) => {
     const maxOrder = db.prepare('SELECT MAX(sort_order) AS m FROM admin_health_containers').get().m || 0;
     const logoPath = req.file ? `/uploads/${req.file.filename}` : null;
 
-    db.prepare('INSERT INTO admin_health_containers (container_name, label, logo_path, sort_order) VALUES (?, ?, ?, ?)').run(
-      containerName,
-      label,
-      logoPath,
-      maxOrder + 1
-    );
+    db.prepare(
+      'INSERT INTO admin_health_containers (container_name, label, logo_path, link_url, logo_bg, sort_order) VALUES (?, ?, ?, ?, ?, ?)'
+    ).run(containerName, label, logoPath, linkUrl, logoBg, maxOrder + 1);
     res.redirect('/admin/health');
   });
+});
+
+router.post('/admin/health/containers/:id/update', (req, res) => {
+  const label = String(req.body.label || '').trim();
+  const linkUrl = String(req.body.link_url || '').trim() || null;
+  const logoBg = ['default', 'white', 'none'].includes(req.body.logo_bg) ? req.body.logo_bg : 'default';
+
+  if (!label) return res.status(400).redirect('/admin/health');
+
+  db.prepare('UPDATE admin_health_containers SET label = ?, link_url = ?, logo_bg = ? WHERE id = ?').run(
+    label,
+    linkUrl,
+    logoBg,
+    req.params.id
+  );
+  res.redirect('/admin/health');
 });
 
 router.post('/admin/health/containers/:id/logo', (req, res) => {
@@ -668,6 +673,22 @@ router.get('/admin/health/status', async (req, res) => {
   });
 });
 
+// Snapshot log viewer (not a live stream) - fetches the most recent lines
+// each time it's called. The page polls this on an interval to approximate
+// "follow" behaviour without needing a persistent streaming connection.
+router.get('/admin/health/containers/:id/logs', async (req, res) => {
+  const container = db.prepare('SELECT * FROM admin_health_containers WHERE id = ?').get(req.params.id);
+  if (!container) return res.status(404).json({ ok: false, message: 'Container not found.' });
+
+  const target = db.prepare('SELECT * FROM admin_ssh LIMIT 1').get();
+  if (!target) return res.status(400).json({ ok: false, message: 'No admin SSH access configured yet. Set it up in Settings first.' });
+
+  const command = `docker logs --tail 200 --timestamps '${container.container_name}' 2>&1`;
+  const result = await runCommand(target, command);
+
+  res.json({ ok: true, output: result.output, label: container.label });
+});
+
 async function handleHealthAction(req, res, action) {
   const container = db.prepare('SELECT * FROM admin_health_containers WHERE id = ?').get(req.params.id);
   if (!container) return res.status(404).json({ ok: false, message: 'Container not found.' });
@@ -694,5 +715,76 @@ async function handleHealthAction(req, res, action) {
 
 router.post('/admin/health/containers/:id/stop', (req, res) => handleHealthAction(req, res, 'stop'));
 router.post('/admin/health/containers/:id/restart', (req, res) => handleHealthAction(req, res, 'restart'));
+
+// Bulk action - runs ONE combined command (e.g. "docker restart a b c") over
+// a single SSH connection instead of one call per container.
+router.post('/admin/health/containers/bulk-action', async (req, res) => {
+  const action = req.body.action === 'stop' ? 'stop' : 'restart';
+  const ids = Array.isArray(req.body.ids) ? req.body.ids : [req.body.ids].filter(Boolean);
+
+  if (ids.length === 0) return res.status(400).json({ ok: false, message: 'No containers selected.' });
+
+  const containers = db
+    .prepare(`SELECT * FROM admin_health_containers WHERE id IN (${ids.map(() => '?').join(',')})`)
+    .all(...ids);
+
+  if (containers.length === 0) return res.status(400).json({ ok: false, message: 'No matching containers found.' });
+
+  const target = db.prepare('SELECT * FROM admin_ssh LIMIT 1').get();
+  if (!target) {
+    return res.status(400).json({ ok: false, message: 'No admin SSH access configured yet. Set it up in Settings first.' });
+  }
+
+  const names = containers.map((c) => `'${c.container_name}'`).join(' ');
+  const command = `docker ${action} ${names}`;
+  const result = await runCommand(target, command);
+
+  containers.forEach((c) => {
+    db.prepare(
+      'INSERT INTO admin_health_log (admin_user_id, container_name, action, success, output) VALUES (?, ?, ?, ?, ?)'
+    ).run(req.user.id, c.container_name, action, result.success ? 1 : 0, result.output);
+  });
+
+  res.json({
+    ok: result.success,
+    message: result.success
+      ? `${action === 'stop' ? 'Stopped' : 'Restarted'} ${containers.length} container(s) successfully.`
+      : `Bulk ${action} failed: ${result.output}`,
+  });
+});
+
+// ---------- SSH Console ----------
+// A direct command runner against the admin-wide SSH target, auto-authenticated
+// with the credentials already stored in Settings - no separate login step.
+// This runs one command per request (not a full interactive shell/PTY).
+
+router.get('/admin/ssh-console', (req, res) => {
+  const sshConfigured = !!db.prepare('SELECT id FROM admin_ssh LIMIT 1').get();
+  const history = db
+    .prepare('SELECT * FROM ssh_console_log ORDER BY requested_at DESC LIMIT 25')
+    .all();
+  res.render('admin-ssh-console', { sshConfigured, history });
+});
+
+router.post('/admin/ssh-console/run', async (req, res) => {
+  const command = String(req.body.command || '').trim();
+  if (!command) return res.status(400).json({ ok: false, message: 'Enter a command to run.' });
+
+  const target = db.prepare('SELECT * FROM admin_ssh LIMIT 1').get();
+  if (!target) {
+    return res.status(400).json({ ok: false, message: 'No admin SSH access configured yet. Set it up in Settings first.' });
+  }
+
+  const result = await runCommand(target, command);
+
+  db.prepare('INSERT INTO ssh_console_log (admin_user_id, command, success, output) VALUES (?, ?, ?, ?)').run(
+    req.user.id,
+    command,
+    result.success ? 1 : 0,
+    result.output
+  );
+
+  res.json({ ok: result.success, output: result.output });
+});
 
 module.exports = router;

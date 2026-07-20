@@ -31,27 +31,6 @@
             </div>
         <% } %>
 
-        <!-- Payment Methods -->
-        <div class="glass rounded-3xl p-6 sm:p-8 mb-8">
-            <h2 class="text-lg font-bold text-white mb-4"><i class="fas fa-credit-card mr-2 text-sky-400"></i>Payment Methods</h2>
-            <p class="text-slate-400 text-sm mb-4">Names only for now — assign one to each client below.</p>
-            <div class="flex flex-wrap gap-2 mb-4">
-                <% paymentMethods.forEach(function(pm) { %>
-                    <form method="POST" action="/admin/payment-methods/<%= pm.id %>/delete" onsubmit="return confirm('Delete this payment method? Any clients using it will be unassigned.');" class="flex items-center gap-2 bg-slate-900/40 rounded-lg px-3 py-2 text-xs text-slate-300">
-                        <span><%= pm.name %></span>
-                        <button class="text-red-400 hover:text-red-300"><i class="fas fa-trash"></i></button>
-                    </form>
-                <% }); %>
-                <% if (paymentMethods.length === 0) { %>
-                    <p class="text-slate-500 text-sm">No payment methods added yet.</p>
-                <% } %>
-            </div>
-            <form method="POST" action="/admin/payment-methods" class="flex flex-col sm:flex-row gap-3">
-                <input type="text" name="name" required class="input" placeholder="Payment method name (e.g. Bank Transfer, PayPal)">
-                <button type="submit" class="btn-primary py-3 rounded-xl text-sm whitespace-nowrap">Add Method</button>
-            </form>
-        </div>
-
         <!-- Invite trigger -->
         <div class="flex justify-end mb-8">
             <button type="button" onclick="openModal('inviteModal')" class="btn-primary px-6 py-3 rounded-xl text-sm">
@@ -80,18 +59,18 @@
                         </div>
                     </div>
 
-                    <details class="mb-2">
+                    <details class="mb-2" data-ajax-key="user-<%= u.id %>-edit">
                         <summary class="cursor-pointer text-sky-400 text-xs font-semibold uppercase tracking-wide">Edit Details</summary>
-                        <form method="POST" action="/admin/users/<%= u.id %>/update" class="grid sm:grid-cols-3 gap-3 mt-3">
+                        <form method="POST" action="/admin/users/<%= u.id %>/update" data-ajax-form class="grid sm:grid-cols-3 gap-3 mt-3">
                             <input type="text" name="name" required class="input" value="<%= u.name %>" placeholder="Full name">
                             <input type="email" name="email" required class="input sm:col-span-2" value="<%= u.email %>" placeholder="Email address">
                             <button type="submit" class="btn-primary rounded-xl text-sm sm:col-span-3">Save Details</button>
                         </form>
                     </details>
 
-                    <details class="mb-2">
+                    <details class="mb-2" data-ajax-key="user-<%= u.id %>-plan">
                         <summary class="cursor-pointer text-sky-400 text-xs font-semibold uppercase tracking-wide">Assign / Manage Plan</summary>
-                        <form method="POST" action="/admin/users/<%= u.id %>/subscription" class="grid sm:grid-cols-4 gap-3 mt-3">
+                        <form method="POST" action="/admin/users/<%= u.id %>/subscription" data-ajax-form class="grid sm:grid-cols-4 gap-3 mt-3">
                             <select name="plan_id" required class="input sm:col-span-2">
                                 <option value="">Choose a plan…</option>
                                 <% plans.forEach(function(p) { %>
@@ -114,22 +93,22 @@
                         <% if ((subsByUser[u.id] || []).length > 0) { %>
                             <div class="mt-3 space-y-1">
                                 <% subsByUser[u.id].forEach(function(s) { %>
-                                    <form method="POST" action="/admin/users/<%= u.id %>/subscription/<%= s.id %>/delete" class="flex items-center justify-between text-xs text-slate-500 bg-slate-900/40 rounded-lg px-3 py-2 gap-2">
+                                    <form method="POST" action="/admin/users/<%= u.id %>/subscription/<%= s.id %>/delete" data-ajax-form class="flex items-center justify-between text-xs text-slate-500 bg-slate-900/40 rounded-lg px-3 py-2 gap-2">
                                         <span class="truncate">
                                             <%= s.plan_display_name || s.plan_name %> (<%= s.status %>)
                                             <% if (s.expires_at) { %> — <%= s.renewal_mode === 'auto' ? 'auto-renews' : 'renews' %> <%= formatUKDate(s.expires_at) %><% } %>
                                             <% if (s.renewal_mode) { %> <span class="text-slate-600">[<%= s.renewal_mode %>]</span><% } %>
                                         </span>
-                                        <button class="text-red-400 hover:text-red-300 flex-shrink-0"><i class="fas fa-trash"></i></button>
+                                        <button type="submit" class="text-red-400 hover:text-red-300 flex-shrink-0"><i class="fas fa-trash"></i></button>
                                     </form>
                                 <% }); %>
                             </div>
                         <% } %>
                     </details>
 
-                    <details class="mb-2">
+                    <details class="mb-2" data-ajax-key="user-<%= u.id %>-payment">
                         <summary class="cursor-pointer text-sky-400 text-xs font-semibold uppercase tracking-wide">Payment Method</summary>
-                        <form method="POST" action="/admin/users/<%= u.id %>/payment-method" class="flex flex-col sm:flex-row gap-3 mt-3">
+                        <form method="POST" action="/admin/users/<%= u.id %>/payment-method" data-ajax-form class="flex flex-col sm:flex-row gap-3 mt-3">
                             <select name="payment_method_id" class="input">
                                 <option value="">None</option>
                                 <% paymentMethods.forEach(function(pm) { %>
@@ -138,14 +117,15 @@
                             </select>
                             <button type="submit" class="btn-primary py-3 rounded-xl text-sm whitespace-nowrap">Save</button>
                         </form>
+                        <p class="text-slate-500 text-xs mt-2">Manage the list of payment methods from <a href="/admin/settings" class="text-sky-400 hover:text-sky-300">Settings</a>.</p>
                     </details>
 
                     <div class="flex flex-wrap gap-4 mt-4 text-xs">
-                        <form method="POST" action="/admin/users/<%= u.id %>/reset-password" onsubmit="return confirm('Reset this user\'s password?');">
-                            <button class="text-amber-400 hover:text-amber-300"><i class="fas fa-key mr-1"></i>Reset Password</button>
+                        <form method="POST" action="/admin/users/<%= u.id %>/reset-password" data-ajax-form data-confirm="Reset this user's password?">
+                            <button type="submit" class="text-amber-400 hover:text-amber-300"><i class="fas fa-key mr-1"></i>Reset Password</button>
                         </form>
-                        <form method="POST" action="/admin/users/<%= u.id %>/delete" onsubmit="return confirm('Delete this user permanently? This cannot be undone.');">
-                            <button class="text-red-400 hover:text-red-300"><i class="fas fa-user-slash mr-1"></i>Delete User</button>
+                        <form method="POST" action="/admin/users/<%= u.id %>/delete" data-ajax-form data-confirm="Delete this user permanently? This cannot be undone.">
+                            <button type="submit" class="text-red-400 hover:text-red-300"><i class="fas fa-user-slash mr-1"></i>Delete User</button>
                         </form>
                     </div>
                 </div>
@@ -154,73 +134,53 @@
                 <p class="text-slate-500 text-sm">No clients yet — invite your first one above.</p>
             <% } %>
         </div>
-    </main>
 
-    <!-- Invite Modal -->
-    <div id="inviteModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden items-center justify-center z-50 px-4 py-8 overflow-y-auto">
-        <div class="glass rounded-3xl p-6 sm:p-8 max-w-lg w-full my-auto">
-            <div class="flex items-center justify-between mb-5">
-                <h3 class="text-lg font-bold text-white"><i class="fas fa-user-plus mr-2 text-sky-400"></i>Invite a New Client</h3>
-                <button type="button" onclick="closeModal('inviteModal')" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5">
-                    <i class="fas fa-xmark"></i>
-                </button>
-            </div>
-            <form method="POST" action="/admin/users/invite" class="grid sm:grid-cols-2 gap-4">
-                <input type="text" name="name" required class="input sm:col-span-2" placeholder="Full name">
-                <input type="email" name="email" required class="input sm:col-span-2" placeholder="Email address">
-
-                <select name="plan_id" class="input sm:col-span-2">
-                    <option value="">No plan yet (assign later)</option>
-                    <% plans.forEach(function(p) { %>
-                        <option value="<%= p.id %>"><%= p.name %> (<%= p.service %>)</option>
-                    <% }); %>
-                </select>
-
-                <select name="payment_method_id" class="input sm:col-span-2">
-                    <option value="">No payment method yet</option>
-                    <% paymentMethods.forEach(function(pm) { %>
-                        <option value="<%= pm.id %>"><%= pm.name %></option>
-                    <% }); %>
-                </select>
-
-                <div>
-                    <label class="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-1.5 block">Renewal Date</label>
-                    <input type="date" name="expires_at" class="input">
+        <!-- Invite Modal -->
+        <div id="inviteModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden items-center justify-center z-50 px-4 py-8 overflow-y-auto">
+            <div class="glass rounded-3xl p-6 sm:p-8 max-w-lg w-full my-auto">
+                <div class="flex items-center justify-between mb-5">
+                    <h3 class="text-lg font-bold text-white"><i class="fas fa-user-plus mr-2 text-sky-400"></i>Invite a New Client</h3>
+                    <button type="button" onclick="closeModal('inviteModal')" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5">
+                        <i class="fas fa-xmark"></i>
+                    </button>
                 </div>
-                <div>
-                    <label class="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-1.5 block">Renewal Method</label>
-                    <select name="renewal_mode" class="input">
-                        <option value="manual">Manual renewal</option>
-                        <option value="auto">Auto-renew monthly</option>
-                        <option value="expired">Mark as expired now</option>
+                <form method="POST" action="/admin/users/invite" data-ajax-form class="grid sm:grid-cols-2 gap-4">
+                    <input type="text" name="name" required class="input sm:col-span-2" placeholder="Full name">
+                    <input type="email" name="email" required class="input sm:col-span-2" placeholder="Email address">
+
+                    <select name="plan_id" class="input sm:col-span-2">
+                        <option value="">No plan yet (assign later)</option>
+                        <% plans.forEach(function(p) { %>
+                            <option value="<%= p.id %>"><%= p.name %> (<%= p.service %>)</option>
+                        <% }); %>
                     </select>
-                </div>
 
-                <button type="submit" class="btn-primary py-3 rounded-xl text-sm sm:col-span-2 mt-2">
-                    <i class="fas fa-paper-plane mr-2"></i>Create Account
-                </button>
-            </form>
+                    <select name="payment_method_id" class="input sm:col-span-2">
+                        <option value="">No payment method yet</option>
+                        <% paymentMethods.forEach(function(pm) { %>
+                            <option value="<%= pm.id %>"><%= pm.name %></option>
+                        <% }); %>
+                    </select>
+
+                    <div>
+                        <label class="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-1.5 block">Renewal Date</label>
+                        <input type="date" name="expires_at" class="input">
+                    </div>
+                    <div>
+                        <label class="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-1.5 block">Renewal Method</label>
+                        <select name="renewal_mode" class="input">
+                            <option value="manual">Manual renewal</option>
+                            <option value="auto">Auto-renew monthly</option>
+                            <option value="expired">Mark as expired now</option>
+                        </select>
+                    </div>
+
+                    <button type="submit" class="btn-primary py-3 rounded-xl text-sm sm:col-span-2 mt-2">
+                        <i class="fas fa-paper-plane mr-2"></i>Create Account
+                    </button>
+                </form>
+            </div>
         </div>
-    </div>
-
-    <script>
-        function openModal(id) {
-            const m = document.getElementById(id);
-            if (!m) return;
-            m.classList.remove('hidden');
-            m.classList.add('flex');
-        }
-        function closeModal(id) {
-            const m = document.getElementById(id);
-            if (!m) return;
-            m.classList.add('hidden');
-            m.classList.remove('flex');
-        }
-        <% if (newUser) { %>
-        // A client was just created - the modal would otherwise be closed on
-        // page reload, but there's nothing to reopen since the credentials
-        // banner above already shows what's needed.
-        <% } %>
-    </script>
+    </main>
 </body>
 </html>

@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <% pageTitle = 'SSH Console' %>
+    <%- include('partials/head') %>
+</head>
+<body class="antialiased overflow-x-hidden">
+    <%- include('partials/nav') %>
+
+    <main class="max-w-4xl mx-auto px-4 sm:px-6 py-8 sm:py-10 pb-24">
+        <h1 class="text-2xl sm:text-3xl font-extrabold mb-2">SSH Console</h1>
+        <p class="text-slate-400 text-sm mb-8">Run commands directly against your server, auto-authenticated with the SSH access already saved in Settings — no separate login needed. Each command runs once and returns its output; this isn't a full interactive terminal.</p>
+
+        <% if (!sshConfigured) { %>
+            <div class="mb-8 px-4 sm:px-5 py-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400 text-sm flex items-center justify-between flex-wrap gap-3">
+                <span><i class="fas fa-triangle-exclamation mr-2"></i>No server access configured yet.</span>
+                <a href="/admin/settings" class="btn-amber px-4 py-2 rounded-lg text-xs whitespace-nowrap">Set Up in Settings</a>
+            </div>
+        <% } %>
+
+        <div class="glass rounded-2xl sm:rounded-3xl p-5 sm:p-8 mb-8">
+            <div class="flex items-center gap-2 mb-3">
+                <span class="w-2 h-2 rounded-full <%= sshConfigured ? 'bg-emerald-400' : 'bg-slate-600' %>"></span>
+                <span class="text-xs text-slate-400"><%= sshConfigured ? 'Connected using saved admin server access' : 'Not connected' %></span>
+            </div>
+            <div id="consoleOutput" class="console-output mb-4"><span class="console-prompt">$</span> Ready. Type a command below and press Run.</div>
+            <form id="consoleForm" class="flex flex-col sm:flex-row gap-3">
+                <input type="text" id="commandInput" name="command" autocomplete="off" spellcheck="false" class="input font-mono text-sm flex-1" placeholder="e.g. docker ps" <%= sshConfigured ? '' : 'disabled' %>>
+                <button type="submit" class="btn-primary px-6 py-3 rounded-xl text-sm whitespace-nowrap" <%= sshConfigured ? '' : 'disabled' %>>
+                    <i class="fas fa-play mr-2"></i>Run
+                </button>
+            </form>
+        </div>
+
+        <h2 class="text-sm uppercase tracking-widest text-slate-500 font-bold mb-4">Recent Commands</h2>
+        <div class="glass rounded-2xl overflow-x-auto">
+            <% if (history.length === 0) { %>
+                <p class="text-slate-500 text-sm p-6">No commands run yet.</p>
+            <% } else { %>
+                <table class="kb-table min-w-[560px]">
+                    <thead><tr><th>Command</th><th>Time (UK)</th><th>Result</th></tr></thead>
+                    <tbody>
+                        <% history.forEach(function(h) { %>
+                            <tr>
+                                <td class="text-slate-300 font-mono text-xs"><%= h.command %></td>
+                                <td class="text-slate-500 text-xs"><%= formatUK(h.requested_at) %></td>
+                                <td><span class="badge <%= h.success ? 'badge-active' : 'badge-expired' %>"><%= h.success ? 'Success' : 'Failed' %></span></td>
+                            </tr>
+                        <% }); %>
+                    </tbody>
+                </table>
+            <% } %>
+        </div>
+    </main>
+
+    <script>
+        const form = document.getElementById('consoleForm');
+        const input = document.getElementById('commandInput');
+        const output = document.getElementById('consoleOutput');
+
+        function appendLine(html) {
+            const line = document.createElement('div');
+            line.innerHTML = html;
+            output.appendChild(line);
+            output.scrollTop = output.scrollHeight;
+        }
+
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        if (form) {
+            form.addEventListener('submit', async function (e) {
+                e.preventDefault();
+                const command = input.value.trim();
+                if (!command) return;
+
+                appendLine('<span class="console-prompt">$</span> ' + escapeHtml(command));
+                input.value = '';
+                input.disabled = true;
+
+                try {
+                    const res = await fetch('/admin/ssh-console/run', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: 'command=' + encodeURIComponent(command),
+                    });
+                    const data = await res.json();
+                    appendLine(escapeHtml(data.output || (data.ok ? '(no output)' : data.message || 'Command failed.')));
+                } catch (err) {
+                    appendLine('<span style="color:#f87171;">Something went wrong sending that command.</span>');
+                } finally {
+                    input.disabled = false;
+                    input.focus();
+                }
+            });
+        }
+    </script>
+</body>
+</html>

@@ -31,7 +31,7 @@
         <!-- General -->
         <div class="glass rounded-2xl sm:rounded-3xl p-5 sm:p-8 mb-8">
             <h2 class="text-lg font-bold text-white mb-4"><i class="fas fa-sliders mr-2 text-sky-400"></i>General</h2>
-            <form method="POST" action="/admin/settings/general" class="space-y-4">
+            <form method="POST" action="/admin/settings/general" data-ajax-form class="space-y-4">
                 <div>
                     <label class="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-2 block">Site Name</label>
                     <input type="text" name="site_name" class="input" value="<%= settings.site_name %>">
@@ -49,14 +49,14 @@
         <div class="glass rounded-2xl sm:rounded-3xl p-5 sm:p-8 mb-8">
             <h2 class="text-lg font-bold text-white mb-1"><i class="fas fa-icons mr-2 text-sky-400"></i>Branding</h2>
             <p class="text-slate-400 text-sm mb-4">Browser favicon, and the icon used when a client adds this site to their iPhone home screen via Safari.</p>
-            <form method="POST" action="/admin/settings/branding" enctype="multipart/form-data" class="grid sm:grid-cols-2 gap-6">
+            <form method="POST" action="/admin/settings/branding" enctype="multipart/form-data" data-ajax-form class="grid sm:grid-cols-2 gap-6">
                 <div>
                     <label class="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-2 block">Favicon</label>
                     <div class="flex items-center gap-3 mb-3">
                         <img src="<%= faviconPath %>" alt="Current favicon" class="w-8 h-8 rounded bg-slate-800 object-contain">
                         <span class="text-slate-500 text-xs">Current favicon</span>
                     </div>
-                    <input type="file" name="favicon" accept="image/png,image/x-icon,image/vnd.microsoft.icon,.ico,image/svg+xml" class="input text-xs">
+                    <input type="file" name="favicon" accept="image/png,image/x-icon,image/vnd.microsoft.icon,.ico,image/svg+xml">
                     <p class="text-slate-500 text-xs mt-2">PNG or ICO recommended, square, at least 32×32.</p>
                 </div>
                 <div>
@@ -65,7 +65,7 @@
                         <img src="<%= appleIconPath %>" alt="Current apple touch icon" class="w-8 h-8 rounded bg-slate-800 object-contain">
                         <span class="text-slate-500 text-xs">Current icon</span>
                     </div>
-                    <input type="file" name="apple_icon" accept="image/png,image/jpeg" class="input text-xs">
+                    <input type="file" name="apple_icon" accept="image/png,image/jpeg">
                     <p class="text-slate-500 text-xs mt-2">PNG recommended, square, 180×180 works best - this is what shows on a client's phone when they add the site to their home screen in Safari.</p>
                 </div>
                 <button type="submit" class="btn-primary px-6 py-3 rounded-xl text-sm sm:col-span-2">
@@ -76,9 +76,9 @@
 
         <!-- Health Page SSH -->
         <div class="glass rounded-2xl sm:rounded-3xl p-5 sm:p-8 mb-8">
-            <h2 class="text-lg font-bold text-white mb-1"><i class="fas fa-terminal mr-2 text-sky-400"></i>Server Access (Health Page)</h2>
-            <p class="text-slate-400 text-sm mb-4">Used by Admin → Health to check container status and run Stop/Restart. Separate from any plan's own SSH access.</p>
-            <form method="POST" action="/admin/settings/health-ssh" class="grid sm:grid-cols-3 gap-3">
+            <h2 class="text-lg font-bold text-white mb-1"><i class="fas fa-terminal mr-2 text-sky-400"></i>Server Access (Health &amp; SSH Console)</h2>
+            <p class="text-slate-400 text-sm mb-4">Used by Admin → Health and Admin → SSH Console to check container status and run commands. Separate from any plan's own SSH access.</p>
+            <form method="POST" action="/admin/settings/health-ssh" data-ajax-form class="grid sm:grid-cols-3 gap-3">
                 <input type="text" name="host" required class="input" placeholder="Host / IP" value="<%= healthSsh ? healthSsh.host : '' %>">
                 <input type="number" name="port" class="input" placeholder="Port (22)" value="<%= healthSsh ? healthSsh.port : 22 %>">
                 <input type="text" name="username" required class="input" placeholder="SSH username" value="<%= healthSsh ? healthSsh.username : '' %>">
@@ -91,14 +91,35 @@
                     <i class="fas fa-lock mr-2"></i>Save (encrypted at rest)
                 </button>
             </form>
-            <p class="text-slate-500 text-xs mt-4">Manage which containers show up on the Health page from <a href="/admin/health" class="text-sky-400 hover:text-sky-300">Admin → Health</a>.</p>
+            <p class="text-slate-500 text-xs mt-4">Manage which containers show up on the Health page from <a href="/admin/health" class="text-sky-400 hover:text-sky-300">Admin → Health</a>, or run one-off commands from <a href="/admin/ssh-console" class="text-sky-400 hover:text-sky-300">Admin → SSH Console</a>.</p>
+        </div>
+
+        <!-- Payment Methods -->
+        <div class="glass rounded-2xl sm:rounded-3xl p-5 sm:p-8 mb-8">
+            <h2 class="text-lg font-bold text-white mb-1"><i class="fas fa-credit-card mr-2 text-sky-400"></i>Payment Methods</h2>
+            <p class="text-slate-400 text-sm mb-4">Names only for now — assign one to each client from Admin → Users.</p>
+            <div class="flex flex-wrap gap-2 mb-4">
+                <% paymentMethods.forEach(function(pm) { %>
+                    <form method="POST" action="/admin/settings/payment-methods/<%= pm.id %>/delete" data-ajax-form data-confirm="Delete this payment method? Any clients using it will be unassigned." class="flex items-center gap-2 bg-slate-900/40 rounded-lg px-3 py-2 text-xs text-slate-300">
+                        <span><%= pm.name %></span>
+                        <button type="submit" class="text-red-400 hover:text-red-300"><i class="fas fa-trash"></i></button>
+                    </form>
+                <% }); %>
+                <% if (paymentMethods.length === 0) { %>
+                    <p class="text-slate-500 text-sm">No payment methods added yet.</p>
+                <% } %>
+            </div>
+            <form method="POST" action="/admin/settings/payment-methods" data-ajax-form class="flex flex-col sm:flex-row gap-3">
+                <input type="text" name="name" required class="input" placeholder="Payment method name (e.g. Bank Transfer, PayPal)">
+                <button type="submit" class="btn-primary py-3 rounded-xl text-sm whitespace-nowrap">Add Method</button>
+            </form>
         </div>
 
         <!-- Mail -->
         <div class="glass rounded-2xl sm:rounded-3xl p-5 sm:p-8 mb-8">
             <h2 class="text-lg font-bold text-white mb-1"><i class="fas fa-envelope mr-2 text-sky-400"></i>Mail (SMTP)</h2>
             <p class="text-slate-400 text-sm mb-4">Used for client invites, password resets, ticket notifications, and maintenance-mode alerts.</p>
-            <form method="POST" action="/admin/settings/mail" class="grid md:grid-cols-2 gap-4">
+            <form method="POST" action="/admin/settings/mail" data-ajax-form class="grid md:grid-cols-2 gap-4">
                 <input type="text" name="smtp_host" class="input" placeholder="SMTP host (e.g. smtp.gmail.com)" value="<%= settings.smtp_host %>">
                 <input type="number" name="smtp_port" class="input" placeholder="Port (587)" value="<%= settings.smtp_port %>">
                 <input type="text" name="smtp_user" class="input" placeholder="SMTP username" value="<%= settings.smtp_user %>">
@@ -111,7 +132,7 @@
                 </label>
                 <button type="submit" class="btn-primary px-6 py-3 rounded-xl text-sm md:col-span-2">Save Mail Settings</button>
             </form>
-            <form method="POST" action="/admin/settings/test-email" class="mt-4">
+            <form method="POST" action="/admin/settings/test-email" data-ajax-form class="mt-4">
                 <button type="submit" class="btn-outline px-6 py-3 rounded-xl text-sm">
                     <i class="fas fa-paper-plane mr-2"></i>Send Test Email to Myself
                 </button>

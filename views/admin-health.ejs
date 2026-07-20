@@ -18,28 +18,62 @@
             </div>
         <% } %>
 
-        <!-- Add container trigger -->
+        <!-- Toolbar -->
         <div class="flex items-center justify-between mb-6 flex-wrap gap-3">
             <h2 class="text-sm uppercase tracking-widest text-slate-500 font-bold">Containers (<%= containers.length %>)</h2>
-            <button type="button" onclick="openModal('addContainerModal')" class="btn-primary px-5 py-2.5 rounded-xl text-sm">
-                <i class="fas fa-plus mr-2"></i>Add Container
-            </button>
+            <div class="flex items-center gap-2">
+                <button type="button" id="bulkModeToggle" onclick="toggleBulkMode()" class="btn-outline px-4 py-2.5 rounded-xl text-sm">
+                    <i class="fas fa-check-double mr-2"></i>Bulk Actions
+                </button>
+                <button type="button" onclick="openModal('addContainerModal')" class="btn-primary px-5 py-2.5 rounded-xl text-sm">
+                    <i class="fas fa-plus mr-2"></i>Add Container
+                </button>
+            </div>
+        </div>
+
+        <!-- Bulk action bar (shown only in bulk mode) -->
+        <div id="bulkActionBar" class="hidden mb-4 glass rounded-2xl p-4 flex items-center justify-between flex-wrap gap-3">
+            <span class="text-sm text-slate-300"><span id="bulkSelectedCount">0</span> selected</span>
+            <div class="flex items-center gap-2">
+                <button type="button" onclick="runBulkAction('stop')" class="btn-outline px-4 py-2 rounded-lg text-sm">
+                    <i class="fas fa-stop mr-2"></i>Stop Selected
+                </button>
+                <button type="button" onclick="runBulkAction('restart')" class="btn-amber px-4 py-2 rounded-lg text-sm">
+                    <i class="fas fa-rotate mr-2"></i>Restart Selected
+                </button>
+            </div>
         </div>
 
         <!-- Containers -->
-        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4 mb-6" id="healthContainerList">
+        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4 mb-6" id="healthContainerList" data-bulk-mode="off">
             <% containers.forEach(function(c, index) { %>
-                <div class="glass rounded-2xl p-3 sm:p-4 flex flex-col items-center text-center gap-2" data-container-row data-container-id="<%= c.id %>">
-                    <div class="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-slate-900/60 border border-white/10 flex items-center justify-center overflow-hidden flex-shrink-0">
-                        <% if (c.logo_path) { %>
-                            <img src="<%= c.logo_path %>" alt="<%= c.label %>" class="w-full h-full object-cover">
-                        <% } else { %>
-                            <i class="fas fa-cube text-slate-600 text-lg"></i>
-                        <% } %>
-                    </div>
+                <div class="glass rounded-2xl p-3 sm:p-4 flex flex-col items-center text-center gap-2 relative" data-container-row data-container-id="<%= c.id %>">
+                    <input type="checkbox" class="bulk-select-checkbox absolute top-2 left-2 w-4 h-4 accent-sky-500" data-bulk-checkbox value="<%= c.id %>">
+
+                    <% if (c.link_url) { %>
+                        <a href="<%= c.link_url %>" target="_blank" rel="noopener noreferrer" class="w-11 h-11 sm:w-12 sm:h-12 rounded-xl logo-box-<%= c.logo_bg || 'default' %> flex items-center justify-center overflow-hidden flex-shrink-0">
+                            <% if (c.logo_path) { %>
+                                <img src="<%= c.logo_path %>" alt="<%= c.label %>" class="w-full h-full object-cover">
+                            <% } else { %>
+                                <i class="fas fa-cube text-slate-600 text-lg"></i>
+                            <% } %>
+                        </a>
+                    <% } else { %>
+                        <div class="w-11 h-11 sm:w-12 sm:h-12 rounded-xl logo-box-<%= c.logo_bg || 'default' %> flex items-center justify-center overflow-hidden flex-shrink-0">
+                            <% if (c.logo_path) { %>
+                                <img src="<%= c.logo_path %>" alt="<%= c.label %>" class="w-full h-full object-cover">
+                            <% } else { %>
+                                <i class="fas fa-cube text-slate-600 text-lg"></i>
+                            <% } %>
+                        </div>
+                    <% } %>
 
                     <div class="w-full min-w-0">
-                        <p class="font-semibold text-white text-xs truncate"><%= c.label %></p>
+                        <% if (c.link_url) { %>
+                            <a href="<%= c.link_url %>" target="_blank" rel="noopener noreferrer" class="font-semibold text-white text-xs truncate block hover:text-sky-400"><%= c.label %></a>
+                        <% } else { %>
+                            <p class="font-semibold text-white text-xs truncate"><%= c.label %></p>
+                        <% } %>
                         <p class="text-slate-500 text-[10px] font-mono truncate"><%= c.container_name %></p>
                     </div>
 
@@ -55,30 +89,43 @@
                     </div>
 
                     <div class="flex items-center gap-0.5 flex-wrap justify-center pt-1.5 border-t border-white/5 w-full">
-                        <form method="POST" action="/admin/health/containers/<%= c.id %>/move">
+                        <form method="POST" action="/admin/health/containers/<%= c.id %>/move" data-ajax-form>
                             <input type="hidden" name="direction" value="up">
-                            <button class="w-6 h-6 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 text-[11px]" title="Move earlier" <%= index === 0 ? 'disabled style=opacity:0.3' : '' %>>
+                            <button type="submit" class="w-6 h-6 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 text-[11px]" title="Move earlier" <%= index === 0 ? 'disabled style=opacity:0.3' : '' %>>
                                 <i class="fas fa-arrow-up"></i>
                             </button>
                         </form>
-                        <form method="POST" action="/admin/health/containers/<%= c.id %>/move">
+                        <form method="POST" action="/admin/health/containers/<%= c.id %>/move" data-ajax-form>
                             <input type="hidden" name="direction" value="down">
-                            <button class="w-6 h-6 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 text-[11px]" title="Move later" <%= index === containers.length - 1 ? 'disabled style=opacity:0.3' : '' %>>
+                            <button type="submit" class="w-6 h-6 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 text-[11px]" title="Move later" <%= index === containers.length - 1 ? 'disabled style=opacity:0.3' : '' %>>
                                 <i class="fas fa-arrow-down"></i>
                             </button>
                         </form>
-                        <button type="button" class="px-2.5 h-6 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 text-[11px]" title="Edit" onclick="document.getElementById('editPanel-<%= c.id %>').classList.toggle('hidden')">
+                        <button type="button" class="w-6 h-6 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 text-[11px]" title="View logs" onclick="openLogs('<%= c.id %>', '<%= c.label %>')">
+                            <i class="fas fa-file-lines"></i>
+                        </button>
+                        <button type="button" class="px-2 h-6 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 text-[11px]" title="Edit" data-toggle-target="container-<%= c.id %>-edit">
                             <i class="fas fa-pen mr-1"></i>Edit
                         </button>
                     </div>
 
-                    <div id="editPanel-<%= c.id %>" class="hidden w-full flex flex-col gap-2 mt-1 pt-2 border-t border-white/5">
-                        <form method="POST" action="/admin/health/containers/<%= c.id %>/logo" enctype="multipart/form-data" class="w-full flex gap-1">
-                            <input type="file" name="logo" accept="image/png,image/jpeg,image/webp,image/svg+xml" class="input text-[10px] flex-1 px-2 py-1.5">
-                            <button type="submit" class="btn-primary px-2 py-1.5 rounded-lg text-[10px] whitespace-nowrap">Save Logo</button>
+                    <div class="hidden w-full flex-col gap-2 mt-1 pt-2 border-t border-white/5" data-toggle-key="container-<%= c.id %>-edit">
+                        <form method="POST" action="/admin/health/containers/<%= c.id %>/update" data-ajax-form class="w-full flex flex-col gap-2 text-left">
+                            <input type="text" name="label" required value="<%= c.label %>" class="input text-[11px] px-2 py-1.5" placeholder="Label">
+                            <input type="url" name="link_url" value="<%= c.link_url || '' %>" class="input text-[11px] px-2 py-1.5" placeholder="Link (optional, e.g. https://plex.example.com)">
+                            <select name="logo_bg" class="input text-[11px] px-2 py-1.5">
+                                <option value="default" <%= (c.logo_bg || 'default') === 'default' ? 'selected' : '' %>>Dark box (default)</option>
+                                <option value="white" <%= c.logo_bg === 'white' ? 'selected' : '' %>>White background (for transparent logos)</option>
+                                <option value="none" <%= c.logo_bg === 'none' ? 'selected' : '' %>>No box / border</option>
+                            </select>
+                            <button type="submit" class="btn-primary py-1.5 rounded-lg text-[11px]">Save</button>
                         </form>
-                        <form method="POST" action="/admin/health/containers/<%= c.id %>/delete" onsubmit="return confirm('Stop monitoring this container?');">
-                            <button class="w-full text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg text-[11px] py-1.5">
+                        <form method="POST" action="/admin/health/containers/<%= c.id %>/logo" enctype="multipart/form-data" data-ajax-form class="w-full flex gap-1">
+                            <input type="file" name="logo" accept="image/png,image/jpeg,image/webp,image/svg+xml" class="text-[10px] flex-1">
+                            <button type="submit" class="btn-primary px-2 py-1.5 rounded-lg text-[10px] whitespace-nowrap">Logo</button>
+                        </form>
+                        <form method="POST" action="/admin/health/containers/<%= c.id %>/delete" data-ajax-form data-confirm="Stop monitoring this container?">
+                            <button type="submit" class="w-full text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg text-[11px] py-1.5">
                                 <i class="fas fa-trash mr-1"></i>Remove Container
                             </button>
                         </form>
@@ -113,44 +160,147 @@
                 </table>
             <% } %>
         </div>
+
+        <!-- Add Container Modal -->
+        <div id="addContainerModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden items-center justify-center z-50 px-4 py-8 overflow-y-auto">
+            <div class="glass rounded-3xl p-6 sm:p-8 max-w-lg w-full my-auto">
+                <div class="flex items-center justify-between mb-5">
+                    <h3 class="text-lg font-bold text-white"><i class="fas fa-plus mr-2 text-sky-400"></i>Add a Container to Monitor</h3>
+                    <button type="button" onclick="closeModal('addContainerModal')" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5">
+                        <i class="fas fa-xmark"></i>
+                    </button>
+                </div>
+                <form method="POST" action="/admin/health/containers" enctype="multipart/form-data" data-ajax-form class="space-y-4">
+                    <input type="text" name="label" required class="input" placeholder="Display label (e.g. Plex Server)">
+                    <input type="text" name="container_name" required class="input" placeholder="Exact container name (e.g. plex)">
+                    <input type="url" name="link_url" class="input" placeholder="Link (optional, e.g. https://plex.example.com)">
+                    <select name="logo_bg" class="input">
+                        <option value="default">Dark box (default)</option>
+                        <option value="white">White background (for transparent logos)</option>
+                        <option value="none">No box / border</option>
+                    </select>
+                    <div>
+                        <label class="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-1.5 block">Logo (optional)</label>
+                        <input type="file" name="logo" accept="image/png,image/jpeg,image/webp,image/svg+xml">
+                        <p class="text-slate-500 text-xs mt-2">Square images work best - you can add or change it later too.</p>
+                    </div>
+                    <button type="submit" class="btn-primary py-3 rounded-xl text-sm w-full">Add Container</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Logs Modal -->
+        <div id="logsModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden items-center justify-center z-50 px-4 py-8 overflow-y-auto">
+            <div class="glass rounded-3xl p-6 sm:p-8 max-w-2xl w-full my-auto">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-bold text-white"><i class="fas fa-file-lines mr-2 text-sky-400"></i>Logs — <span id="logsModalLabel"></span></h3>
+                    <button type="button" onclick="closeLogs()" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5">
+                        <i class="fas fa-xmark"></i>
+                    </button>
+                </div>
+                <p class="text-slate-500 text-xs mb-3">Showing the last 200 lines, refreshed automatically every few seconds. This is a snapshot, not a true live stream.</p>
+                <div id="logsOutput" class="console-output">Loading…</div>
+                <div class="flex justify-end mt-3">
+                    <button type="button" onclick="refreshLogs()" class="btn-outline px-4 py-2 rounded-lg text-xs">
+                        <i class="fas fa-rotate mr-2"></i>Refresh Now
+                    </button>
+                </div>
+            </div>
+        </div>
     </main>
 
-    <!-- Add Container Modal -->
-    <div id="addContainerModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden items-center justify-center z-50 px-4 py-8 overflow-y-auto">
-        <div class="glass rounded-3xl p-6 sm:p-8 max-w-lg w-full my-auto">
-            <div class="flex items-center justify-between mb-5">
-                <h3 class="text-lg font-bold text-white"><i class="fas fa-plus mr-2 text-sky-400"></i>Add a Container to Monitor</h3>
-                <button type="button" onclick="closeModal('addContainerModal')" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5">
-                    <i class="fas fa-xmark"></i>
-                </button>
-            </div>
-            <form method="POST" action="/admin/health/containers" enctype="multipart/form-data" class="space-y-4">
-                <input type="text" name="label" required class="input" placeholder="Display label (e.g. Plex Server)">
-                <input type="text" name="container_name" required class="input" placeholder="Exact container name (e.g. plex)">
-                <div>
-                    <label class="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-1.5 block">Logo (optional)</label>
-                    <input type="file" name="logo" accept="image/png,image/jpeg,image/webp,image/svg+xml" class="input text-xs">
-                    <p class="text-slate-500 text-xs mt-2">Square images work best - you can add or change it later too.</p>
-                </div>
-                <button type="submit" class="btn-primary py-3 rounded-xl text-sm w-full">Add Container</button>
-            </form>
-        </div>
-    </div>
-
     <script>
-        function openModal(id) {
-            const m = document.getElementById(id);
-            if (!m) return;
-            m.classList.remove('hidden');
-            m.classList.add('flex');
-        }
-        function closeModal(id) {
-            const m = document.getElementById(id);
-            if (!m) return;
-            m.classList.add('hidden');
-            m.classList.remove('flex');
+        // ---------- Bulk mode ----------
+        function toggleBulkMode() {
+            const list = document.getElementById('healthContainerList');
+            const bar = document.getElementById('bulkActionBar');
+            const on = list.getAttribute('data-bulk-mode') === 'on';
+            list.setAttribute('data-bulk-mode', on ? 'off' : 'on');
+            bar.classList.toggle('hidden', on);
+            if (on) {
+                document.querySelectorAll('[data-bulk-checkbox]').forEach(function (cb) { cb.checked = false; });
+                updateBulkCount();
+            }
         }
 
+        function updateBulkCount() {
+            const count = document.querySelectorAll('[data-bulk-checkbox]:checked').length;
+            const el = document.getElementById('bulkSelectedCount');
+            if (el) el.textContent = count;
+        }
+
+        document.addEventListener('change', function (e) {
+            if (e.target.matches('[data-bulk-checkbox]')) updateBulkCount();
+        });
+
+        async function runBulkAction(action) {
+            const ids = Array.from(document.querySelectorAll('[data-bulk-checkbox]:checked')).map(function (cb) { return cb.value; });
+            if (ids.length === 0) { alert('Select at least one container first.'); return; }
+            if (!confirm((action === 'stop' ? 'Stop' : 'Restart') + ' ' + ids.length + ' container(s) now? This runs one combined command.')) return;
+
+            const resultBox = document.getElementById('healthActionResult');
+            try {
+                const formData = new URLSearchParams();
+                ids.forEach(function (id) { formData.append('ids', id); });
+                formData.append('action', action);
+                const res = await fetch('/admin/health/containers/bulk-action', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: formData.toString(),
+                });
+                const data = await res.json();
+                resultBox.classList.remove('hidden');
+                resultBox.className = 'text-sm rounded-xl p-4 mb-10 ' + (data.ok
+                    ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400'
+                    : 'bg-red-500/10 border border-red-500/30 text-red-400');
+                resultBox.textContent = data.message;
+                refreshHealth();
+            } catch (e) {
+                resultBox.classList.remove('hidden');
+                resultBox.className = 'text-sm rounded-xl p-4 mb-10 bg-red-500/10 border border-red-500/30 text-red-400';
+                resultBox.textContent = 'Something went wrong sending the bulk request.';
+            }
+        }
+
+        // ---------- Logs modal (polling snapshot, not a true stream) ----------
+        let logsContainerId = null;
+        let logsPollTimer = null;
+
+        function openLogs(id, label) {
+            logsContainerId = id;
+            document.getElementById('logsModalLabel').textContent = label;
+            document.getElementById('logsOutput').textContent = 'Loading…';
+            openModal('logsModal');
+            refreshLogs();
+            logsPollTimer = setInterval(refreshLogs, 4000);
+        }
+
+        function closeLogs() {
+            closeModal('logsModal');
+            logsContainerId = null;
+            if (logsPollTimer) { clearInterval(logsPollTimer); logsPollTimer = null; }
+        }
+
+        async function refreshLogs() {
+            if (!logsContainerId) return;
+            try {
+                const res = await fetch('/admin/health/containers/' + logsContainerId + '/logs');
+                const data = await res.json();
+                const box = document.getElementById('logsOutput');
+                if (!box) return;
+                if (data.ok) {
+                    const wasScrolledToBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 20;
+                    box.textContent = data.output || '(no output)';
+                    if (wasScrolledToBottom) box.scrollTop = box.scrollHeight;
+                } else {
+                    box.textContent = data.message || 'Failed to load logs.';
+                }
+            } catch (e) {
+                // leave existing content on transient failure
+            }
+        }
+
+        // ---------- Live status ----------
         const STATUS_MAP = {
             up: ['badge-active', 'fa-circle-check', 'Online'],
             starting: ['badge-suspended', 'fa-circle-notch fa-spin', 'Starting'],
@@ -164,7 +314,7 @@
                 const res = await fetch('/admin/health/status');
                 const data = await res.json();
                 if (!data.ok) return;
-                data.containers.forEach(function(c) {
+                data.containers.forEach(function (c) {
                     const row = document.querySelector('[data-container-id="' + c.id + '"] [data-status-pill]');
                     if (!row) return;
                     const chosen = STATUS_MAP[c.status] || STATUS_MAP.unknown;
@@ -176,37 +326,44 @@
             }
         }
         refreshHealth();
+        document.addEventListener('main:updated', refreshHealth);
 
-        document.querySelectorAll('[data-health-btn]').forEach(function(btn) {
-            btn.addEventListener('click', async function() {
-                const action = btn.getAttribute('data-health-action');
-                const label = btn.getAttribute('data-health-label');
-                const id = btn.getAttribute('data-health-id');
-                if (!confirm((action === 'stop' ? 'Stop' : 'Restart') + ' "' + label + '" now?')) return;
+        // ---------- Stop/Restart (event delegation - survives ajax swaps) ----------
+        document.addEventListener('click', async function (e) {
+            const btn = e.target.closest('[data-health-btn]');
+            if (!btn) return;
 
-                const resultBox = document.getElementById('healthActionResult');
-                const originalHtml = btn.innerHTML;
-                btn.disabled = true;
-                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            const action = btn.getAttribute('data-health-action');
+            const label = btn.getAttribute('data-health-label');
+            const id = btn.getAttribute('data-health-id');
+            if (!confirm((action === 'stop' ? 'Stop' : 'Restart') + ' "' + label + '" now?')) return;
 
-                try {
-                    const res = await fetch('/admin/health/containers/' + id + '/' + action, { method: 'POST' });
-                    const data = await res.json();
+            const resultBox = document.getElementById('healthActionResult');
+            const originalHtml = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+
+            try {
+                const res = await fetch('/admin/health/containers/' + id + '/' + action, { method: 'POST' });
+                const data = await res.json();
+                if (resultBox) {
                     resultBox.classList.remove('hidden');
                     resultBox.className = 'text-sm rounded-xl p-4 mb-10 ' + (data.ok
                         ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400'
                         : 'bg-red-500/10 border border-red-500/30 text-red-400');
                     resultBox.textContent = data.message;
-                    refreshHealth();
-                } catch (e) {
+                }
+                refreshHealth();
+            } catch (err) {
+                if (resultBox) {
                     resultBox.classList.remove('hidden');
                     resultBox.className = 'text-sm rounded-xl p-4 mb-10 bg-red-500/10 border border-red-500/30 text-red-400';
                     resultBox.textContent = 'Something went wrong sending that request.';
-                } finally {
-                    btn.disabled = false;
-                    btn.innerHTML = originalHtml;
                 }
-            });
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = originalHtml;
+            }
         });
     </script>
 </body>

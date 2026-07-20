@@ -224,6 +224,19 @@ ensureColumn('plans', 'maintenance_message', 'maintenance_message TEXT');
 ensureColumn('users', 'payment_method_id', 'payment_method_id INTEGER REFERENCES payment_methods(id)');
 ensureColumn('subscriptions', 'renewal_mode', "renewal_mode TEXT NOT NULL DEFAULT 'manual'"); // auto | manual | expired
 ensureColumn('admin_health_containers', 'logo_path', 'logo_path TEXT');
+ensureColumn('admin_health_containers', 'link_url', 'link_url TEXT');
+ensureColumn('admin_health_containers', 'logo_bg', "logo_bg TEXT NOT NULL DEFAULT 'default'"); // default | white | none
+
+db.exec(`
+CREATE TABLE IF NOT EXISTS ssh_console_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  admin_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  command TEXT NOT NULL,
+  success INTEGER NOT NULL DEFAULT 0,
+  output TEXT,
+  requested_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+`);
 
 // Bootstrap the first admin account from env vars if no admin exists yet.
 function ensureBootstrapAdmin() {

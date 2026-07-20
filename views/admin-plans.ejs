@@ -46,9 +46,9 @@
                         </div>
                     </div>
 
-                    <details class="mb-3">
+                    <details class="mb-3" data-ajax-key="plan-<%= plan.id %>-details">
                         <summary class="cursor-pointer text-sky-400 text-xs font-semibold uppercase tracking-wide">Plan Details &amp; Features</summary>
-                        <form method="POST" action="/admin/plans/<%= plan.id %>/update" class="grid sm:grid-cols-2 gap-3 mt-3">
+                        <form method="POST" action="/admin/plans/<%= plan.id %>/update" data-ajax-form class="grid sm:grid-cols-2 gap-3 mt-3">
                             <input type="text" name="name" required class="input" value="<%= plan.name %>">
                             <select name="service" class="input">
                                 <option value="docker" <%= plan.service === 'docker' ? 'selected' : '' %>>Docker Hosting</option>
@@ -70,9 +70,9 @@
                         </form>
                     </details>
 
-                    <details class="mb-3">
+                    <details class="mb-3" data-ajax-key="plan-<%= plan.id %>-maintenance">
                         <summary class="cursor-pointer text-amber-400 text-xs font-semibold uppercase tracking-wide">Maintenance Mode <% if (plan.maintenance_mode) { %>(currently ON)<% } %></summary>
-                        <form method="POST" action="/admin/plans/<%= plan.id %>/maintenance" class="grid sm:grid-cols-2 gap-3 mt-3">
+                        <form method="POST" action="/admin/plans/<%= plan.id %>/maintenance" data-ajax-form class="grid sm:grid-cols-2 gap-3 mt-3">
                             <label class="flex items-center gap-2 text-sm text-slate-300 sm:col-span-2">
                                 <input type="checkbox" name="maintenance_mode" value="on" <%= plan.maintenance_mode ? 'checked' : '' %>>
                                 Show a maintenance banner to subscribers on this plan
@@ -91,9 +91,9 @@
                         </form>
                     </details>
 
-                    <details class="mb-3">
+                    <details class="mb-3" data-ajax-key="plan-<%= plan.id %>-ssh">
                         <summary class="cursor-pointer text-sky-400 text-xs font-semibold uppercase tracking-wide">Server / SSH Access (shared by everyone on this plan)</summary>
-                        <form method="POST" action="/admin/plans/<%= plan.id %>/ssh" class="grid sm:grid-cols-3 gap-3 mt-3">
+                        <form method="POST" action="/admin/plans/<%= plan.id %>/ssh" data-ajax-form class="grid sm:grid-cols-3 gap-3 mt-3">
                             <input type="text" name="host" required class="input" placeholder="Host / IP" value="<%= sshByPlan[plan.id] ? sshByPlan[plan.id].host : '' %>">
                             <input type="number" name="port" class="input" placeholder="Port (22)" value="<%= sshByPlan[plan.id] ? sshByPlan[plan.id].port : 22 %>">
                             <input type="text" name="username" required class="input" placeholder="SSH username" value="<%= sshByPlan[plan.id] ? sshByPlan[plan.id].username : '' %>">
@@ -108,17 +108,17 @@
                         </form>
                     </details>
 
-                    <details class="mb-3">
+                    <details class="mb-3" data-ajax-key="plan-<%= plan.id %>-actions">
                         <summary class="cursor-pointer text-sky-400 text-xs font-semibold uppercase tracking-wide">Action Buttons (e.g. Restart Plex)</summary>
                         <div class="mt-3 space-y-2 mb-3">
                             <% (actionsByPlan[plan.id] || []).forEach(function(action) { %>
-                                <form method="POST" action="/admin/plans/<%= plan.id %>/actions/<%= action.id %>/delete" class="flex items-center justify-between text-xs text-slate-400 bg-slate-900/40 rounded-lg px-3 py-2 gap-2">
+                                <form method="POST" action="/admin/plans/<%= plan.id %>/actions/<%= action.id %>/delete" data-ajax-form class="flex items-center justify-between text-xs text-slate-400 bg-slate-900/40 rounded-lg px-3 py-2 gap-2">
                                     <span class="truncate"><i class="fas <%= action.icon %> mr-2 text-sky-400"></i><strong class="text-white"><%= action.label %></strong> — <span class="font-mono"><%= action.command %></span> (every <%= action.cooldown_hours %>h)</span>
-                                    <button class="text-red-400 hover:text-red-300 flex-shrink-0"><i class="fas fa-trash"></i></button>
+                                    <button type="submit" class="text-red-400 hover:text-red-300 flex-shrink-0"><i class="fas fa-trash"></i></button>
                                 </form>
                             <% }); %>
                         </div>
-                        <form method="POST" action="/admin/plans/<%= plan.id %>/actions" class="grid sm:grid-cols-4 gap-3">
+                        <form method="POST" action="/admin/plans/<%= plan.id %>/actions" data-ajax-form class="grid sm:grid-cols-4 gap-3">
                             <input type="text" name="label" required class="input" placeholder="Button label (e.g. Restart Plex)">
                             <input type="text" name="command" required class="input sm:col-span-2" placeholder="Command (e.g. docker compose restart plex)">
                             <input type="number" name="cooldown_hours" class="input" placeholder="Cooldown hrs (6)" value="6">
@@ -127,25 +127,25 @@
                         </form>
                     </details>
 
-                    <details>
+                    <details data-ajax-key="plan-<%= plan.id %>-containers">
                         <summary class="cursor-pointer text-sky-400 text-xs font-semibold uppercase tracking-wide">Container Health (shown to subscribers)</summary>
                         <div class="mt-3 space-y-2 mb-3">
                             <% (containersByPlan[plan.id] || []).forEach(function(c) { %>
-                                <form method="POST" action="/admin/plans/<%= plan.id %>/containers/<%= c.id %>/delete" class="flex items-center justify-between text-xs text-slate-400 bg-slate-900/40 rounded-lg px-3 py-2 gap-2">
+                                <form method="POST" action="/admin/plans/<%= plan.id %>/containers/<%= c.id %>/delete" data-ajax-form class="flex items-center justify-between text-xs text-slate-400 bg-slate-900/40 rounded-lg px-3 py-2 gap-2">
                                     <span><strong class="text-white"><%= c.label %></strong> — container: <span class="font-mono"><%= c.container_name %></span></span>
-                                    <button class="text-red-400 hover:text-red-300"><i class="fas fa-trash"></i></button>
+                                    <button type="submit" class="text-red-400 hover:text-red-300"><i class="fas fa-trash"></i></button>
                                 </form>
                             <% }); %>
                         </div>
-                        <form method="POST" action="/admin/plans/<%= plan.id %>/containers" class="grid sm:grid-cols-3 gap-3">
+                        <form method="POST" action="/admin/plans/<%= plan.id %>/containers" data-ajax-form class="grid sm:grid-cols-3 gap-3">
                             <input type="text" name="label" required class="input" placeholder="Display label (e.g. Plex Server)">
                             <input type="text" name="container_name" required class="input" placeholder="Exact container name (e.g. plex)">
                             <button type="submit" class="btn-primary py-3 rounded-xl text-sm">Add Container</button>
                         </form>
                     </details>
 
-                    <form method="POST" action="/admin/plans/<%= plan.id %>/delete" onsubmit="return confirm('Delete this plan? Subscribers on it will lose access to its features/actions until reassigned.');" class="mt-4">
-                        <button class="text-red-400 hover:text-red-300 text-xs"><i class="fas fa-trash mr-1"></i>Delete Plan</button>
+                    <form method="POST" action="/admin/plans/<%= plan.id %>/delete" data-ajax-form data-confirm="Delete this plan? Subscribers on it will lose access to its features/actions until reassigned." class="mt-4">
+                        <button type="submit" class="text-red-400 hover:text-red-300 text-xs"><i class="fas fa-trash mr-1"></i>Delete Plan</button>
                     </form>
                 </div>
             <% }); %>
@@ -153,55 +153,40 @@
                 <p class="text-slate-500 text-sm">No plans yet — create one above to start assigning subscribers.</p>
             <% } %>
         </div>
-    </main>
 
-    <!-- Create Plan Modal -->
-    <div id="createPlanModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden items-center justify-center z-50 px-4 py-8 overflow-y-auto">
-        <div class="glass rounded-3xl p-6 sm:p-8 max-w-lg w-full my-auto">
-            <div class="flex items-center justify-between mb-5">
-                <h3 class="text-lg font-bold text-white"><i class="fas fa-layer-group mr-2 text-sky-400"></i>Create a New Plan</h3>
-                <button type="button" onclick="closeModal('createPlanModal')" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5">
-                    <i class="fas fa-xmark"></i>
-                </button>
+        <!-- Create Plan Modal -->
+        <div id="createPlanModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden items-center justify-center z-50 px-4 py-8 overflow-y-auto">
+            <div class="glass rounded-3xl p-6 sm:p-8 max-w-lg w-full my-auto">
+                <div class="flex items-center justify-between mb-5">
+                    <h3 class="text-lg font-bold text-white"><i class="fas fa-layer-group mr-2 text-sky-400"></i>Create a New Plan</h3>
+                    <button type="button" onclick="closeModal('createPlanModal')" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5">
+                        <i class="fas fa-xmark"></i>
+                    </button>
+                </div>
+                <form method="POST" action="/admin/plans" data-ajax-form class="grid sm:grid-cols-2 gap-4">
+                    <input type="text" name="name" required class="input sm:col-span-2" placeholder="Plan name (e.g. Plex Premium)">
+                    <select name="service" class="input sm:col-span-2">
+                        <option value="docker">Docker Hosting</option>
+                        <option value="plex">Plex Servers</option>
+                        <option value="stream">Stream Addons</option>
+                        <option value="indexers">Indexers</option>
+                        <option value="hosting">Web Hosting</option>
+                        <option value="multiple">Multiple Services</option>
+                    </select>
+                    <input type="text" name="description" class="input sm:col-span-2" placeholder="Short description (optional)">
+                    <input type="number" step="0.01" min="0" name="price" class="input" placeholder="Price (e.g. 9.99, optional)">
+                    <select name="currency" class="input">
+                        <option value="GBP">GBP (£)</option>
+                        <option value="USD">USD ($)</option>
+                        <option value="CAD">CAD ($)</option>
+                    </select>
+                    <textarea name="features" rows="3" class="input sm:col-span-2" placeholder="One feature per line, e.g.&#10;4K Transcoding&#10;5 simultaneous streams&#10;Priority support"></textarea>
+                    <button type="submit" class="btn-primary py-3 rounded-xl text-sm sm:col-span-2 mt-2">
+                        <i class="fas fa-plus mr-2"></i>Create Plan
+                    </button>
+                </form>
             </div>
-            <form method="POST" action="/admin/plans" class="grid sm:grid-cols-2 gap-4">
-                <input type="text" name="name" required class="input sm:col-span-2" placeholder="Plan name (e.g. Plex Premium)">
-                <select name="service" class="input sm:col-span-2">
-                    <option value="docker">Docker Hosting</option>
-                    <option value="plex">Plex Servers</option>
-                    <option value="stream">Stream Addons</option>
-                    <option value="indexers">Indexers</option>
-                    <option value="hosting">Web Hosting</option>
-                    <option value="multiple">Multiple Services</option>
-                </select>
-                <input type="text" name="description" class="input sm:col-span-2" placeholder="Short description (optional)">
-                <input type="number" step="0.01" min="0" name="price" class="input" placeholder="Price (e.g. 9.99, optional)">
-                <select name="currency" class="input">
-                    <option value="GBP">GBP (£)</option>
-                    <option value="USD">USD ($)</option>
-                    <option value="CAD">CAD ($)</option>
-                </select>
-                <textarea name="features" rows="3" class="input sm:col-span-2" placeholder="One feature per line, e.g.&#10;4K Transcoding&#10;5 simultaneous streams&#10;Priority support"></textarea>
-                <button type="submit" class="btn-primary py-3 rounded-xl text-sm sm:col-span-2 mt-2">
-                    <i class="fas fa-plus mr-2"></i>Create Plan
-                </button>
-            </form>
         </div>
-    </div>
-
-    <script>
-        function openModal(id) {
-            const m = document.getElementById(id);
-            if (!m) return;
-            m.classList.remove('hidden');
-            m.classList.add('flex');
-        }
-        function closeModal(id) {
-            const m = document.getElementById(id);
-            if (!m) return;
-            m.classList.add('hidden');
-            m.classList.remove('flex');
-        }
-    </script>
+    </main>
 </body>
 </html>
