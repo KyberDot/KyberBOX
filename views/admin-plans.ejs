@@ -113,7 +113,11 @@
                         <div class="mt-3 space-y-2 mb-3">
                             <% (actionsByPlan[plan.id] || []).forEach(function(action) { %>
                                 <form method="POST" action="/admin/plans/<%= plan.id %>/actions/<%= action.id %>/delete" data-ajax-form class="flex items-center justify-between text-xs text-slate-400 bg-slate-900/40 rounded-lg px-3 py-2 gap-2">
-                                    <span class="truncate"><i class="fas <%= action.icon %> mr-2 text-sky-400"></i><strong class="text-white"><%= action.label %></strong> — <span class="font-mono"><%= action.command %></span> (every <%= action.cooldown_hours %>h)</span>
+                                    <span class="truncate">
+                                        <i class="fas <%= action.icon %> mr-2 <%= action.style === 'danger' ? 'text-red-400' : 'text-sky-400' %>"></i><strong class="text-white"><%= action.label %></strong>
+                                        <% if (action.style === 'danger') { %><span class="badge badge-expired ml-1">danger</span><% } %>
+                                        — <span class="font-mono"><%= action.command %></span> (every <%= action.cooldown_hours %>h)
+                                    </span>
                                     <button type="submit" class="text-red-400 hover:text-red-300 flex-shrink-0"><i class="fas fa-trash"></i></button>
                                 </form>
                             <% }); %>
@@ -122,8 +126,12 @@
                             <input type="text" name="label" required class="input" placeholder="Button label (e.g. Restart Plex)">
                             <input type="text" name="command" required class="input sm:col-span-2" placeholder="Command (e.g. docker compose restart plex)">
                             <input type="number" name="cooldown_hours" class="input" placeholder="Cooldown hrs (6)" value="6">
-                            <input type="text" name="icon" class="input sm:col-span-3" placeholder="Font Awesome icon class (default: fa-rotate)">
-                            <button type="submit" class="btn-primary py-3 rounded-xl text-sm">Add Action</button>
+                            <input type="text" name="icon" class="input sm:col-span-2" placeholder="Font Awesome icon class (default: fa-rotate)">
+                            <select name="style" class="input sm:col-span-2">
+                                <option value="warning">Warning (amber) — quick actions like a restart</option>
+                                <option value="danger">Danger (red) — slow/heavy actions like a full stack reset</option>
+                            </select>
+                            <button type="submit" class="btn-primary py-3 rounded-xl text-sm sm:col-span-4">Add Action</button>
                         </form>
                     </details>
 

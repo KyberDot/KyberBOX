@@ -211,13 +211,14 @@ router.post('/admin/plans/:id/actions', (req, res) => {
   const label = String(req.body.label || '').trim();
   const command = String(req.body.command || '').trim();
   const icon = String(req.body.icon || 'fa-rotate').trim();
+  const style = req.body.style === 'danger' ? 'danger' : 'warning';
   const cooldownHours = Math.max(0, parseInt(req.body.cooldown_hours, 10) || 6);
 
   if (!label || !command) return res.status(400).render('error', { message: 'Missing required fields - please fill in everything marked required and try again.' });
 
   db.prepare(
-    'INSERT INTO plan_actions (plan_id, label, command, icon, cooldown_hours) VALUES (?, ?, ?, ?, ?)'
-  ).run(req.params.id, label, command, icon, cooldownHours);
+    'INSERT INTO plan_actions (plan_id, label, command, icon, style, cooldown_hours) VALUES (?, ?, ?, ?, ?, ?)'
+  ).run(req.params.id, label, command, icon, style, cooldownHours);
 
   res.redirect('/admin/plans');
 });
@@ -528,7 +529,7 @@ router.post('/admin/settings/branding', (req, res) => {
 });
 
 router.post('/admin/settings/health-ssh', (req, res) => {
-  const { host, port, username, auth_type, secret } = req.body;
+  const { host, port, username, auth_type, secret, compose_path } = req.body;
   if (!host || !username) return res.status(400).render('error', { message: 'Missing required fields - please fill in everything marked required and try again.' });
 
   const existing = db.prepare('SELECT * FROM admin_ssh LIMIT 1').get();
@@ -549,6 +550,8 @@ router.post('/admin/settings/health-ssh', (req, res) => {
       `INSERT INTO admin_ssh (host, port, username, auth_type, secret_encrypted) VALUES (?, ?, ?, ?, ?)`
     ).run(host, port || 22, username, auth_type || 'password', encrypt(secret));
   }
+
+  setSetting('compose_path', String(compose_path || '').trim());
 
   res.render('admin-settings', { ...loadSettingsPageData(), saved: 'health-ssh', testResult: null, brandingError: null });
 });
@@ -605,27 +608,32 @@ router.post('/admin/health/containers', (req, res) => {
 });
 
 router.post('/admin/health/containers/:id/update', (req, res) => {
-  const label = String(req.body.label || '').trim();
-  const linkUrl = String(req.body.link_url || '').trim() || null;
-  const logoBg = ['default', 'white', 'none'].includes(req.body.logo_bg) ? req.body.logo_bg : 'default';
-
-  if (!label) return res.status(400).render('error', { message: 'Missing required fields - please fill in everything marked required and try again.' });
-
-  db.prepare('UPDATE admin_health_containers SET label = ?, link_url = ?, logo_bg = ? WHERE id = ?').run(
-    label,
-    linkUrl,
-    logoBg,
-    req.params.id
-  );
-  res.redirect('/admin/health');
-});
-
-router.post('/admin/health/containers/:id/logo', (req, res) => {
   containerLogoUpload(req, res, (err) => {
     if (err) return res.status(400).render('error', { message: err.message });
+
+    const label = String(req.body.label || '').trim();
+    const linkUrl = String(req.body.link_url || '').trim() || null;
+    const logoBg = ['default', 'white', 'none'].includes(req.body.logo_bg) ? req.body.logo_bg : 'default';
+
+    if (!label) return res.status(400).render('error', { message: 'Missing required fields - please fill in everything marked required and try again.' });
+
     if (req.file) {
-      db.prepare('UPDATE admin_health_containers SET logo_path = ? WHERE id = ?').run(`/uploads/${req.file.filename}`, req.params.id);
+      db.prepare('UPDATE admin_health_containers SET label = ?, link_url = ?, logo_bg = ?, logo_path = ? WHERE id = ?').run(
+        label,
+        linkUrl,
+        logoBg,
+        `/uploads/${req.file.filename}`,
+        req.params.id
+      );
+    } else {
+      db.prepare('UPDATE admin_health_containers SET label = ?, link_url = ?, logo_bg = ? WHERE id = ?').run(
+        label,
+        linkUrl,
+        logoBg,
+        req.params.id
+      );
     }
+
     res.redirect('/admin/health');
   });
 });
@@ -755,6 +763,37 @@ router.post('/admin/health/containers/bulk-action', async (req, res) => {
     message: result.success
       ? `${action === 'stop' ? 'Stopped' : 'Restarted'} ${containers.length} container(s) successfully.`
       : `Bulk ${action} failed: ${result.output}`,
+  });
+});
+
+// Full stack reset: docker compose down, then pull, then up -d, in that
+// order, at the compose path configured in Settings. Deliberately its own
+// endpoint (not reusing bulk-action) since it affects the whole stack, not
+// a chosen set of containers.
+router.post('/admin/health/full-reset', async (req, res) => {
+  const composePath = getAllSettings().compose_path;
+  if (!composePath) {
+    return res.status(400).json({ ok: false, message: 'Set a Docker Compose path in Settings first (e.g. /opt/media-stack).' });
+  }
+
+  const target = db.prepare('SELECT * FROM admin_ssh LIMIT 1').get();
+  if (!target) {
+    return res.status(400).json({ ok: false, message: 'No admin SSH access configured yet. Set it up in Settings first.' });
+  }
+
+  const safePath = composePath.replace(/'/g, `'"'"'`);
+  const command = `cd '${safePath}' && docker compose down && docker compose pull && docker compose up -d`;
+  const result = await runCommand(target, command, 15 * 60 * 1000); // up to 15 minutes for pulls
+
+  db.prepare(
+    'INSERT INTO admin_health_log (admin_user_id, container_name, action, success, output) VALUES (?, ?, ?, ?, ?)'
+  ).run(req.user.id, 'ALL (full stack)', 'full-reset', result.success ? 1 : 0, result.output);
+
+  res.json({
+    ok: result.success,
+    message: result.success
+      ? 'Full reset complete: stack was taken down, images pulled, and brought back up.'
+      : `Full reset failed: ${result.output}`,
   });
 });
 

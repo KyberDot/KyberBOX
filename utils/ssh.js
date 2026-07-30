@@ -1,7 +1,7 @@
 const { Client } = require('ssh2');
 const { decrypt } = require('./crypto');
 
-const EXEC_TIMEOUT_MS = 20000;
+const DEFAULT_EXEC_TIMEOUT_MS = 20000;
 
 /**
  * Opens an SSH connection to a server, runs exactly the command passed in,
@@ -15,8 +15,12 @@ const EXEC_TIMEOUT_MS = 20000;
  * command, or a health-check command built from admin-configured container
  * names) - subscribers never supply or influence the command text itself,
  * only click a button.
+ *
+ * timeoutMs defaults to 20s, which is plenty for status checks and quick
+ * restarts, but callers doing something slow (e.g. "docker compose pull",
+ * which can take minutes) should pass a much longer value explicitly.
  */
-function execOnTarget(target, command) {
+function execOnTarget(target, command, timeoutMs = DEFAULT_EXEC_TIMEOUT_MS) {
   return new Promise((resolve) => {
     const conn = new Client();
     const secret = decrypt(target.secret_encrypted);
@@ -43,8 +47,8 @@ function execOnTarget(target, command) {
     };
 
     const timer = setTimeout(() => {
-      finish({ success: false, connectionFailed: true, output: 'Timed out connecting to the server.' });
-    }, EXEC_TIMEOUT_MS);
+      finish({ success: false, connectionFailed: true, output: 'Timed out waiting for the command to finish.' });
+    }, timeoutMs);
 
     conn
       .on('ready', () => {
@@ -61,7 +65,7 @@ function execOnTarget(target, command) {
               finish({
                 success: code === 0,
                 connectionFailed: false,
-                output: (stdout + stderr).slice(-4000) || `Command exited with code ${code}`,
+                output: (stdout + stderr).slice(-4000) || (code === 0 ? '(no output — command completed successfully)' : `Command exited with code ${code}`),
               });
             })
             .on('data', (data) => { stdout += data.toString(); })
@@ -77,8 +81,8 @@ function execOnTarget(target, command) {
 }
 
 /** Runs a plan/admin action's fixed command (e.g. "docker compose restart plex"). */
-function runCommand(target, command) {
-  return execOnTarget(target, command);
+function runCommand(target, command, timeoutMs) {
+  return execOnTarget(target, command, timeoutMs);
 }
 
 const STATUS_MAP = {

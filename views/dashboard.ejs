@@ -112,10 +112,11 @@
                         <div class="flex flex-col sm:flex-row sm:flex-wrap gap-3">
                             <% pv.actions.forEach(function(action) { %>
                                 <button
-                                    class="btn-amber px-6 py-3 rounded-2xl text-sm w-full sm:w-auto"
+                                    class="<%= action.style === 'danger' ? 'btn-danger' : 'btn-amber' %> px-6 py-3 rounded-2xl text-sm w-full sm:w-auto"
                                     data-action-btn
                                     data-action-id="<%= action.id %>"
                                     data-action-label="<%= action.label %>"
+                                    data-action-style="<%= action.style || 'warning' %>"
                                     data-cooldown-hours="<%= action.cooldown_hours %>"
                                     <%= (action.nextAllowedAt || pv.plan.maintenance_mode) ? 'disabled' : '' %>
                                 >
@@ -151,14 +152,14 @@
     <!-- Confirmation Modal (shared by all action buttons) -->
     <div id="actionModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden items-center justify-center z-50 px-6">
         <div class="glass rounded-3xl p-8 max-w-sm w-full text-center">
-            <div class="w-16 h-16 mx-auto rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center mb-5">
-                <i class="fas fa-triangle-exclamation text-amber-400 text-2xl"></i>
+            <div id="actionModalIconWrap" class="w-16 h-16 mx-auto rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center mb-5">
+                <i id="actionModalIcon" class="fas fa-triangle-exclamation text-amber-400 text-2xl"></i>
             </div>
             <h3 id="actionModalTitle" class="text-lg font-bold text-white mb-2">Run this action?</h3>
             <p id="actionModalBody" class="text-slate-400 text-sm mb-6"></p>
             <div class="flex gap-3">
                 <button onclick="closeActionModal()" class="btn-outline flex-1 py-3 rounded-xl text-sm">Cancel</button>
-                <button onclick="confirmAction()" class="btn-amber flex-1 py-3 rounded-xl text-sm">Yes, Continue</button>
+                <button id="actionModalConfirmBtn" onclick="confirmAction()" class="btn-amber flex-1 py-3 rounded-xl text-sm">Yes, Continue</button>
             </div>
         </div>
     </div>
@@ -172,9 +173,30 @@
                 pendingActionBtn = btn;
                 const label = btn.getAttribute('data-action-label');
                 const hours = btn.getAttribute('data-cooldown-hours');
+                const style = btn.getAttribute('data-action-style') || 'warning';
+                const isDanger = style === 'danger';
+
                 document.getElementById('actionModalTitle').textContent = label + ' now?';
-                document.getElementById('actionModalBody').textContent =
-                    'This will run "' + label + '" on your server. You\'ll only be able to do this again in ' + hours + ' hour(s).';
+
+                let body = 'This will run "' + label + '" on your server. You\'ll only be able to do this again in ' + hours + ' hour(s).';
+                if (isDanger) {
+                    body += ' This action can take between 5–15 minutes to finish — please don\'t close this tab while it runs.';
+                }
+                document.getElementById('actionModalBody').textContent = body;
+
+                const iconWrap = document.getElementById('actionModalIconWrap');
+                const icon = document.getElementById('actionModalIcon');
+                const confirmBtn = document.getElementById('actionModalConfirmBtn');
+                if (isDanger) {
+                    iconWrap.className = 'w-16 h-16 mx-auto rounded-full bg-red-500/10 border border-red-500/30 flex items-center justify-center mb-5';
+                    icon.className = 'fas fa-triangle-exclamation text-red-400 text-2xl';
+                    confirmBtn.className = 'btn-danger flex-1 py-3 rounded-xl text-sm';
+                } else {
+                    iconWrap.className = 'w-16 h-16 mx-auto rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center mb-5';
+                    icon.className = 'fas fa-triangle-exclamation text-amber-400 text-2xl';
+                    confirmBtn.className = 'btn-amber flex-1 py-3 rounded-xl text-sm';
+                }
+
                 const modal = document.getElementById('actionModal');
                 modal.classList.remove('hidden');
                 modal.classList.add('flex');

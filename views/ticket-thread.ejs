@@ -31,7 +31,7 @@
 
         <div class="space-y-4 mb-10">
             <% messages.forEach(function(m) { %>
-                <div class="glass rounded-2xl p-5 <%= m.sender_role === 'admin' ? 'border-l-4 border-sky-500' : '' %>">
+                <div class="glass rounded-2xl p-5 <%= m.sender_role === 'admin' ? 'border-l-4 border-l-sky-500' : '' %>">
                     <div class="flex justify-between mb-2">
                         <span class="font-bold text-sm <%= m.sender_role === 'admin' ? 'text-sky-400' : 'text-white' %>">
                             <%= m.sender_name %> <span class="text-slate-500 font-normal text-xs">(<%= m.sender_role %>)</span>

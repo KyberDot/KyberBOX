@@ -71,6 +71,7 @@ CREATE TABLE IF NOT EXISTS plan_actions (
   label TEXT NOT NULL,
   command TEXT NOT NULL,
   icon TEXT NOT NULL DEFAULT 'fa-rotate',
+  style TEXT NOT NULL DEFAULT 'warning', -- warning (amber) | danger (red, for slow/destructive actions)
   cooldown_hours INTEGER NOT NULL DEFAULT 6,
   sort_order INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -226,6 +227,7 @@ ensureColumn('subscriptions', 'renewal_mode', "renewal_mode TEXT NOT NULL DEFAUL
 ensureColumn('admin_health_containers', 'logo_path', 'logo_path TEXT');
 ensureColumn('admin_health_containers', 'link_url', 'link_url TEXT');
 ensureColumn('admin_health_containers', 'logo_bg', "logo_bg TEXT NOT NULL DEFAULT 'default'"); // default | white | none
+ensureColumn('plan_actions', 'style', "style TEXT NOT NULL DEFAULT 'warning'"); // warning | danger
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS ssh_console_log (

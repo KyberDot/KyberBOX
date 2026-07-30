@@ -25,19 +25,24 @@ existing KyberBOX site and built to work on phones as well as desktop.
   buttons are disabled until it's turned off.
 - **Admin Health page** — a global, admin-only view of any container in
   your compose stack (not tied to a single plan), shown as a grid of
-  compact cards. Each container can have a logo (with a choice of dark
-  box, white background for transparent logos, or no border at all), an
-  optional link that opens when its name/image is clicked, a live log
-  snapshot viewer, Stop/Restart, and arrows to reorder them. A **Bulk
-  Actions** mode lets you select several containers and stop/restart them
-  all in one combined command. Its SSH access (separate from any plan's
-  own) is configured once from Admin → Settings. A container that's
-  genuinely down (stopped, removed) shows as **Offline**; **Unknown** is
-  reserved for when the server itself can't be reached at all.
+  compact, searchable cards. Each container can have a logo (with a
+  choice of dark box, white background for transparent logos, or no
+  border at all), an optional link that opens when its name/image is
+  clicked, a live log snapshot viewer, a per-card refresh button,
+  Stop/Restart, and arrows to reorder them. A **Bulk Actions** mode lets
+  you select several containers and stop/restart them all in one
+  combined command, and a **Full Reset & Update** button runs
+  `docker compose down`, `pull`, then `up -d` (in that order) against the
+  compose path you set in Settings — for when you want to update and
+  restart the whole stack at once. Its SSH access (separate from any
+  plan's own) is configured once from Admin → Settings. A container
+  that's genuinely down (stopped, removed) shows as **Offline**;
+  **Unknown** is reserved for when the server itself can't be reached at all.
 - **SSH Console** — a command runner auto-authenticated with the same
   saved server access, for one-off commands without leaving the browser.
-  It runs one command per request (not a full interactive terminal), and
-  keeps a history of what was run and when.
+  It runs one command per request (not a full interactive terminal, so
+  `cd` alone won't carry over to your next command — chain it with `&&`
+  instead), and keeps a history of what was run and when.
 - **Nothing reloads the page** — creating/editing users, plans, and Health
   containers all happen in place via background requests, so you stay
   exactly where you were (scroll position, open sections) instead of
@@ -55,7 +60,13 @@ existing KyberBOX site and built to work on phones as well as desktop.
   action buttons (not just Plex restart) mapped to a fixed admin-defined
   command, each with its own cooldown (e.g. once every 6 hours). Subscribers
   only ever click a button; they never type or influence the command that
-  runs on the server.
+  runs on the server. Each button can be styled **Warning** (amber, for
+  quick actions like a restart) or **Danger** (red, for slow/heavy
+  actions) — a Danger button shows subscribers a stronger confirmation
+  ("this can take 5–15 minutes, don't close this tab") and the server
+  gives it up to 15 minutes to finish instead of the usual short timeout,
+  so it's the right choice for something like a full
+  `docker compose down && pull && up -d` exposed directly to a client.
 - **Support tickets, on their own page** — clients raise and track tickets
   from a dedicated **Support** page (next to Dashboard), separate from
   their plan cards. Admins see every ticket in one inbox and reply from
@@ -193,6 +204,13 @@ shows a banner reminding you to finish mail setup.
   Subscribers can only trigger a predefined action; they never type or
   influence any command that reaches a server.
 - Password reset links expire after 30 minutes and can only be used once.
+- **Full Reset & Update can take several minutes** (mostly the `pull`
+  step). The app itself will wait up to 15 minutes for it, but if you're
+  running behind a reverse proxy (Authentik, Nginx, Traefik), its own
+  read/response timeout may cut the connection first and show an error
+  even though the reset is still running fine on the server — check
+  Admin → Health's recent requests list or Admin → SSH Console
+  (`docker compose ps`) to confirm either way before assuming it failed.
 
 ## 7. Project structure
 

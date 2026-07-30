@@ -41,6 +41,7 @@ function getAllSettings() {
     smtp_pass: getSetting('smtp_pass', ''), // decrypted value, for internal use only
     smtp_from_name: getSetting('smtp_from_name', 'KyberBOX'),
     smtp_from_email: getSetting('smtp_from_email', ''),
+    compose_path: getSetting('compose_path', ''),
   };
 }
 

@@ -147,7 +147,11 @@ router.post('/dashboard/actions/:actionId/run', async (req, res) => {
     });
   }
 
-  const result = await runCommand(target, action.command);
+  // Danger-style actions are meant for slow operations (e.g. a full
+  // "docker compose down/pull/up" reset), which can take several minutes -
+  // the default short timeout is for quick restarts/status checks only.
+  const timeoutMs = action.style === 'danger' ? 15 * 60 * 1000 : undefined;
+  const result = await runCommand(target, action.command, timeoutMs);
 
   db.prepare('INSERT INTO action_log (user_id, plan_action_id, success, output) VALUES (?, ?, ?, ?)').run(
     req.user.id,

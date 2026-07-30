@@ -77,6 +77,10 @@ body {
 .btn-amber { background: #f59e0b; color: #1c1300; font-weight: 700; }
 .btn-amber:hover { background: #fbbf24; }
 
+.btn-danger { background: #dc2626; color: #ffffff; font-weight: 800; }
+.btn-danger:hover { background: #ef4444; }
+.btn-danger:disabled { background: #334155; color: #64748b; cursor: not-allowed; }
+
 .btn-outline {
     background: transparent;
     border: 1px solid rgba(255,255,255,0.15);

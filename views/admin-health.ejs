@@ -18,12 +18,23 @@
             </div>
         <% } %>
 
+        <!-- Search -->
+        <div class="mb-4">
+            <div class="relative max-w-sm">
+                <i class="fas fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 text-sm"></i>
+                <input type="text" id="containerSearch" oninput="filterContainers()" class="input pl-10" placeholder="Search containers…">
+            </div>
+        </div>
+
         <!-- Toolbar -->
         <div class="flex items-center justify-between mb-6 flex-wrap gap-3">
-            <h2 class="text-sm uppercase tracking-widest text-slate-500 font-bold">Containers (<%= containers.length %>)</h2>
-            <div class="flex items-center gap-2">
+            <h2 class="text-sm uppercase tracking-widest text-slate-500 font-bold">Containers (<span id="containerVisibleCount"><%= containers.length %></span>)</h2>
+            <div class="flex items-center gap-2 flex-wrap">
                 <button type="button" id="bulkModeToggle" onclick="toggleBulkMode()" class="btn-outline px-4 py-2.5 rounded-xl text-sm">
                     <i class="fas fa-check-double mr-2"></i>Bulk Actions
+                </button>
+                <button type="button" onclick="confirmFullReset()" class="px-4 py-2.5 rounded-xl text-sm bg-red-600 hover:bg-red-500 text-white font-bold transition">
+                    <i class="fas fa-triangle-exclamation mr-2"></i>Full Reset &amp; Update
                 </button>
                 <button type="button" onclick="openModal('addContainerModal')" class="btn-primary px-5 py-2.5 rounded-xl text-sm">
                     <i class="fas fa-plus mr-2"></i>Add Container
@@ -44,10 +55,12 @@
             </div>
         </div>
 
+        <div id="fullResetResult" class="hidden text-sm rounded-xl p-4 mb-6"></div>
+
         <!-- Containers -->
         <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4 mb-6" id="healthContainerList" data-bulk-mode="off">
             <% containers.forEach(function(c, index) { %>
-                <div class="glass rounded-2xl p-3 sm:p-4 flex flex-col items-center text-center gap-2 relative" data-container-row data-container-id="<%= c.id %>">
+                <div class="glass rounded-2xl p-3 sm:p-4 flex flex-col items-center text-center gap-2 relative" data-container-row data-container-id="<%= c.id %>" data-container-search="<%= (c.label + ' ' + c.container_name).toLowerCase() %>">
                     <input type="checkbox" class="bulk-select-checkbox absolute top-2 left-2 w-4 h-4 accent-sky-500" data-bulk-checkbox value="<%= c.id %>">
 
                     <% if (c.link_url) { %>
@@ -101,6 +114,9 @@
                                 <i class="fas fa-arrow-down"></i>
                             </button>
                         </form>
+                        <button type="button" class="w-6 h-6 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 text-[11px]" title="Refresh status" data-refresh-btn data-refresh-id="<%= c.id %>">
+                            <i class="fas fa-arrows-rotate"></i>
+                        </button>
                         <button type="button" class="w-6 h-6 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 text-[11px]" title="View logs" onclick="openLogs('<%= c.id %>', '<%= c.label %>')">
                             <i class="fas fa-file-lines"></i>
                         </button>
@@ -110,7 +126,7 @@
                     </div>
 
                     <div class="hidden w-full flex-col gap-2 mt-1 pt-2 border-t border-white/5" data-toggle-key="container-<%= c.id %>-edit">
-                        <form method="POST" action="/admin/health/containers/<%= c.id %>/update" data-ajax-form class="w-full flex flex-col gap-2 text-left">
+                        <form method="POST" action="/admin/health/containers/<%= c.id %>/update" enctype="multipart/form-data" data-ajax-form class="w-full flex flex-col gap-2 text-left">
                             <input type="text" name="label" required value="<%= c.label %>" class="input text-[11px] px-2 py-1.5" placeholder="Label">
                             <input type="url" name="link_url" value="<%= c.link_url || '' %>" class="input text-[11px] px-2 py-1.5" placeholder="Link (optional, e.g. https://plex.example.com)">
                             <select name="logo_bg" class="input text-[11px] px-2 py-1.5">
@@ -118,11 +134,8 @@
                                 <option value="white" <%= c.logo_bg === 'white' ? 'selected' : '' %>>White background (for transparent logos)</option>
                                 <option value="none" <%= c.logo_bg === 'none' ? 'selected' : '' %>>No box / border</option>
                             </select>
+                            <input type="file" name="logo" accept="image/png,image/jpeg,image/webp,image/svg+xml" class="text-[10px]">
                             <button type="submit" class="btn-primary py-1.5 rounded-lg text-[11px]">Save</button>
-                        </form>
-                        <form method="POST" action="/admin/health/containers/<%= c.id %>/logo" enctype="multipart/form-data" data-ajax-form class="w-full flex gap-1">
-                            <input type="file" name="logo" accept="image/png,image/jpeg,image/webp,image/svg+xml" class="text-[10px] flex-1">
-                            <button type="submit" class="btn-primary px-2 py-1.5 rounded-lg text-[10px] whitespace-nowrap">Logo</button>
                         </form>
                         <form method="POST" action="/admin/health/containers/<%= c.id %>/delete" data-ajax-form data-confirm="Stop monitoring this container?">
                             <button type="submit" class="w-full text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg text-[11px] py-1.5">
@@ -136,6 +149,7 @@
                 <p class="text-slate-500 text-sm col-span-full">No containers added yet.</p>
             <% } %>
         </div>
+        <p id="containerSearchEmpty" class="hidden text-slate-500 text-sm mb-6">No containers match your search.</p>
         <div id="healthActionResult" class="hidden text-sm rounded-xl p-4 mb-10"></div>
 
         <!-- Recent actions -->
@@ -210,6 +224,23 @@
     </main>
 
     <script>
+        // ---------- Search ----------
+        function filterContainers() {
+            const query = document.getElementById('containerSearch').value.trim().toLowerCase();
+            const rows = document.querySelectorAll('[data-container-row]');
+            let visible = 0;
+            rows.forEach(function (row) {
+                const haystack = row.getAttribute('data-container-search') || '';
+                const match = !query || haystack.indexOf(query) !== -1;
+                row.classList.toggle('hidden', !match);
+                if (match) visible++;
+            });
+            const countEl = document.getElementById('containerVisibleCount');
+            if (countEl) countEl.textContent = visible;
+            const emptyEl = document.getElementById('containerSearchEmpty');
+            if (emptyEl) emptyEl.classList.toggle('hidden', visible !== 0);
+        }
+
         // ---------- Bulk mode ----------
         function toggleBulkMode() {
             const list = document.getElementById('healthContainerList');
@@ -262,6 +293,30 @@
             }
         }
 
+        // ---------- Full Reset & Update ----------
+        async function confirmFullReset() {
+            if (!confirm('This will run "docker compose down", then "pull", then "up -d" for your ENTIRE stack, in that order. Every container will go offline briefly. Continue?')) return;
+            if (!confirm('Are you sure? This affects everything, not just one container. This can take several minutes, especially the pull step.')) return;
+
+            const resultBox = document.getElementById('fullResetResult');
+            resultBox.classList.remove('hidden');
+            resultBox.className = 'text-sm rounded-xl p-4 mb-6 bg-amber-500/10 border border-amber-500/30 text-amber-400';
+            resultBox.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Running full reset — this can take several minutes, please don\'t close this tab…';
+
+            try {
+                const res = await fetch('/admin/health/full-reset', { method: 'POST' });
+                const data = await res.json();
+                resultBox.className = 'text-sm rounded-xl p-4 mb-6 ' + (data.ok
+                    ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400'
+                    : 'bg-red-500/10 border border-red-500/30 text-red-400');
+                resultBox.textContent = data.message;
+                refreshHealth();
+            } catch (e) {
+                resultBox.className = 'text-sm rounded-xl p-4 mb-6 bg-red-500/10 border border-red-500/30 text-red-400';
+                resultBox.textContent = 'Something went wrong sending the request (if it was a timeout, the reset may still be running on the server — check Recent Stop/Restart Requests or the SSH Console).';
+            }
+        }
+
         // ---------- Logs modal (polling snapshot, not a true stream) ----------
         let logsContainerId = null;
         let logsPollTimer = null;
@@ -309,24 +364,41 @@
             unknown: ['badge-closed', 'fa-question', 'Unknown'],
         };
 
+        function applyStatuses(list) {
+            list.forEach(function (c) {
+                const row = document.querySelector('[data-container-id="' + c.id + '"] [data-status-pill]');
+                if (!row) return;
+                const chosen = STATUS_MAP[c.status] || STATUS_MAP.unknown;
+                row.className = 'badge ' + chosen[0] + ' text-[10px] px-2 py-0.5';
+                row.innerHTML = '<i class="fas ' + chosen[1] + '"></i> ' + chosen[2];
+            });
+        }
+
         async function refreshHealth() {
             try {
                 const res = await fetch('/admin/health/status');
                 const data = await res.json();
                 if (!data.ok) return;
-                data.containers.forEach(function (c) {
-                    const row = document.querySelector('[data-container-id="' + c.id + '"] [data-status-pill]');
-                    if (!row) return;
-                    const chosen = STATUS_MAP[c.status] || STATUS_MAP.unknown;
-                    row.className = 'badge ' + chosen[0] + ' text-[10px] px-2 py-0.5';
-                    row.innerHTML = '<i class="fas ' + chosen[1] + '"></i> ' + chosen[2];
-                });
+                applyStatuses(data.containers);
             } catch (e) {
                 // leave "checking" state as-is
             }
         }
         refreshHealth();
         document.addEventListener('main:updated', refreshHealth);
+
+        // ---------- Per-container refresh ----------
+        document.addEventListener('click', async function (e) {
+            const btn = e.target.closest('[data-refresh-btn]');
+            if (!btn) return;
+            const icon = btn.querySelector('i');
+            if (icon) icon.classList.add('fa-spin');
+            try {
+                await refreshHealth();
+            } finally {
+                if (icon) icon.classList.remove('fa-spin');
+            }
+        });
 
         // ---------- Stop/Restart (event delegation - survives ajax swaps) ----------
         document.addEventListener('click', async function (e) {
