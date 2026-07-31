@@ -81,6 +81,20 @@ body {
 .btn-danger:hover { background: #ef4444; }
 .btn-danger:disabled { background: #334155; color: #64748b; cursor: not-allowed; }
 
+.countdown-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    background: rgba(0, 0, 0, 0.28);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 999px;
+    padding: 0.2rem 0.65rem;
+    font-size: 0.68rem;
+    letter-spacing: 0.02em;
+    color: #cbd5e1;
+}
+.countdown-chip i { font-size: 0.6rem; color: #94a3b8; }
+
 .btn-outline {
     background: transparent;
     border: 1px solid rgba(255,255,255,0.15);

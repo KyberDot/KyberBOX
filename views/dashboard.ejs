@@ -117,7 +117,7 @@
                         <div class="flex flex-col sm:flex-row sm:flex-wrap gap-4">
                             <% pv.actions.forEach(function(action) { %>
                                 <button
-                                    class="<%= action.style === 'danger' ? 'btn-danger' : 'btn-amber' %> px-6 py-2.5 rounded-2xl text-sm w-full sm:w-auto flex flex-col items-center justify-center gap-0.5"
+                                    class="<%= action.style === 'danger' ? 'btn-danger' : 'btn-amber' %> px-6 py-3 rounded-2xl text-sm w-full sm:w-auto flex flex-col items-center justify-center gap-1.5"
                                     data-action-btn
                                     data-action-id="<%= action.id %>"
                                     data-action-label="<%= action.label %>"
@@ -130,12 +130,13 @@
                                         <span data-action-btn-label><%= pv.plan.maintenance_mode ? 'Unavailable (Maintenance)' : (action.nextAllowedAt ? action.label + ' Unavailable' : action.label) %></span>
                                     </span>
                                     <% if (!pv.plan.maintenance_mode) { %>
-                                        <span class="text-[10px] font-normal opacity-80 <%= action.nextAllowedAt ? '' : 'hidden' %>"
+                                        <span class="countdown-chip <%= action.nextAllowedAt ? '' : 'hidden' %>"
                                               data-cooldown-timer
                                               data-action-id="<%= action.id %>"
                                               data-action-label="<%= action.label %>"
                                               data-next-allowed-at="<%= action.nextAllowedAt || '' %>">
-                                            available in <span data-countdown-text>—</span>
+                                            <i class="fas fa-clock"></i>
+                                            <span data-countdown-text class="font-mono tabular-nums">--:--:--</span>
                                         </span>
                                     <% } %>
                                 </button>
@@ -245,8 +246,11 @@
                 const hrs = Math.floor(totalSeconds / 3600);
                 const mins = Math.floor((totalSeconds % 3600) / 60);
                 const secs = totalSeconds % 60;
+                const pad = function (n) { return String(n).padStart(2, '0'); };
                 if (textEl) {
-                    textEl.textContent = (hrs > 0 ? hrs + 'h ' : '') + (hrs > 0 || mins > 0 ? mins + 'm ' : '') + secs + 's';
+                    textEl.textContent = hrs > 0
+                        ? pad(hrs) + ':' + pad(mins) + ':' + pad(secs)
+                        : pad(mins) + ':' + pad(secs);
                 }
             });
         }
