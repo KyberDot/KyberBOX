@@ -65,6 +65,9 @@
             <% containers.forEach(function(c, index) { %>
                 <div class="glass rounded-2xl p-3 sm:p-4 flex flex-col items-center text-center gap-2 relative" data-container-row data-container-id="<%= c.id %>" data-container-search="<%= (c.label + ' ' + c.container_name).toLowerCase() %>">
                     <input type="checkbox" class="bulk-select-checkbox absolute top-2 left-2 w-4 h-4 accent-sky-500" data-bulk-checkbox value="<%= c.id %>">
+                    <button type="button" class="absolute top-2 right-2 w-5 h-5 flex items-center justify-center rounded text-slate-500 hover:text-white hover:bg-white/5 text-[10px]" title="Server usage" onclick="openUsage('<%= c.id %>', '<%= c.label %>')">
+                        <i class="fas fa-chart-line"></i>
+                    </button>
 
                     <% if (c.link_url) { %>
                         <a href="<%= c.link_url %>" target="_blank" rel="noopener noreferrer" class="w-11 h-11 sm:w-12 sm:h-12 rounded-xl logo-box-<%= c.logo_bg || 'default' %> flex items-center justify-center overflow-hidden flex-shrink-0">
@@ -99,6 +102,9 @@
                         <button class="btn-outline flex-1 py-1.5 rounded-lg text-[11px]" data-health-btn data-health-action="stop" data-health-id="<%= c.id %>" data-health-label="<%= c.label %>" title="Stop">
                             <i class="fas fa-stop"></i>
                         </button>
+                        <button class="btn-outline flex-1 py-1.5 rounded-lg text-[11px]" data-update-btn data-update-id="<%= c.id %>" data-update-label="<%= c.label %>" title="Update (stop, pull, up)">
+                            <i class="fas fa-cloud-arrow-down"></i>
+                        </button>
                         <button class="btn-amber flex-1 py-1.5 rounded-lg text-[11px]" data-health-btn data-health-action="restart" data-health-id="<%= c.id %>" data-health-label="<%= c.label %>" title="Restart">
                             <i class="fas fa-rotate"></i>
                         </button>
@@ -128,7 +134,7 @@
                         </button>
                     </div>
 
-                    <div class="hidden w-full flex-col gap-2 mt-1 pt-2 border-t border-white/5" data-toggle-key="container-<%= c.id %>-edit">
+                    <div class="hidden w-full flex flex-col gap-3 mt-1 pt-2 border-t border-white/5" data-toggle-key="container-<%= c.id %>-edit">
                         <form method="POST" action="/admin/health/containers/<%= c.id %>/update" enctype="multipart/form-data" data-ajax-form class="w-full flex flex-col gap-2 text-left">
                             <input type="text" name="label" required value="<%= c.label %>" class="input text-[11px] px-2 py-1.5" placeholder="Label">
                             <input type="url" name="link_url" value="<%= c.link_url || '' %>" class="input text-[11px] px-2 py-1.5" placeholder="Link (optional, e.g. https://plex.example.com)">
@@ -140,7 +146,7 @@
                             <input type="file" name="logo" accept="image/png,image/jpeg,image/webp,image/svg+xml" class="text-[10px]">
                             <button type="submit" class="btn-primary py-1.5 rounded-lg text-[11px]">Save</button>
                         </form>
-                        <form method="POST" action="/admin/health/containers/<%= c.id %>/delete" data-ajax-form data-confirm="Stop monitoring this container?">
+                        <form method="POST" action="/admin/health/containers/<%= c.id %>/delete" data-ajax-form data-confirm="Stop monitoring this container?" class="pt-2 border-t border-white/5">
                             <button type="submit" class="w-full text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg text-[11px] py-1.5">
                                 <i class="fas fa-trash mr-1"></i>Remove Container
                             </button>
@@ -222,6 +228,22 @@
                         <i class="fas fa-rotate mr-2"></i>Refresh Now
                     </button>
                 </div>
+            </div>
+        </div>
+
+        <!-- Usage Modal -->
+        <div id="usageModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden items-center justify-center z-50 px-4 py-8 overflow-y-auto">
+            <div class="glass rounded-3xl p-6 sm:p-8 max-w-md w-full my-auto">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-bold text-white"><i class="fas fa-chart-line mr-2 text-sky-400"></i>Usage — <span id="usageModalLabel"></span></h3>
+                    <button type="button" onclick="closeUsage()" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5">
+                        <i class="fas fa-xmark"></i>
+                    </button>
+                </div>
+                <div id="usageContent" class="grid grid-cols-2 gap-3">
+                    <p class="text-slate-500 text-sm col-span-2">Loading…</p>
+                </div>
+                <p class="text-slate-500 text-xs mt-3">Only meaningful while the container is running - refreshes each time you open this.</p>
             </div>
         </div>
     </main>
@@ -413,6 +435,78 @@
                 // leave existing content on transient failure
             }
         }
+
+        // ---------- Usage stats ----------
+        async function openUsage(id, label) {
+            document.getElementById('usageModalLabel').textContent = label;
+            const content = document.getElementById('usageContent');
+            content.innerHTML = '<p class="text-slate-500 text-sm col-span-2"><i class="fas fa-spinner fa-spin mr-2"></i>Loading…</p>';
+            openModal('usageModal');
+
+            try {
+                const res = await fetch('/admin/health/containers/' + id + '/usage');
+                const data = await res.json();
+                if (!data.ok) {
+                    content.innerHTML = '<p class="text-slate-500 text-sm col-span-2">' + (data.message || 'Could not load usage stats.') + '</p>';
+                    return;
+                }
+                const stat = function (icon, label, value) {
+                    return '<div class="bg-slate-900/40 rounded-xl p-3">' +
+                        '<p class="text-slate-500 text-[10px] uppercase tracking-widest font-semibold mb-1"><i class="fas ' + icon + ' mr-1"></i>' + label + '</p>' +
+                        '<p class="text-white font-mono text-sm">' + value + '</p></div>';
+                };
+                content.innerHTML =
+                    stat('fa-microchip', 'CPU', data.cpu) +
+                    stat('fa-memory', 'Memory', data.memPercent) +
+                    stat('fa-server', 'Mem Usage', data.memUsage) +
+                    stat('fa-network-wired', 'Network I/O', data.netIO) +
+                    stat('fa-hard-drive', 'Disk I/O', data.blockIO) +
+                    stat('fa-tag', 'Container', data.label);
+            } catch (e) {
+                content.innerHTML = '<p class="text-slate-500 text-sm col-span-2">Something went wrong loading usage stats.</p>';
+            }
+        }
+
+        function closeUsage() {
+            closeModal('usageModal');
+        }
+
+        // ---------- Update (stop, pull, up) ----------
+        document.addEventListener('click', async function (e) {
+            const btn = e.target.closest('[data-update-btn]');
+            if (!btn) return;
+
+            const label = btn.getAttribute('data-update-label');
+            const id = btn.getAttribute('data-update-id');
+            if (!confirm('Update "' + label + '"? This stops it, pulls the latest image, and brings it back up. It can take a minute or two.')) return;
+
+            const resultBox = document.getElementById('healthActionResult');
+            const originalHtml = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+
+            try {
+                const res = await fetch('/admin/health/containers/' + id + '/update', { method: 'POST' });
+                const data = await res.json();
+                if (resultBox) {
+                    resultBox.classList.remove('hidden');
+                    resultBox.className = 'text-sm rounded-xl p-4 mb-10 ' + (data.ok
+                        ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400'
+                        : 'bg-red-500/10 border border-red-500/30 text-red-400');
+                    resultBox.textContent = data.message;
+                }
+                refreshHealth();
+            } catch (err) {
+                if (resultBox) {
+                    resultBox.classList.remove('hidden');
+                    resultBox.className = 'text-sm rounded-xl p-4 mb-10 bg-red-500/10 border border-red-500/30 text-red-400';
+                    resultBox.textContent = 'Something went wrong sending that request.';
+                }
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = originalHtml;
+            }
+        });
 
         // ---------- Live status ----------
         const STATUS_MAP = {

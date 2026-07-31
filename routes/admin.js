@@ -838,6 +838,84 @@ async function handleHealthAction(req, res, action) {
 router.post('/admin/health/containers/:id/stop', (req, res) => handleHealthAction(req, res, 'stop'));
 router.post('/admin/health/containers/:id/restart', (req, res) => handleHealthAction(req, res, 'restart'));
 
+// Update = stop, pull a fresh image, then bring back up - via docker compose
+// (not "docker stop/restart") so the container actually gets recreated with
+// the new image rather than just restarted on the old one. Scoped to this
+// one container/service only.
+router.post('/admin/health/containers/:id/update', async (req, res) => {
+  const globalState = getResetState();
+  if (globalState.active) {
+    return res.status(409).json({
+      ok: false,
+      message: `A reset is already in progress (${globalState.source || 'another action'}) - wait for it to finish first.`,
+    });
+  }
+
+  const container = db.prepare('SELECT * FROM admin_health_containers WHERE id = ?').get(req.params.id);
+  if (!container) return res.status(404).json({ ok: false, message: 'Container not found.' });
+
+  const target = db.prepare('SELECT * FROM admin_ssh LIMIT 1').get();
+  if (!target) {
+    return res.status(400).json({ ok: false, message: 'No admin SSH access configured yet. Set it up in Settings first.' });
+  }
+
+  const composePath = getAllSettings().compose_path;
+  if (!composePath) {
+    return res.status(400).json({ ok: false, message: 'Set a Docker Compose path in Settings first (e.g. /opt/media-stack) so containers can be updated properly.' });
+  }
+
+  const safePath = composePath.replace(/'/g, `'"'"'`);
+  const name = container.container_name;
+  const command = `cd '${safePath}' && docker compose stop '${name}' && docker compose pull '${name}' && docker compose up -d '${name}'`;
+  const result = await runCommand(target, command, 5 * 60 * 1000); // up to 5 minutes for a single image pull
+
+  db.prepare(
+    'INSERT INTO admin_health_log (admin_user_id, container_name, action, success, output) VALUES (?, ?, ?, ?, ?)'
+  ).run(req.user.id, name, 'update', result.success ? 1 : 0, result.output);
+
+  res.json({
+    ok: result.success,
+    message: result.success
+      ? `${container.label} updated (stopped, pulled, and restarted) successfully.`
+      : `Failed to update ${container.label}: ${result.output}`,
+  });
+});
+
+// Live resource usage for one container (CPU/memory/network/disk I/O) -
+// only meaningful while it's running, so a stopped/missing container just
+// reports that plainly instead of erroring oddly.
+router.get('/admin/health/containers/:id/usage', async (req, res) => {
+  const container = db.prepare('SELECT * FROM admin_health_containers WHERE id = ?').get(req.params.id);
+  if (!container) return res.status(404).json({ ok: false, message: 'Container not found.' });
+
+  const target = db.prepare('SELECT * FROM admin_ssh LIMIT 1').get();
+  if (!target) {
+    return res.json({ ok: false, message: 'No admin SSH access configured yet. Set it up in Settings first.' });
+  }
+
+  const marker = '::';
+  const command = `docker stats --no-stream --format '{{.CPUPerc}}${marker}{{.MemUsage}}${marker}{{.MemPerc}}${marker}{{.NetIO}}${marker}{{.BlockIO}}' '${container.container_name}' 2>&1`;
+  const result = await runCommand(target, command);
+
+  if (result.connectionFailed) {
+    return res.json({ ok: false, message: 'Could not reach the server.' });
+  }
+  if (!result.success || !result.output.includes(marker)) {
+    return res.json({ ok: false, message: 'Could not get usage stats — the container may not be running.' });
+  }
+
+  const parts = result.output.trim().split(marker);
+  res.json({
+    ok: true,
+    label: container.label,
+    cpu: parts[0] || '—',
+    memUsage: parts[1] || '—',
+    memPercent: parts[2] || '—',
+    netIO: parts[3] || '—',
+    blockIO: parts[4] || '—',
+  });
+});
+
 // Bulk action - runs ONE combined command (e.g. "docker restart a b c") over
 // a single SSH connection instead of one call per container.
 router.post('/admin/health/containers/bulk-action', async (req, res) => {
@@ -922,9 +1000,8 @@ router.post('/admin/health/full-reset', (req, res) => {
   // down the whole project, which would kill this app's own container
   // mid-request (it's part of the same stack) and the browser would never
   // get a response back. "stop" (which CAN be scoped to specific services)
-  // achieves the same practical result once combined with a pull + up -d,
-  // while leaving the portal's own container - and any other excluded
-  // containers an admin has configured - running throughout.
+  // leaves the portal's own container - and any other excluded containers
+  // an admin has configured - running throughout.
   const exclusionPattern = allExclusions.map(escapeRegex).join('|');
   const command = `cd '${safePath}' && SERVICES=$(docker compose config --services | grep -vxE '${exclusionPattern}') && docker compose stop $SERVICES && docker compose pull $SERVICES && docker compose up -d $SERVICES`;
 
