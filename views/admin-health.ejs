@@ -30,6 +30,9 @@
         <div class="flex items-center justify-between mb-6 flex-wrap gap-3">
             <h2 class="text-sm uppercase tracking-widest text-slate-500 font-bold">Containers (<span id="containerVisibleCount"><%= containers.length %></span>)</h2>
             <div class="flex items-center gap-2 flex-wrap">
+                <button type="button" id="refreshAllBtn" onclick="refreshAllStatuses()" title="Refresh all statuses" class="w-10 h-10 flex items-center justify-center rounded-xl btn-outline">
+                    <i class="fas fa-arrows-rotate"></i>
+                </button>
                 <button type="button" id="bulkModeToggle" onclick="toggleBulkMode()" class="btn-outline px-4 py-2.5 rounded-xl text-sm">
                     <i class="fas fa-check-double mr-2"></i>Bulk Actions
                 </button>
@@ -294,6 +297,8 @@
         }
 
         // ---------- Full Reset & Update ----------
+        let fullResetPollTimer = null;
+
         async function confirmFullReset() {
             if (!confirm('This will stop, pull, and restart every container in your stack EXCEPT this portal itself (so it stays online). Continue?')) return;
             if (!confirm('Are you sure? This affects everything, not just one container. This can take several minutes, especially the pull step.')) return;
@@ -301,21 +306,75 @@
             const resultBox = document.getElementById('fullResetResult');
             resultBox.classList.remove('hidden');
             resultBox.className = 'text-sm rounded-xl p-4 mb-6 bg-amber-500/10 border border-amber-500/30 text-amber-400';
-            resultBox.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Running full reset — this can take several minutes, please don\'t close this tab…';
+            resultBox.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Starting full reset…';
 
             try {
                 const res = await fetch('/admin/health/full-reset', { method: 'POST' });
                 const data = await res.json();
-                resultBox.className = 'text-sm rounded-xl p-4 mb-6 ' + (data.ok
-                    ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400'
-                    : 'bg-red-500/10 border border-red-500/30 text-red-400');
-                resultBox.textContent = data.message;
-                refreshHealth();
+
+                if (!res.ok || (!data.ok && !data.started)) {
+                    resultBox.className = 'text-sm rounded-xl p-4 mb-6 bg-red-500/10 border border-red-500/30 text-red-400';
+                    resultBox.textContent = data.message || 'Could not start the full reset.';
+                    return;
+                }
+
+                resultBox.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Running in the background — this can take several minutes. You can navigate away; it keeps running on the server either way.';
+                pollFullResetStatus();
             } catch (e) {
                 resultBox.className = 'text-sm rounded-xl p-4 mb-6 bg-red-500/10 border border-red-500/30 text-red-400';
-                resultBox.textContent = 'Something went wrong sending the request (if it was a timeout, the reset may still be running on the server — check Recent Stop/Restart Requests or the SSH Console).';
+                resultBox.textContent = 'Could not reach the server to start the reset. Check your connection and try again.';
             }
         }
+
+        async function pollFullResetStatus() {
+            if (fullResetPollTimer) clearInterval(fullResetPollTimer);
+
+            const check = async function () {
+                const resultBox = document.getElementById('fullResetResult');
+                try {
+                    const res = await fetch('/admin/health/full-reset/status');
+                    const data = await res.json();
+
+                    if (data.running) {
+                        return; // still going - keep polling, leave the "running" message as-is
+                    }
+
+                    clearInterval(fullResetPollTimer);
+                    fullResetPollTimer = null;
+
+                    if (data.lastResult) {
+                        resultBox.className = 'text-sm rounded-xl p-4 mb-6 ' + (data.lastResult.ok
+                            ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400'
+                            : 'bg-red-500/10 border border-red-500/30 text-red-400');
+                        resultBox.textContent = data.lastResult.message;
+                    }
+                    refreshHealth();
+                } catch (e) {
+                    // transient network hiccup while polling - keep trying, don't clear the interval
+                }
+            };
+
+            check();
+            fullResetPollTimer = setInterval(check, 5000);
+        }
+
+        // If a reset was already running when this page loaded (e.g. it was
+        // started, then the page got reloaded/reopened), pick up polling for it.
+        (async function checkForInProgressReset() {
+            try {
+                const res = await fetch('/admin/health/full-reset/status');
+                const data = await res.json();
+                if (data.running) {
+                    const resultBox = document.getElementById('fullResetResult');
+                    resultBox.classList.remove('hidden');
+                    resultBox.className = 'text-sm rounded-xl p-4 mb-6 bg-amber-500/10 border border-amber-500/30 text-amber-400';
+                    resultBox.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>A full reset is already running in the background — this can take several minutes.';
+                    pollFullResetStatus();
+                }
+            } catch (e) {
+                // ignore - not critical on page load
+            }
+        })();
 
         // ---------- Logs modal (polling snapshot, not a true stream) ----------
         let logsContainerId = null;
@@ -386,6 +445,28 @@
         }
         refreshHealth();
         document.addEventListener('main:updated', refreshHealth);
+
+        // ---------- Refresh all statuses ----------
+        async function refreshAllStatuses() {
+            const btn = document.getElementById('refreshAllBtn');
+            const icon = btn ? btn.querySelector('i') : null;
+
+            if (icon) icon.classList.add('fa-spin');
+            if (btn) btn.disabled = true;
+
+            // Immediate feedback on every card at once, same as the per-container refresh.
+            document.querySelectorAll('[data-status-pill]').forEach(function (pill) {
+                pill.className = 'badge badge-suspended text-[10px] px-2 py-0.5';
+                pill.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> checking';
+            });
+
+            try {
+                await refreshHealth();
+            } finally {
+                if (icon) icon.classList.remove('fa-spin');
+                if (btn) btn.disabled = false;
+            }
+        }
 
         // ---------- Per-container refresh ----------
         document.addEventListener('click', async function (e) {

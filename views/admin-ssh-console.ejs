@@ -10,7 +10,7 @@
     <main class="max-w-4xl mx-auto px-4 sm:px-6 py-8 sm:py-10 pb-24">
         <h1 class="text-2xl sm:text-3xl font-extrabold mb-2">SSH Console</h1>
         <p class="text-slate-400 text-sm mb-3">Run commands directly against your server, auto-authenticated with the SSH access already saved in Settings — no separate login needed. Each command runs once and returns its output; this isn't a full interactive terminal.</p>
-        <p class="text-slate-500 text-xs mb-8"><i class="fas fa-circle-info mr-1.5"></i>Each command opens its own fresh connection, so <code class="font-mono text-slate-400">cd</code> on its own won't carry over to your next command and will just show as completed with no output. Chain things on one line instead, e.g. <code class="font-mono text-slate-400">cd /opt/media-stack &amp;&amp; docker compose ps</code>.</p>
+        <p class="text-slate-500 text-xs mb-8"><i class="fas fa-circle-info mr-1.5"></i>Under the hood, every command opens its own fresh connection - but the console remembers your current directory and re-applies it automatically, so <code class="font-mono text-slate-400">cd</code> behaves the way you'd expect: run <code class="font-mono text-slate-400">cd /opt/media-stack</code>, then <code class="font-mono text-slate-400">ls</code> on the next line, and it'll list that directory.</p>
 
         <% if (!sshConfigured) { %>
             <div class="mb-8 px-4 sm:px-5 py-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400 text-sm flex items-center justify-between flex-wrap gap-3">
@@ -20,9 +20,18 @@
         <% } %>
 
         <div class="glass rounded-2xl sm:rounded-3xl p-5 sm:p-8 mb-8">
-            <div class="flex items-center gap-2 mb-3">
-                <span class="w-2 h-2 rounded-full <%= sshConfigured ? 'bg-emerald-400' : 'bg-slate-600' %>"></span>
-                <span class="text-xs text-slate-400"><%= sshConfigured ? 'Connected using saved admin server access' : 'Not connected' %></span>
+            <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
+                <div class="flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full <%= sshConfigured ? 'bg-emerald-400' : 'bg-slate-600' %>"></span>
+                    <span class="text-xs text-slate-400"><%= sshConfigured ? 'Connected using saved admin server access' : 'Not connected' %></span>
+                </div>
+                <div class="flex items-center gap-2 text-xs text-slate-500">
+                    <i class="fas fa-folder"></i>
+                    <span id="cwdDisplay" class="font-mono text-slate-300"><%= cwd || '(default login directory)' %></span>
+                    <button type="button" onclick="resetCwd()" class="text-sky-400 hover:text-sky-300 ml-1" title="Reset to default directory">
+                        <i class="fas fa-rotate-left"></i>
+                    </button>
+                </div>
             </div>
             <div id="consoleOutput" class="console-output mb-4"><span class="console-prompt">$</span> Ready. Type a command below and press Run.</div>
             <form id="consoleForm" class="flex flex-col sm:flex-row gap-3">
@@ -58,6 +67,7 @@
         const form = document.getElementById('consoleForm');
         const input = document.getElementById('commandInput');
         const output = document.getElementById('consoleOutput');
+        const cwdDisplay = document.getElementById('cwdDisplay');
 
         function appendLine(html) {
             const line = document.createElement('div');
@@ -70,6 +80,21 @@
             const div = document.createElement('div');
             div.textContent = str;
             return div.innerHTML;
+        }
+
+        function updateCwdDisplay(cwd) {
+            if (cwdDisplay) cwdDisplay.textContent = cwd || '(default login directory)';
+        }
+
+        async function resetCwd() {
+            try {
+                const res = await fetch('/admin/ssh-console/reset-cwd', { method: 'POST' });
+                const data = await res.json();
+                updateCwdDisplay(data.cwd);
+                appendLine('<span style="color:#64748b;">Working directory reset.</span>');
+            } catch (e) {
+                // ignore
+            }
         }
 
         if (form) {
@@ -90,6 +115,7 @@
                     });
                     const data = await res.json();
                     appendLine(escapeHtml(data.output || (data.ok ? '(no output)' : data.message || 'Command failed.')));
+                    if ('cwd' in data) updateCwdDisplay(data.cwd);
                 } catch (err) {
                     appendLine('<span style="color:#f87171;">Something went wrong sending that command.</span>');
                 } finally {

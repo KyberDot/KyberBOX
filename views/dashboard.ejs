@@ -248,6 +248,40 @@
         tickCountdowns();
         setInterval(tickCountdowns, 1000);
 
+        const actionPollTimers = {};
+
+        function pollActionStatus(actionId, btn, resultBox, labelEl, originalLabel) {
+            if (actionPollTimers[actionId]) clearInterval(actionPollTimers[actionId]);
+
+            const check = async function () {
+                try {
+                    const res = await fetch('/dashboard/actions/' + actionId + '/status');
+                    const data = await res.json();
+
+                    if (data.running) return; // still going - keep polling
+
+                    clearInterval(actionPollTimers[actionId]);
+                    delete actionPollTimers[actionId];
+
+                    if (data.lastResult && resultBox) {
+                        resultBox.classList.remove('hidden');
+                        resultBox.className = 'mt-4 text-sm rounded-xl p-4 ' + (data.lastResult.ok
+                            ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400'
+                            : 'bg-red-500/10 border border-red-500/30 text-red-400');
+                        resultBox.textContent = data.lastResult.message;
+                    }
+                    if (labelEl) labelEl.textContent = (data.lastResult && data.lastResult.ok) ? 'Done' : originalLabel;
+                    // Button stays disabled/enabled based on the cooldown timer set when the
+                    // action started, not on completion - the countdown logic already handles that.
+                } catch (e) {
+                    // transient network hiccup while polling - keep trying
+                }
+            };
+
+            check();
+            actionPollTimers[actionId] = setInterval(check, 5000);
+        }
+
         async function confirmAction() {
             const btn = pendingActionBtn;
             closeActionModal();
@@ -276,7 +310,13 @@
                     startCooldown(actionId, data.nextAllowedAt);
                     tickCountdowns();
                 }
-                if (data.ok) {
+
+                if (data.started) {
+                    // Long-running (danger-style) action kicked off in the background -
+                    // poll for the real result instead of waiting on this one request.
+                    if (labelEl) labelEl.textContent = 'Running…';
+                    pollActionStatus(actionId, btn, resultBox, labelEl, originalLabel);
+                } else if (data.ok) {
                     if (labelEl) labelEl.textContent = 'Done';
                     if (!data.nextAllowedAt) btn.disabled = false;
                 } else {

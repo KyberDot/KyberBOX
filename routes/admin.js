@@ -68,6 +68,7 @@ router.get('/admin', (req, res) => {
   const openTickets = db.prepare("SELECT COUNT(*) c FROM tickets WHERE status != 'closed'").get().c;
   const activeSubs = db.prepare("SELECT COUNT(*) c FROM subscriptions WHERE status = 'active'").get().c;
   const planCount = db.prepare('SELECT COUNT(*) c FROM plans').get().c;
+  const healthContainerCount = db.prepare('SELECT COUNT(*) c FROM admin_health_containers').get().c;
   const recentActions = db
     .prepare(
       `SELECT al.*, u.name, u.email, pa.label AS action_label FROM action_log al
@@ -78,7 +79,7 @@ router.get('/admin', (req, res) => {
     .all();
   const mailConfigured = isConfigured(getAllSettings());
 
-  res.render('admin-overview', { userCount, openTickets, activeSubs, planCount, recentActions, mailConfigured });
+  res.render('admin-overview', { userCount, openTickets, activeSubs, planCount, healthContainerCount, recentActions, mailConfigured });
 });
 
 // ---------- Plans ----------
@@ -225,6 +226,19 @@ function sanitizeActionIcon(value) {
 // text should never be just a bare "fa-..." token.
 function looksLikeIconNotCommand(command) {
   return /^fa[-\s][a-z0-9-]+$/i.test(command.trim());
+}
+
+// Splits the admin's "extra exclusions" setting (comma and/or newline
+// separated) into a clean list of container/service names.
+function parseExclusionNames(raw) {
+  return String(raw || '')
+    .split(/[,\n]/)
+    .map((name) => name.trim().replace(/[^a-zA-Z0-9_.-]/g, ''))
+    .filter(Boolean);
+}
+
+function escapeRegex(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 router.post('/admin/plans/:id/actions', (req, res) => {
@@ -576,7 +590,7 @@ router.post('/admin/settings/branding', (req, res) => {
 });
 
 router.post('/admin/settings/health-ssh', (req, res) => {
-  const { host, port, username, auth_type, secret, compose_path, self_service_name } = req.body;
+  const { host, port, username, auth_type, secret, compose_path, self_service_name, reset_exclusions } = req.body;
   if (!host || !username) return res.status(400).render('error', { message: 'Missing required fields - please fill in everything marked required and try again.' });
 
   const existing = db.prepare('SELECT * FROM admin_ssh LIMIT 1').get();
@@ -600,6 +614,7 @@ router.post('/admin/settings/health-ssh', (req, res) => {
 
   setSetting('compose_path', String(compose_path || '').trim());
   setSetting('self_service_name', String(self_service_name || 'kyberbox').trim() || 'kyberbox');
+  setSetting('reset_exclusions', String(reset_exclusions || '').trim());
 
   res.render('admin-settings', { ...loadSettingsPageData(), saved: 'health-ssh', testResult: null, brandingError: null });
 });
@@ -818,7 +833,16 @@ router.post('/admin/health/containers/bulk-action', async (req, res) => {
 // order, at the compose path configured in Settings. Deliberately its own
 // endpoint (not reusing bulk-action) since it affects the whole stack, not
 // a chosen set of containers.
-router.post('/admin/health/full-reset', async (req, res) => {
+// In-memory tracker for the background full-reset job. This app runs as a
+// single process (no horizontal scaling), so this is safe and avoids extra
+// schema just to track "is a reset currently running".
+let fullResetState = { running: false, lastResult: null };
+
+router.post('/admin/health/full-reset', (req, res) => {
+  if (fullResetState.running) {
+    return res.status(409).json({ ok: false, message: 'A full reset is already running - wait for it to finish first.' });
+  }
+
   const settings = getAllSettings();
   const composePath = settings.compose_path;
   if (!composePath) {
@@ -831,27 +855,53 @@ router.post('/admin/health/full-reset', async (req, res) => {
   }
 
   const selfService = (settings.self_service_name || 'kyberbox').replace(/[^a-zA-Z0-9_.-]/g, '') || 'kyberbox';
+  const extraExclusions = parseExclusionNames(settings.reset_exclusions);
+  const allExclusions = [...new Set([selfService, ...extraExclusions])];
   const safePath = composePath.replace(/'/g, `'"'"'`);
+  const adminUserId = req.user.id;
 
   // "docker compose down" can't be limited to specific services - it tears
   // down the whole project, which would kill this app's own container
   // mid-request (it's part of the same stack) and the browser would never
   // get a response back. "stop" (which CAN be scoped to specific services)
   // achieves the same practical result once combined with a pull + up -d,
-  // while leaving the portal's own container running throughout.
-  const command = `cd '${safePath}' && SERVICES=$(docker compose config --services | grep -v -x '${selfService}') && docker compose stop $SERVICES && docker compose pull $SERVICES && docker compose up -d $SERVICES`;
-  const result = await runCommand(target, command, 15 * 60 * 1000); // up to 15 minutes for pulls
+  // while leaving the portal's own container - and any other excluded
+  // containers an admin has configured - running throughout.
+  const exclusionPattern = allExclusions.map(escapeRegex).join('|');
+  const command = `cd '${safePath}' && SERVICES=$(docker compose config --services | grep -vxE '${exclusionPattern}') && docker compose stop $SERVICES && docker compose pull $SERVICES && docker compose up -d $SERVICES`;
 
-  db.prepare(
-    'INSERT INTO admin_health_log (admin_user_id, container_name, action, success, output) VALUES (?, ?, ?, ?, ?)'
-  ).run(req.user.id, `ALL except ${selfService}`, 'full-reset', result.success ? 1 : 0, result.output);
+  fullResetState = { running: true, lastResult: null };
 
-  res.json({
-    ok: result.success,
-    message: result.success
-      ? `Full reset complete: stack (except "${selfService}", this portal's own container) was stopped, images pulled, and brought back up.`
-      : `Full reset failed: ${result.output}`,
-  });
+  // Deliberately not awaited: the HTTP request/response below finishes in
+  // well under a second regardless of how long this actually takes, so no
+  // reverse proxy, tunnel, or load balancer sitting in front of this app
+  // can time out the connection partway through a multi-minute pull. The
+  // browser polls GET /admin/health/full-reset/status for the real result.
+  runCommand(target, command, 15 * 60 * 1000)
+    .then((result) => {
+      db.prepare(
+        'INSERT INTO admin_health_log (admin_user_id, container_name, action, success, output) VALUES (?, ?, ?, ?, ?)'
+      ).run(adminUserId, `ALL except ${allExclusions.join(', ')}`, 'full-reset', result.success ? 1 : 0, result.output);
+
+      fullResetState = {
+        running: false,
+        lastResult: {
+          ok: result.success,
+          message: result.success
+            ? `Full reset complete: stack (except ${allExclusions.map((n) => `"${n}"`).join(', ')}) was stopped, images pulled, and brought back up.`
+            : `Full reset failed: ${result.output}`,
+        },
+      };
+    })
+    .catch((err) => {
+      fullResetState = { running: false, lastResult: { ok: false, message: `Full reset failed: ${err.message}` } };
+    });
+
+  res.json({ ok: true, started: true, message: 'Full reset started in the background — this can take several minutes.' });
+});
+
+router.get('/admin/health/full-reset/status', (req, res) => {
+  res.json(fullResetState);
 });
 
 // ---------- SSH Console ----------
@@ -859,12 +909,21 @@ router.post('/admin/health/full-reset', async (req, res) => {
 // with the credentials already stored in Settings - no separate login step.
 // This runs one command per request (not a full interactive shell/PTY).
 
+// Each command runs over its own fresh SSH connection (no persistent shell),
+// so a plain "cd" would normally have zero effect on the next command - not
+// a display quirk, a real limitation of one-shot exec. This tracks the
+// working directory server-side and transparently re-applies it before every
+// command, then re-reads it afterwards in case that command changed it,
+// so "cd" behaves the way people reasonably expect a console to behave.
+let consoleCwd = null;
+const CWD_MARKER = '___KYBERBOX_CWD___';
+
 router.get('/admin/ssh-console', (req, res) => {
   const sshConfigured = !!db.prepare('SELECT id FROM admin_ssh LIMIT 1').get();
   const history = db
     .prepare('SELECT * FROM ssh_console_log ORDER BY requested_at DESC LIMIT 25')
     .all();
-  res.render('admin-ssh-console', { sshConfigured, history });
+  res.render('admin-ssh-console', { sshConfigured, history, cwd: consoleCwd });
 });
 
 router.post('/admin/ssh-console/run', async (req, res) => {
@@ -876,16 +935,38 @@ router.post('/admin/ssh-console/run', async (req, res) => {
     return res.status(400).json({ ok: false, message: 'No admin SSH access configured yet. Set it up in Settings first.' });
   }
 
-  const result = await runCommand(target, command);
+  // Restore the last-known directory (silently, so a deleted/renamed
+  // directory doesn't block the rest of the command from running), run the
+  // actual command, then capture wherever it ended up for next time.
+  const cdPrefix = consoleCwd ? `cd '${consoleCwd.replace(/'/g, `'"'"'`)}' >/dev/null 2>&1 ; ` : '';
+  const fullCommand = `${cdPrefix}${command} ; echo "${CWD_MARKER}$(pwd)"`;
+
+  const result = await runCommand(target, fullCommand);
+
+  // Pull the tracked directory out of the trailing marker line and hide
+  // that plumbing from what's actually shown to the admin.
+  let output = result.output;
+  const markerIndex = output.lastIndexOf(CWD_MARKER);
+  if (markerIndex !== -1) {
+    const newCwd = output.slice(markerIndex + CWD_MARKER.length).split('\n')[0].trim();
+    if (newCwd) consoleCwd = newCwd;
+    output = output.slice(0, markerIndex).replace(/\n$/, '');
+  }
+  if (!output.trim()) output = '(no output — command completed successfully)';
 
   db.prepare('INSERT INTO ssh_console_log (admin_user_id, command, success, output) VALUES (?, ?, ?, ?)').run(
     req.user.id,
     command,
     result.success ? 1 : 0,
-    result.output
+    output
   );
 
-  res.json({ ok: result.success, output: result.output });
+  res.json({ ok: result.success, output, cwd: consoleCwd });
+});
+
+router.post('/admin/ssh-console/reset-cwd', (req, res) => {
+  consoleCwd = null;
+  res.json({ ok: true, cwd: consoleCwd });
 });
 
 module.exports = router;

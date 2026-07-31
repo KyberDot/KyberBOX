@@ -4,6 +4,11 @@ const { runCommand, getContainerStatuses } = require('../utils/ssh');
 
 const router = express.Router();
 
+// Tracks in-progress background danger-style actions, keyed by "userId:actionId".
+// Single-process app, so in-memory is fine - same pattern as the admin
+// Full Reset job tracker.
+const dangerActionState = {};
+
 /** Loads everything the dashboard needs for one active subscription's plan. */
 function buildPlanView(subscription, userId) {
   const plan = db.prepare('SELECT * FROM plans WHERE id = ?').get(subscription.plan_id);
@@ -147,11 +152,61 @@ router.post('/dashboard/actions/:actionId/run', async (req, res) => {
     });
   }
 
+  const nextAllowedAt = action.cooldown_hours > 0
+    ? new Date(Date.now() + action.cooldown_hours * 60 * 60 * 1000).toISOString()
+    : null;
+
   // Danger-style actions are meant for slow operations (e.g. a full
-  // "docker compose down/pull/up" reset), which can take several minutes -
-  // the default short timeout is for quick restarts/status checks only.
-  const timeoutMs = action.style === 'danger' ? 15 * 60 * 1000 : undefined;
-  const result = await runCommand(target, action.command, timeoutMs);
+  // "docker compose down/pull/up" reset), which can take several minutes.
+  // Waiting on that synchronously is exactly the kind of long-lived request
+  // a reverse proxy/tunnel in front of this app tends to cut off early -
+  // so it runs in the background instead, and the dashboard polls for the
+  // real result. Quick actions (restarts, etc.) stay synchronous as before.
+  if (action.style === 'danger') {
+    const key = `${req.user.id}:${action.id}`;
+    if (dangerActionState[key] && dangerActionState[key].running) {
+      return res.status(409).json({ ok: false, message: `"${action.label}" is already running - wait for it to finish first.` });
+    }
+
+    // Cooldown starts the moment the action is triggered, not when it
+    // finishes, and this same row also blocks a second click while running.
+    const info = db.prepare('INSERT INTO action_log (user_id, plan_action_id, success, output) VALUES (?, ?, 0, ?)').run(
+      req.user.id,
+      action.id,
+      '(still running)'
+    );
+
+    dangerActionState[key] = { running: true, lastResult: null };
+
+    runCommand(target, action.command, 15 * 60 * 1000)
+      .then((result) => {
+        db.prepare('UPDATE action_log SET success = ?, output = ? WHERE id = ?').run(
+          result.success ? 1 : 0,
+          result.output,
+          info.lastInsertRowid
+        );
+        dangerActionState[key] = {
+          running: false,
+          lastResult: {
+            ok: result.success,
+            message: result.success ? `"${action.label}" completed successfully.` : `"${action.label}" failed: ${result.output}`,
+          },
+        };
+      })
+      .catch((err) => {
+        db.prepare('UPDATE action_log SET success = 0, output = ? WHERE id = ?').run(err.message, info.lastInsertRowid);
+        dangerActionState[key] = { running: false, lastResult: { ok: false, message: `"${action.label}" failed: ${err.message}` } };
+      });
+
+    return res.json({
+      ok: true,
+      started: true,
+      message: `"${action.label}" started in the background — this can take several minutes.`,
+      nextAllowedAt,
+    });
+  }
+
+  const result = await runCommand(target, action.command);
 
   db.prepare('INSERT INTO action_log (user_id, plan_action_id, success, output) VALUES (?, ?, ?, ?)').run(
     req.user.id,
@@ -165,10 +220,13 @@ router.post('/dashboard/actions/:actionId/run', async (req, res) => {
     message: result.success
       ? `"${action.label}" completed successfully.`
       : `"${action.label}" failed: ${result.output}`,
-    nextAllowedAt: result.success && action.cooldown_hours > 0
-      ? new Date(Date.now() + action.cooldown_hours * 60 * 60 * 1000).toISOString()
-      : null,
+    nextAllowedAt: result.success ? nextAllowedAt : null,
   });
+});
+
+router.get('/dashboard/actions/:actionId/status', (req, res) => {
+  const key = `${req.user.id}:${req.params.actionId}`;
+  res.json(dangerActionState[key] || { running: false, lastResult: null });
 });
 
 module.exports = router;

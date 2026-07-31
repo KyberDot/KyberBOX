@@ -17,6 +17,36 @@
             </div>
         <% } %>
 
+        <!-- Container health summary (live, from the Health page's containers) -->
+        <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
+            <h2 class="text-sm uppercase tracking-widest text-slate-500 font-bold">Container Health</h2>
+            <a href="/admin/health" class="text-sky-400 hover:text-sky-300 text-xs">View Health Page <i class="fas fa-arrow-right ml-1"></i></a>
+        </div>
+        <% if (healthContainerCount === 0) { %>
+            <div class="glass rounded-2xl p-5 sm:p-6 mb-10 sm:mb-12 text-slate-400 text-sm">
+                No containers being monitored yet — add some on the <a href="/admin/health" class="text-sky-400 hover:text-sky-300">Health page</a> to see their status here.
+            </div>
+        <% } else { %>
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-5 mb-10 sm:mb-12" id="healthSummaryGrid">
+                <div class="glass rounded-2xl p-5 sm:p-6">
+                    <p class="text-slate-500 text-xs uppercase tracking-widest font-semibold mb-2"><i class="fas fa-circle-check text-emerald-400 mr-1"></i>Online</p>
+                    <p class="text-2xl sm:text-3xl font-extrabold text-emerald-400" data-health-count="up">—</p>
+                </div>
+                <div class="glass rounded-2xl p-5 sm:p-6">
+                    <p class="text-slate-500 text-xs uppercase tracking-widest font-semibold mb-2"><i class="fas fa-triangle-exclamation text-amber-400 mr-1"></i>Unhealthy</p>
+                    <p class="text-2xl sm:text-3xl font-extrabold text-amber-400" data-health-count="unhealthy">—</p>
+                </div>
+                <div class="glass rounded-2xl p-5 sm:p-6">
+                    <p class="text-slate-500 text-xs uppercase tracking-widest font-semibold mb-2"><i class="fas fa-circle-xmark text-red-400 mr-1"></i>Offline</p>
+                    <p class="text-2xl sm:text-3xl font-extrabold text-red-400" data-health-count="down">—</p>
+                </div>
+                <div class="glass rounded-2xl p-5 sm:p-6">
+                    <p class="text-slate-500 text-xs uppercase tracking-widest font-semibold mb-2"><i class="fas fa-question text-slate-500 mr-1"></i>Unknown</p>
+                    <p class="text-2xl sm:text-3xl font-extrabold text-slate-400" data-health-count="unknown">—</p>
+                </div>
+            </div>
+        <% } %>
+
         <div class="grid sm:grid-cols-2 md:grid-cols-4 gap-4 sm:gap-5 mb-10 sm:mb-12">
             <div class="glass rounded-2xl p-5 sm:p-6">
                 <p class="text-slate-500 text-xs uppercase tracking-widest font-semibold mb-2">Subscribers</p>
@@ -69,5 +99,32 @@
             <% } %>
         </div>
     </main>
+
+    <script>
+        (async function loadHealthSummary() {
+            const grid = document.getElementById('healthSummaryGrid');
+            if (!grid) return; // no containers configured - nothing to summarize
+
+            try {
+                const res = await fetch('/admin/health/status');
+                const data = await res.json();
+                if (!data.ok) return;
+
+                const tally = { up: 0, unhealthy: 0, down: 0, unknown: 0 };
+                data.containers.forEach(function (c) {
+                    if (c.status === 'starting') { tally.unknown++; return; } // rare transient state, folded in
+                    if (tally.hasOwnProperty(c.status)) tally[c.status]++;
+                    else tally.unknown++;
+                });
+
+                Object.keys(tally).forEach(function (key) {
+                    const el = grid.querySelector('[data-health-count="' + key + '"]');
+                    if (el) el.textContent = tally[key];
+                });
+            } catch (e) {
+                // leave placeholders as "—" on failure
+            }
+        })();
+    </script>
 </body>
 </html>

@@ -204,13 +204,16 @@ shows a banner reminding you to finish mail setup.
   Subscribers can only trigger a predefined action; they never type or
   influence any command that reaches a server.
 - Password reset links expire after 30 minutes and can only be used once.
-- **Full Reset & Update can take several minutes** (mostly the `pull`
-  step). The app itself will wait up to 15 minutes for it, but if you're
-  running behind a reverse proxy (Authentik, Nginx, Traefik), its own
-  read/response timeout may cut the connection first and show an error
-  even though the reset is still running fine on the server — check
-  Admin → Health's recent requests list or Admin → SSH Console
-  (`docker compose ps`) to confirm either way before assuming it failed.
+- **Full Reset & Update runs in the background.** Clicking it starts the
+  job and the request returns almost instantly; the page then polls for
+  the real result every few seconds until it's done (up to 15 minutes,
+  mostly the `pull` step). This is deliberate: a request that stays open
+  for minutes is exactly the kind of thing a reverse proxy, tunnel, or
+  load balancer in front of the app tends to cut off early, which used to
+  show a false "something went wrong" error even though the reset kept
+  running fine on the server. If you ever navigate away mid-reset and come
+  back, the Health page notices it's still running and resumes polling
+  automatically.
 
 ## 7. Project structure
 
