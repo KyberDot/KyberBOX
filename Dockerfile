@@ -1,24 +1,22 @@
-{
-  "name": "kyberbox-portal",
-  "version": "1.0.0",
-  "description": "KyberBOX client portal - subscription access, Plex self-service restart, and support tickets",
-  "main": "server.js",
-  "license": "UNLICENSED",
-  "private": true,
-  "scripts": {
-    "start": "node server.js"
-  },
-  "dependencies": {
-    "better-sqlite3": "^11.3.0",
-    "bcryptjs": "^2.4.3",
-    "cookie-parser": "^1.4.6",
-    "dotenv": "^16.4.5",
-    "ejs": "^3.1.10",
-    "express": "^4.19.2",
-    "express-rate-limit": "^7.4.0",
-    "jsonwebtoken": "^9.0.2",
-    "multer": "^1.4.5-lts.1",
-    "nodemailer": "^6.9.15",
-    "ssh2": "^1.15.0"
-  }
-}
+FROM node:20-bookworm-slim
+
+# better-sqlite3 needs build tools to compile its native binding
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    make \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY package.json ./
+RUN npm install --omit=dev
+
+COPY . .
+
+# Persistent SQLite database lives here - mount a volume to this path
+VOLUME ["/app/data"]
+
+EXPOSE 3000
+
+CMD ["node", "server.js"]
