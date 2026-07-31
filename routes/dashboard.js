@@ -184,7 +184,10 @@ router.post('/dashboard/actions/:actionId/run', async (req, res) => {
     );
 
     dangerActionState[key] = { running: true, lastResult: null };
-    startReset(`${action.label} (triggered by ${req.user.name})`);
+    // Deliberately just the action label, not who triggered it - this string
+    // flows straight into the site-wide banner and the "already in progress"
+    // messages other people see, which shouldn't expose someone's name.
+    startReset(action.label);
 
     const otherSubscribers = db
       .prepare(

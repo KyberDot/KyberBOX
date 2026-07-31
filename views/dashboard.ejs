@@ -95,7 +95,12 @@
                     <!-- Container health -->
                     <% if (pv.containers.length > 0) { %>
                         <div class="mb-6" data-plan-id="<%= pv.plan.id %>" data-health-container>
-                            <p class="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-3">Server Status</p>
+                            <div class="flex items-center justify-between mb-3">
+                                <p class="text-xs uppercase tracking-widest text-slate-500 font-semibold">Server Status</p>
+                                <button type="button" class="w-6 h-6 flex items-center justify-center rounded-lg text-slate-500 hover:text-white hover:bg-white/5 text-xs" title="Refresh status" data-plan-refresh-btn data-plan-id="<%= pv.plan.id %>">
+                                    <i class="fas fa-arrows-rotate"></i>
+                                </button>
+                            </div>
                             <div class="grid sm:grid-cols-2 gap-2">
                                 <% pv.containers.forEach(function(c) { %>
                                     <div class="flex items-center justify-between bg-slate-900/40 rounded-xl px-4 py-3" data-container-name="<%= c.container_name %>">
@@ -111,29 +116,29 @@
                     <% if (pv.actions.length > 0) { %>
                         <div class="flex flex-col sm:flex-row sm:flex-wrap gap-4">
                             <% pv.actions.forEach(function(action) { %>
-                                <div class="flex flex-col gap-1.5 w-full sm:w-auto">
-                                    <button
-                                        class="<%= action.style === 'danger' ? 'btn-danger' : 'btn-amber' %> px-6 py-3 rounded-2xl text-sm w-full sm:w-auto"
-                                        data-action-btn
-                                        data-action-id="<%= action.id %>"
-                                        data-action-label="<%= action.label %>"
-                                        data-action-style="<%= action.style || 'warning' %>"
-                                        data-cooldown-hours="<%= action.cooldown_hours %>"
-                                        <%= (action.nextAllowedAt || pv.plan.maintenance_mode) ? 'disabled' : '' %>
-                                    >
+                                <button
+                                    class="<%= action.style === 'danger' ? 'btn-danger' : 'btn-amber' %> px-6 py-2.5 rounded-2xl text-sm w-full sm:w-auto flex flex-col items-center justify-center gap-0.5"
+                                    data-action-btn
+                                    data-action-id="<%= action.id %>"
+                                    data-action-label="<%= action.label %>"
+                                    data-action-style="<%= action.style || 'warning' %>"
+                                    data-cooldown-hours="<%= action.cooldown_hours %>"
+                                    <%= (action.nextAllowedAt || pv.plan.maintenance_mode) ? 'disabled' : '' %>
+                                >
+                                    <span class="flex items-center">
                                         <i class="fas <%= action.icon %> mr-2"></i>
                                         <span data-action-btn-label><%= pv.plan.maintenance_mode ? 'Unavailable (Maintenance)' : (action.nextAllowedAt ? action.label + ' Unavailable' : action.label) %></span>
-                                    </button>
+                                    </span>
                                     <% if (!pv.plan.maintenance_mode) { %>
-                                        <p class="text-slate-500 text-xs text-center sm:text-left <%= action.nextAllowedAt ? '' : 'hidden' %>"
-                                           data-cooldown-timer
-                                           data-action-id="<%= action.id %>"
-                                           data-action-label="<%= action.label %>"
-                                           data-next-allowed-at="<%= action.nextAllowedAt || '' %>">
-                                            <%= action.label %> available in <span data-countdown-text>—</span>
-                                        </p>
+                                        <span class="text-[10px] font-normal opacity-80 <%= action.nextAllowedAt ? '' : 'hidden' %>"
+                                              data-cooldown-timer
+                                              data-action-id="<%= action.id %>"
+                                              data-action-label="<%= action.label %>"
+                                              data-next-allowed-at="<%= action.nextAllowedAt || '' %>">
+                                            available in <span data-countdown-text>—</span>
+                                        </span>
                                     <% } %>
-                                </div>
+                                </button>
                             <% }); %>
                         </div>
                         <div id="actionResult-<%= pv.plan.id %>" class="mt-4 hidden text-sm rounded-xl p-4"></div>
@@ -334,8 +339,8 @@
             }
         }
 
-        // Fetch live container health for each plan card without blocking page load
-        document.querySelectorAll('[data-health-container]').forEach(async function(el) {
+        // Fetch live container health for a plan card without blocking page load
+        async function refreshPlanHealth(el) {
             const planId = el.getAttribute('data-plan-id');
             try {
                 const res = await fetch('/dashboard/plans/' + planId + '/health');
@@ -357,6 +362,36 @@
                 });
             } catch (e) {
                 // leave "checking" state as-is on failure
+            }
+        }
+
+        document.querySelectorAll('[data-health-container]').forEach(function(el) {
+            refreshPlanHealth(el);
+        });
+
+        document.addEventListener('click', async function (e) {
+            const btn = e.target.closest('[data-plan-refresh-btn]');
+            if (!btn) return;
+
+            const planId = btn.getAttribute('data-plan-id');
+            const container = document.querySelector('[data-health-container][data-plan-id="' + planId + '"]');
+            if (!container) return;
+
+            const icon = btn.querySelector('i');
+            if (icon) icon.classList.add('fa-spin');
+            btn.disabled = true;
+
+            // Immediate feedback so it's obvious the click registered.
+            container.querySelectorAll('[data-status-pill]').forEach(function (pill) {
+                pill.className = 'badge badge-suspended';
+                pill.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> checking';
+            });
+
+            try {
+                await refreshPlanHealth(container);
+            } finally {
+                if (icon) icon.classList.remove('fa-spin');
+                btn.disabled = false;
             }
         });
     </script>
