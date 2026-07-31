@@ -17,6 +17,9 @@
                 <a href="/account" class="text-slate-400 hover:text-white transition font-medium">Account</a>
             <% } else { %>
                 <a href="/dashboard" class="text-slate-400 hover:text-white transition font-medium">Dashboard</a>
+                <% if (hasPlexPlan) { %>
+                    <a href="/watch-history" class="text-slate-400 hover:text-white transition font-medium">Watch History</a>
+                <% } %>
                 <a href="/support" class="text-slate-400 hover:text-white transition font-medium">Support</a>
                 <a href="/account" class="text-slate-400 hover:text-white transition font-medium">Account</a>
             <% } %>
@@ -48,6 +51,9 @@
             <a href="/account" class="text-slate-300 hover:text-white transition font-medium py-2 px-2 rounded-lg hover:bg-white/5">Account</a>
         <% } else { %>
             <a href="/dashboard" class="text-slate-300 hover:text-white transition font-medium py-2 px-2 rounded-lg hover:bg-white/5">Dashboard</a>
+            <% if (hasPlexPlan) { %>
+                <a href="/watch-history" class="text-slate-300 hover:text-white transition font-medium py-2 px-2 rounded-lg hover:bg-white/5">Watch History</a>
+            <% } %>
             <a href="/support" class="text-slate-300 hover:text-white transition font-medium py-2 px-2 rounded-lg hover:bg-white/5">Support</a>
             <a href="/account" class="text-slate-300 hover:text-white transition font-medium py-2 px-2 rounded-lg hover:bg-white/5">Account</a>
         <% } %>

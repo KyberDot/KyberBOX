@@ -3,6 +3,9 @@ const db = require('../db');
 const { runCommand, getContainerStatuses } = require('../utils/ssh');
 const { startReset, endReset, getResetState } = require('../utils/resetLock');
 const { notifyResetStarted } = require('../utils/mailer');
+const { getWatchHistory } = require('../utils/tautulli');
+const { getAllSettings } = require('../utils/settings');
+const { formatUK } = require('../utils/time');
 
 const router = express.Router();
 
@@ -249,6 +252,34 @@ router.post('/dashboard/actions/:actionId/run', async (req, res) => {
 router.get('/dashboard/actions/:actionId/status', (req, res) => {
   const key = `${req.user.id}:${req.params.actionId}`;
   res.json(dangerActionState[key] || { running: false, lastResult: null });
+});
+
+// Dedicated page (not embedded in the dashboard) - just renders the shell;
+// the actual data comes from the JSON endpoint below via fetch.
+router.get('/watch-history', (req, res) => {
+  res.render('watch-history');
+});
+
+// Plex watch history via Tautulli, scoped to just this subscriber's own
+// Plex username - the API key never leaves the server.
+router.get('/dashboard/plex/history', async (req, res) => {
+  if (!res.locals.hasPlexPlan) {
+    return res.json({ ok: false, message: 'This is only available on a Plex plan.' });
+  }
+
+  const userRecord = db.prepare('SELECT plex_username FROM users WHERE id = ?').get(req.user.id);
+  const settings = getAllSettings();
+
+  const result = await getWatchHistory(settings.tautulli_url, settings.tautulli_api_key, userRecord ? userRecord.plex_username : null);
+
+  if (result.ok) {
+    result.items = result.items.map((item) => ({
+      ...item,
+      watchedAtLabel: item.watchedAtIso ? formatUK(item.watchedAtIso) : '',
+    }));
+  }
+
+  res.json(result);
 });
 
 module.exports = router;

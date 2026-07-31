@@ -130,6 +130,28 @@
             </form>
         </div>
 
+        <!-- Tautulli -->
+        <div class="glass rounded-2xl sm:rounded-3xl p-5 sm:p-8 mb-8">
+            <h2 class="text-lg font-bold text-white mb-1"><i class="fas fa-chart-simple mr-2 text-sky-400"></i>Tautulli (Plex Watch History)</h2>
+            <p class="text-slate-400 text-sm mb-4">Lets subscribers on a Plex plan see their own recent watch history on their dashboard. Reachable at the container's internal address if Tautulli is on the same Docker network (e.g. <code class="font-mono">http://tautulli:8181</code>), or its full URL otherwise.</p>
+            <% if (typeof tautulliTestResult !== 'undefined' && tautulliTestResult) { %>
+                <div class="mb-4 px-4 py-3 rounded-xl <%= tautulliTestResult.ok ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400' : 'bg-red-500/10 border border-red-500/30 text-red-400' %> text-sm">
+                    <i class="fas <%= tautulliTestResult.ok ? 'fa-circle-check' : 'fa-triangle-exclamation' %> mr-2"></i><%= tautulliTestResult.message %>
+                </div>
+            <% } %>
+            <form method="POST" action="/admin/settings/tautulli" data-ajax-form class="grid sm:grid-cols-2 gap-4">
+                <input type="text" name="tautulli_url" class="input sm:col-span-2" placeholder="http://tautulli:8181" value="<%= settings.tautulli_url %>">
+                <input type="password" name="tautulli_api_key" class="input sm:col-span-2" placeholder="API key (leave blank to keep current) - found in Tautulli under Settings → Web Interface">
+                <button type="submit" class="btn-primary px-6 py-3 rounded-xl text-sm">Save Tautulli Settings</button>
+            </form>
+            <form method="POST" action="/admin/settings/tautulli/test" data-ajax-form class="mt-4">
+                <button type="submit" class="btn-outline px-6 py-3 rounded-xl text-sm">
+                    <i class="fas fa-plug mr-2"></i>Test Connection
+                </button>
+            </form>
+            <p class="text-slate-500 text-xs mt-4">Each client's Plex username still needs linking individually from <a href="/admin/users" class="text-sky-400 hover:text-sky-300">Admin → Users</a> before they'll see anything.</p>
+        </div>
+
         <!-- Mail -->
         <div class="glass rounded-2xl sm:rounded-3xl p-5 sm:p-8 mb-8">
             <h2 class="text-lg font-bold text-white mb-1"><i class="fas fa-envelope mr-2 text-sky-400"></i>Mail (SMTP)</h2>

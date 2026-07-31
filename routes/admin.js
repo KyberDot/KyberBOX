@@ -5,6 +5,7 @@ const db = require('../db');
 const { encrypt } = require('../utils/crypto');
 const { getAllSettings, setSetting, getSiteBaseUrl } = require('../utils/settings');
 const { sendMail, isConfigured, notifyResetStarted } = require('../utils/mailer');
+const { testConnection: testTautulliConnection } = require('../utils/tautulli');
 const { londonInputToUtcIso, formatUK } = require('../utils/time');
 const { serviceLabel } = require('../utils/labels');
 const { runCommand, getContainerStatuses } = require('../utils/ssh');
@@ -460,6 +461,12 @@ router.post('/admin/users/:id/payment-method', (req, res) => {
   res.redirect('/admin/users');
 });
 
+router.post('/admin/users/:id/plex-username', (req, res) => {
+  const plexUsername = String(req.body.plex_username || '').trim() || null;
+  db.prepare('UPDATE users SET plex_username = ? WHERE id = ?').run(plexUsername, req.params.id);
+  res.redirect('/admin/users');
+});
+
 // ---------- Tickets ----------
 
 router.get('/admin/tickets', (req, res) => {
@@ -629,6 +636,23 @@ router.post('/admin/settings/payment-methods', (req, res) => {
 router.post('/admin/settings/payment-methods/:id/delete', (req, res) => {
   db.prepare('DELETE FROM payment_methods WHERE id = ?').run(req.params.id);
   res.render('admin-settings', { ...loadSettingsPageData(), saved: null, testResult: null, brandingError: null });
+});
+
+router.post('/admin/settings/tautulli', (req, res) => {
+  const { tautulli_url, tautulli_api_key } = req.body;
+
+  setSetting('tautulli_url', String(tautulli_url || '').trim());
+  // Only overwrite the stored key if a new one was actually typed in - the
+  // settings form always shows this field blank for security, same as SMTP.
+  if (tautulli_api_key) setSetting('tautulli_api_key', tautulli_api_key);
+
+  res.render('admin-settings', { ...loadSettingsPageData(), saved: 'tautulli', testResult: null, brandingError: null });
+});
+
+router.post('/admin/settings/tautulli/test', async (req, res) => {
+  const settings = getAllSettings();
+  const result = await testTautulliConnection(settings.tautulli_url, settings.tautulli_api_key);
+  res.render('admin-settings', { ...loadSettingsPageData(), saved: null, testResult: null, brandingError: null, tautulliTestResult: result });
 });
 
 // ---------- Health (admin-wide container monitor) ----------

@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <% pageTitle = 'Watch History | ' + siteName %>
+    <%- include('partials/head') %>
+</head>
+<body class="antialiased overflow-x-hidden">
+    <%- include('partials/nav') %>
+
+    <main class="max-w-3xl mx-auto px-4 sm:px-6 py-8 sm:py-10 pb-24">
+        <h1 class="text-2xl sm:text-3xl font-extrabold mb-1">Watch History</h1>
+        <p class="text-slate-400 mb-8 sm:mb-10 text-sm sm:text-base">Your recent Plex activity, pulled live from Tautulli.</p>
+
+        <% if (!hasPlexPlan) { %>
+            <div class="glass rounded-2xl sm:rounded-3xl p-5 sm:p-8 text-slate-400 text-sm">
+                This page is only available on a Plex plan. If you think this is wrong, <a href="/support" class="text-sky-400 hover:text-sky-300">raise a ticket</a> and we'll take a look.
+            </div>
+        <% } else { %>
+            <div class="glass rounded-2xl sm:rounded-3xl p-5 sm:p-8">
+                <div id="watchHistoryList" class="space-y-2">
+                    <p class="text-slate-500 text-sm"><i class="fas fa-circle-notch fa-spin mr-2"></i>Loading…</p>
+                </div>
+            </div>
+        <% } %>
+    </main>
+
+    <% if (hasPlexPlan) { %>
+    <script>
+        (async function loadWatchHistory() {
+            const list = document.getElementById('watchHistoryList');
+
+            const mediaIcon = function (type) {
+                if (type === 'movie') return 'fa-film';
+                if (type === 'episode') return 'fa-tv';
+                if (type === 'track') return 'fa-music';
+                return 'fa-play';
+            };
+
+            try {
+                const res = await fetch('/dashboard/plex/history');
+                const data = await res.json();
+
+                if (!data.ok) {
+                    list.innerHTML = '<p class="text-slate-500 text-sm">' + (data.message || 'Could not load your Plex activity.') + '</p>';
+                    return;
+                }
+                if (!data.items || data.items.length === 0) {
+                    list.innerHTML = '<p class="text-slate-500 text-sm">No watch history yet.</p>';
+                    return;
+                }
+
+                list.innerHTML = data.items.map(function (item) {
+                    const percent = typeof item.percentComplete === 'number' ? item.percentComplete : null;
+                    return '<div class="flex items-center justify-between gap-3 bg-slate-900/40 rounded-xl px-4 py-3">' +
+                        '<div class="flex items-center gap-3 min-w-0">' +
+                        '<i class="fas ' + mediaIcon(item.mediaType) + ' text-slate-500 text-sm flex-shrink-0"></i>' +
+                        '<span class="text-sm text-slate-300 truncate">' + item.title + '</span>' +
+                        '</div>' +
+                        '<div class="flex items-center gap-3 flex-shrink-0">' +
+                        (percent !== null ? '<span class="text-slate-500 text-xs">' + percent + '%</span>' : '') +
+                        '<span class="text-slate-500 text-xs">' + (item.watchedAtLabel || '') + '</span>' +
+                        '</div></div>';
+                }).join('');
+            } catch (e) {
+                list.innerHTML = '<p class="text-slate-500 text-sm">Could not load your Plex activity.</p>';
+            }
+        })();
+    </script>
+    <% } %>
+</body>
+</html>

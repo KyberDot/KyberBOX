@@ -120,6 +120,15 @@
                         <p class="text-slate-500 text-xs mt-2">Manage the list of payment methods from <a href="/admin/settings" class="text-sky-400 hover:text-sky-300">Settings</a>.</p>
                     </details>
 
+                    <details class="mb-2" data-ajax-key="user-<%= u.id %>-plex">
+                        <summary class="cursor-pointer text-sky-400 text-xs font-semibold uppercase tracking-wide">Plex Username (Watch History)</summary>
+                        <form method="POST" action="/admin/users/<%= u.id %>/plex-username" data-ajax-form class="flex flex-col sm:flex-row gap-3 mt-3">
+                            <input type="text" name="plex_username" class="input" value="<%= u.plex_username || '' %>" placeholder="Their exact Plex username">
+                            <button type="submit" class="btn-primary py-3 rounded-xl text-sm whitespace-nowrap">Save</button>
+                        </form>
+                        <p class="text-slate-500 text-xs mt-2">Must match their Plex account exactly - this is how their watch history gets looked up in Tautulli. Configure Tautulli itself from <a href="/admin/settings" class="text-sky-400 hover:text-sky-300">Settings</a>.</p>
+                    </details>
+
                     <div class="flex flex-wrap gap-4 mt-4 text-xs">
                         <form method="POST" action="/admin/users/<%= u.id %>/reset-password" data-ajax-form data-confirm="Reset this user's password?">
                             <button type="submit" class="text-amber-400 hover:text-amber-300"><i class="fas fa-key mr-1"></i>Reset Password</button>

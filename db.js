@@ -223,6 +223,7 @@ ensureColumn('plans', 'maintenance_mode', 'maintenance_mode INTEGER NOT NULL DEF
 ensureColumn('plans', 'maintenance_resume_at', 'maintenance_resume_at TEXT');
 ensureColumn('plans', 'maintenance_message', 'maintenance_message TEXT');
 ensureColumn('users', 'payment_method_id', 'payment_method_id INTEGER REFERENCES payment_methods(id)');
+ensureColumn('users', 'plex_username', 'plex_username TEXT');
 ensureColumn('subscriptions', 'renewal_mode', "renewal_mode TEXT NOT NULL DEFAULT 'manual'"); // auto | manual | expired
 ensureColumn('admin_health_containers', 'logo_path', 'logo_path TEXT');
 ensureColumn('admin_health_containers', 'link_url', 'link_url TEXT');

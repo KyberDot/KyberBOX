@@ -243,7 +243,12 @@
                 <div id="usageContent" class="grid grid-cols-2 gap-3">
                     <p class="text-slate-500 text-sm col-span-2">Loading…</p>
                 </div>
-                <p class="text-slate-500 text-xs mt-3">Only meaningful while the container is running - refreshes each time you open this.</p>
+                <p class="text-slate-500 text-xs mt-3">Only meaningful while the container is running.</p>
+                <div class="flex justify-end mt-3">
+                    <button type="button" onclick="refreshUsage()" class="btn-outline px-4 py-2 rounded-lg text-xs">
+                        <i class="fas fa-rotate mr-2"></i>Refresh Now
+                    </button>
+                </div>
             </div>
         </div>
     </main>
@@ -437,14 +442,27 @@
         }
 
         // ---------- Usage stats ----------
-        async function openUsage(id, label) {
+        let usageContainerId = null;
+
+        function openUsage(id, label) {
+            usageContainerId = id;
             document.getElementById('usageModalLabel').textContent = label;
+            openModal('usageModal');
+            refreshUsage();
+        }
+
+        function closeUsage() {
+            closeModal('usageModal');
+            usageContainerId = null;
+        }
+
+        async function refreshUsage() {
+            if (!usageContainerId) return;
             const content = document.getElementById('usageContent');
             content.innerHTML = '<p class="text-slate-500 text-sm col-span-2"><i class="fas fa-spinner fa-spin mr-2"></i>Loading…</p>';
-            openModal('usageModal');
 
             try {
-                const res = await fetch('/admin/health/containers/' + id + '/usage');
+                const res = await fetch('/admin/health/containers/' + usageContainerId + '/usage');
                 const data = await res.json();
                 if (!data.ok) {
                     content.innerHTML = '<p class="text-slate-500 text-sm col-span-2">' + (data.message || 'Could not load usage stats.') + '</p>';
@@ -465,10 +483,6 @@
             } catch (e) {
                 content.innerHTML = '<p class="text-slate-500 text-sm col-span-2">Something went wrong loading usage stats.</p>';
             }
-        }
-
-        function closeUsage() {
-            closeModal('usageModal');
         }
 
         // ---------- Update (stop, pull, up) ----------

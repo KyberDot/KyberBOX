@@ -1,7 +1,7 @@
 const db = require('../db');
 const { encrypt, decrypt } = require('./crypto');
 
-const SECRET_KEYS = new Set(['smtp_pass']);
+const SECRET_KEYS = new Set(['smtp_pass', 'tautulli_api_key']);
 
 function getSetting(key, fallback = null) {
   const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
@@ -44,6 +44,8 @@ function getAllSettings() {
     compose_path: getSetting('compose_path', ''),
     self_service_name: getSetting('self_service_name', 'kyberbox'),
     reset_exclusions: getSetting('reset_exclusions', ''),
+    tautulli_url: getSetting('tautulli_url', ''),
+    tautulli_api_key: getSetting('tautulli_api_key', ''), // decrypted value, for internal use only
   };
 }
 
