@@ -20,7 +20,7 @@ async function getWatchHistory(baseUrl, apiKey, plexUsername, page = 1, pageSize
   const safePageSize = Number(pageSize) || 15;
   const start = (safePage - 1) * safePageSize;
 
-  const url = `${baseUrl.replace(/\/$/, '')}/api/v2?apikey=${encodeURIComponent(apiKey)}&cmd=get_history&user=${encodeURIComponent(plexUsername)}&start=${start}&length=${safePageSize}`;
+  const url = `${baseUrl.replace(/\/$/, '')}/api/v2?apikey=${encodeURIComponent(apiKey)}&cmd=get_history&user=${encodeURIComponent(plexUsername)}&order_column=date&order_dir=desc&start=${start}&length=${safePageSize}`;
 
   try {
     const res = await fetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
@@ -103,6 +103,10 @@ async function getNowWatching(baseUrl, apiKey, plexUsername) {
         mediaType: s.media_type || 'unknown',
         state: s.state || 'playing', // playing | paused | buffering
         progressPercent: typeof s.progress_percent === 'string' ? Number(s.progress_percent) : (s.progress_percent || 0),
+        // What they're watching on, e.g. device "Living Room Roku" via the
+        // client app "Plex for Roku".
+        device: s.player || null,
+        client: s.product || null,
         // The raw internal Plex image path - never send this (or the API
         // key) to the browser directly; the caller should route it through
         // our own server-side poster proxy instead. Episode-level "thumb"

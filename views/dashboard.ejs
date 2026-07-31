@@ -418,6 +418,12 @@
                 if (state === 'buffering') return ['badge-suspended', 'fa-circle-notch fa-spin', 'Buffering'];
                 return ['badge-closed', 'fa-circle-pause', 'Paused'];
             };
+            const mediaIcon = function (type) {
+                if (type === 'movie') return 'fa-film';
+                if (type === 'episode') return 'fa-tv';
+                if (type === 'track') return 'fa-music';
+                return 'fa-play';
+            };
 
             async function refreshNowWatching() {
                 try {
@@ -432,14 +438,21 @@
                     section.classList.remove('hidden');
                     content.innerHTML = data.items.map(function (item) {
                         const badge = stateBadge(item.state);
+                        const icon = mediaIcon(item.mediaType);
+                        const fallbackHtml = '<div class=&quot;w-14 h-20 sm:w-16 sm:h-24 rounded-lg bg-slate-800 flex items-center justify-center flex-shrink-0&quot;><i class=&quot;fas ' + icon + ' text-slate-600&quot;></i></div>';
                         const poster = item.posterUrl
-                            ? '<img src="' + item.posterUrl + '" alt="" class="w-14 h-20 sm:w-16 sm:h-24 rounded-lg object-cover flex-shrink-0 bg-slate-800" onerror="this.outerHTML=\'<div class=&quot;w-14 h-20 sm:w-16 sm:h-24 rounded-lg bg-slate-800 flex items-center justify-center flex-shrink-0&quot;><i class=&quot;fas fa-film text-slate-600&quot;></i></div>\'">'
-                            : '<div class="w-14 h-20 sm:w-16 sm:h-24 rounded-lg bg-slate-800 flex items-center justify-center flex-shrink-0"><i class="fas fa-film text-slate-600"></i></div>';
+                            ? '<img src="' + item.posterUrl + '" alt="" class="w-14 h-20 sm:w-16 sm:h-24 rounded-lg object-cover flex-shrink-0 bg-slate-800" onerror="this.outerHTML=\'' + fallbackHtml + '\'">'
+                            : '<div class="w-14 h-20 sm:w-16 sm:h-24 rounded-lg bg-slate-800 flex items-center justify-center flex-shrink-0"><i class="fas ' + icon + ' text-slate-600"></i></div>';
+                        const deviceParts = [item.device, item.client].filter(Boolean);
+                        const deviceLine = deviceParts.length > 0
+                            ? '<p class="text-slate-500 text-xs mt-1"><i class="fas fa-tablet-screen-button mr-1"></i>' + deviceParts.join(' — ') + '</p>'
+                            : '';
                         return '<div class="flex items-center gap-4">' +
                             poster +
                             '<div class="flex-1 min-w-0">' +
                             '<span class="badge ' + badge[0] + ' mb-2"><i class="fas ' + badge[1] + '"></i> ' + badge[2] + '</span>' +
                             '<p class="text-white font-bold text-sm sm:text-base truncate">' + item.title + '</p>' +
+                            deviceLine +
                             '<div class="w-full bg-slate-800 rounded-full h-1.5 mt-3">' +
                             '<div class="bg-sky-500 h-1.5 rounded-full" style="width:' + Math.max(0, Math.min(100, item.progressPercent)) + '%"></div>' +
                             '</div>' +
