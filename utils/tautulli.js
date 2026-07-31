@@ -64,6 +64,81 @@ async function getWatchHistory(baseUrl, apiKey, plexUsername, page = 1, pageSize
   }
 }
 
+/**
+ * Fetches currently-active Plex sessions and filters down to just this
+ * user's own stream(s) - same server-side filtering principle as watch
+ * history, just against live activity instead of past history.
+ */
+async function getNowWatching(baseUrl, apiKey, plexUsername) {
+  if (!baseUrl || !apiKey) {
+    return { ok: false, message: 'Tautulli is not configured yet.' };
+  }
+  if (!plexUsername) {
+    return { ok: false, message: "Your Plex username hasn't been linked to your account yet - contact support to get this set up." };
+  }
+
+  const url = `${baseUrl.replace(/\/$/, '')}/api/v2?apikey=${encodeURIComponent(apiKey)}&cmd=get_activity`;
+
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+    if (!res.ok) {
+      return { ok: false, message: `Tautulli returned an error (HTTP ${res.status}).` };
+    }
+
+    const json = await res.json();
+    if (!json || !json.response || json.response.result !== 'success') {
+      const apiMessage = json && json.response && json.response.message;
+      return { ok: false, message: apiMessage || 'Tautulli request did not succeed.' };
+    }
+
+    const sessions = (json.response.data && json.response.data.sessions) || [];
+    const mine = sessions.filter((s) => s.user === plexUsername || s.friendly_name === plexUsername);
+
+    const items = mine.map((s) => {
+      const episodeTag = s.media_type === 'episode' && s.parent_media_index && s.media_index
+        ? `S${s.parent_media_index}E${s.media_index} — `
+        : '';
+      return {
+        title: s.grandparent_title ? `${s.grandparent_title} — ${episodeTag}${s.title}` : s.title,
+        mediaType: s.media_type || 'unknown',
+        state: s.state || 'playing', // playing | paused | buffering
+        progressPercent: typeof s.progress_percent === 'string' ? Number(s.progress_percent) : (s.progress_percent || 0),
+        // The raw internal Plex image path - never send this (or the API
+        // key) to the browser directly; the caller should route it through
+        // our own server-side poster proxy instead.
+        posterPath: s.thumb || null,
+      };
+    });
+
+    return { ok: true, items };
+  } catch (err) {
+    const reason = err.name === 'TimeoutError' ? 'Timed out reaching Tautulli.' : `Could not reach Tautulli: ${err.message}`;
+    return { ok: false, message: reason };
+  }
+}
+
+/**
+ * Fetches a poster image's raw bytes from Tautulli's own Plex image proxy,
+ * server-side, so the API key is never exposed to the browser. Returns the
+ * bytes plus content-type, or null on any failure (caller falls back to a
+ * placeholder rather than erroring the whole page out).
+ */
+async function fetchPosterImage(baseUrl, apiKey, imgPath) {
+  if (!baseUrl || !apiKey || !imgPath) return null;
+
+  const url = `${baseUrl.replace(/\/$/, '')}/pms_image_proxy?apikey=${encodeURIComponent(apiKey)}&img=${encodeURIComponent(imgPath)}&width=300&height=450&fallback=poster`;
+
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+    if (!res.ok) return null;
+    const contentType = res.headers.get('content-type') || 'image/jpeg';
+    const buffer = Buffer.from(await res.arrayBuffer());
+    return { buffer, contentType };
+  } catch (_) {
+    return null;
+  }
+}
+
 /** Quick connectivity/API-key check for the "Test Connection" button in Settings. */
 async function testConnection(baseUrl, apiKey) {
   if (!baseUrl || !apiKey) {
@@ -89,4 +164,4 @@ async function testConnection(baseUrl, apiKey) {
   }
 }
 
-module.exports = { getWatchHistory, testConnection };
+module.exports = { getWatchHistory, getNowWatching, fetchPosterImage, testConnection };

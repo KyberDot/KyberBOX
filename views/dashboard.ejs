@@ -19,6 +19,14 @@
                 <div class="mb-8 sm:mb-10"></div>
             <% } %>
 
+            <!-- Now Watching (hidden until there's an active Plex session) -->
+            <% if (hasPlexPlan) { %>
+                <div id="nowWatchingSection" class="hidden mb-8">
+                    <p class="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-3">Now Watching</p>
+                    <div id="nowWatchingContent" class="glass rounded-3xl p-4 sm:p-5"></div>
+                </div>
+            <% } %>
+
             <!-- Maintenance banners -->
             <% planViews.forEach(function(pv) { %>
                 <% if (pv.plan.maintenance_mode) { %>
@@ -398,6 +406,54 @@
                 btn.disabled = false;
             }
         });
+
+        // ---------- Now Watching ----------
+        (function () {
+            const section = document.getElementById('nowWatchingSection');
+            if (!section) return; // no Plex plan - nothing to show
+
+            const content = document.getElementById('nowWatchingContent');
+            const stateBadge = function (state) {
+                if (state === 'playing') return ['badge-active', 'fa-circle-play', 'Playing'];
+                if (state === 'buffering') return ['badge-suspended', 'fa-circle-notch fa-spin', 'Buffering'];
+                return ['badge-closed', 'fa-circle-pause', 'Paused'];
+            };
+
+            async function refreshNowWatching() {
+                try {
+                    const res = await fetch('/dashboard/plex/now-watching');
+                    const data = await res.json();
+
+                    if (!data.ok || !data.items || data.items.length === 0) {
+                        section.classList.add('hidden');
+                        return;
+                    }
+
+                    section.classList.remove('hidden');
+                    content.innerHTML = data.items.map(function (item) {
+                        const badge = stateBadge(item.state);
+                        const poster = item.posterUrl
+                            ? '<img src="' + item.posterUrl + '" alt="" class="w-14 h-20 sm:w-16 sm:h-24 rounded-lg object-cover flex-shrink-0 bg-slate-800">'
+                            : '<div class="w-14 h-20 sm:w-16 sm:h-24 rounded-lg bg-slate-800 flex items-center justify-center flex-shrink-0"><i class="fas fa-film text-slate-600"></i></div>';
+                        return '<div class="flex items-center gap-4">' +
+                            poster +
+                            '<div class="flex-1 min-w-0">' +
+                            '<span class="badge ' + badge[0] + ' mb-2"><i class="fas ' + badge[1] + '"></i> ' + badge[2] + '</span>' +
+                            '<p class="text-white font-bold text-sm sm:text-base truncate">' + item.title + '</p>' +
+                            '<div class="w-full bg-slate-800 rounded-full h-1.5 mt-3">' +
+                            '<div class="bg-sky-500 h-1.5 rounded-full" style="width:' + Math.max(0, Math.min(100, item.progressPercent)) + '%"></div>' +
+                            '</div>' +
+                            '<p class="text-slate-500 text-xs mt-1">' + Math.round(item.progressPercent) + '% watched</p>' +
+                            '</div></div>';
+                    }).join('<div class="border-t border-white/5 my-4"></div>');
+                } catch (e) {
+                    section.classList.add('hidden');
+                }
+            }
+
+            refreshNowWatching();
+            setInterval(refreshNowWatching, 20000);
+        })();
     </script>
 </body>
 </html>

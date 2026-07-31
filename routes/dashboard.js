@@ -3,7 +3,7 @@ const db = require('../db');
 const { runCommand, getContainerStatuses } = require('../utils/ssh');
 const { startReset, endReset, getResetState } = require('../utils/resetLock');
 const { notifyResetStarted } = require('../utils/mailer');
-const { getWatchHistory } = require('../utils/tautulli');
+const { getWatchHistory, getNowWatching, fetchPosterImage } = require('../utils/tautulli');
 const { getAllSettings } = require('../utils/settings');
 const { formatUK } = require('../utils/time');
 
@@ -281,6 +281,52 @@ router.get('/dashboard/plex/history', async (req, res) => {
   }
 
   res.json(result);
+});
+
+// Currently-playing session(s) for this subscriber only, for the "Now
+// Watching" card on the dashboard homepage.
+router.get('/dashboard/plex/now-watching', async (req, res) => {
+  if (!res.locals.hasPlexPlan) {
+    return res.json({ ok: false, message: 'This is only available on a Plex plan.' });
+  }
+
+  const userRecord = db.prepare('SELECT plex_username FROM users WHERE id = ?').get(req.user.id);
+  const settings = getAllSettings();
+
+  const result = await getNowWatching(settings.tautulli_url, settings.tautulli_api_key, userRecord ? userRecord.plex_username : null);
+
+  if (result.ok) {
+    result.items = result.items.map((item) => ({
+      ...item,
+      // The browser never talks to Tautulli directly (that would mean
+      // exposing the API key), so every poster is served through our own
+      // proxy route below instead of Tautulli's URL.
+      posterUrl: item.posterPath ? `/dashboard/plex/poster?path=${encodeURIComponent(item.posterPath)}` : null,
+    }));
+  }
+
+  res.json(result);
+});
+
+// Server-side poster image proxy - keeps the Tautulli API key off the
+// client entirely. Only accepts plausible internal Plex metadata paths,
+// not arbitrary strings, as basic defense in depth.
+router.get('/dashboard/plex/poster', async (req, res) => {
+  if (!res.locals.hasPlexPlan) return res.status(403).end();
+
+  const path = String(req.query.path || '');
+  if (!/^\/library\/metadata\/[a-zA-Z0-9/_.-]+$/.test(path) || path.includes('..')) {
+    return res.status(400).end();
+  }
+
+  const settings = getAllSettings();
+  const image = await fetchPosterImage(settings.tautulli_url, settings.tautulli_api_key, path);
+
+  if (!image) return res.status(404).end();
+
+  res.setHeader('Content-Type', image.contentType);
+  res.setHeader('Cache-Control', 'private, max-age=300'); // posters don't change minute to minute
+  res.send(image.buffer);
 });
 
 module.exports = router;
