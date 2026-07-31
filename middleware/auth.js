@@ -4,6 +4,7 @@ const { getSetting } = require('../utils/settings');
 const { formatUK, formatUKDate, formatMoney, utcToLondonInputValue } = require('../utils/time');
 const { serviceLabel } = require('../utils/labels');
 const { applyAutoRenewals } = require('../utils/renewals');
+const { getResetState } = require('../utils/resetLock');
 
 function attachUser(req, res, next) {
   const token = req.cookies.kb_session;
@@ -38,6 +39,7 @@ function attachUser(req, res, next) {
   res.locals.formatMoney = formatMoney;
   res.locals.utcToLondonInputValue = utcToLondonInputValue;
   res.locals.serviceLabel = serviceLabel;
+  res.locals.resetInProgress = getResetState();
   next();
 }
 

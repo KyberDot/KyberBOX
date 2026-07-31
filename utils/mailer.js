@@ -66,4 +66,28 @@ async function sendMail({ to, subject, bodyHtml }) {
   }
 }
 
-module.exports = { sendMail, isConfigured, getTransporter };
+/**
+ * Notifies a list of {email, name} recipients that a server reset has just
+ * started. Used both for an admin-triggered Full Reset (system-wide) and a
+ * subscriber-triggered danger action (scoped to that plan's other
+ * subscribers) - same wording either way, best-effort, never throws.
+ */
+async function notifyResetStarted(recipients) {
+  if (!recipients || recipients.length === 0) return;
+
+  await Promise.all(
+    recipients.map((person) =>
+      sendMail({
+        to: person.email,
+        subject: 'Scheduled Server Reset In Progress',
+        bodyHtml: `
+          <p>Hi ${person.name},</p>
+          <p>A server reset is currently in progress. Services may be briefly interrupted while this completes.</p>
+          <p>We expect to resume within <strong>5–15 minutes</strong>. Apologies for the inconvenience.</p>
+        `,
+      })
+    )
+  ).catch(() => {}); // best-effort - never let a mail hiccup affect the reset itself
+}
+
+module.exports = { sendMail, isConfigured, getTransporter, notifyResetStarted };

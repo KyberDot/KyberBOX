@@ -17,6 +17,31 @@
             </div>
         <% } %>
 
+        <!-- Server data (live, from the admin SSH access configured in Settings) -->
+        <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
+            <h2 class="text-sm uppercase tracking-widest text-slate-500 font-bold">Server Data</h2>
+            <a href="/admin/ssh-console" class="text-sky-400 hover:text-sky-300 text-xs">SSH Console <i class="fas fa-arrow-right ml-1"></i></a>
+        </div>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-5 mb-10 sm:mb-12" id="serverDataGrid">
+            <div class="glass rounded-2xl p-5 sm:p-6">
+                <p class="text-slate-500 text-xs uppercase tracking-widest font-semibold mb-2"><i class="fas fa-clock mr-1"></i>Uptime</p>
+                <p class="text-base sm:text-lg font-bold text-white" data-server-stat="uptime">—</p>
+            </div>
+            <div class="glass rounded-2xl p-5 sm:p-6">
+                <p class="text-slate-500 text-xs uppercase tracking-widest font-semibold mb-2"><i class="fas fa-gauge-high mr-1"></i>Load Average</p>
+                <p class="text-base sm:text-lg font-bold text-white" data-server-stat="load">—</p>
+            </div>
+            <div class="glass rounded-2xl p-5 sm:p-6">
+                <p class="text-slate-500 text-xs uppercase tracking-widest font-semibold mb-2"><i class="fas fa-memory mr-1"></i>Memory</p>
+                <p class="text-base sm:text-lg font-bold text-white" data-server-stat="memory">—</p>
+            </div>
+            <div class="glass rounded-2xl p-5 sm:p-6">
+                <p class="text-slate-500 text-xs uppercase tracking-widest font-semibold mb-2"><i class="fas fa-hard-drive mr-1"></i>Disk</p>
+                <p class="text-base sm:text-lg font-bold text-white" data-server-stat="disk">—</p>
+            </div>
+        </div>
+        <p id="serverDataMessage" class="hidden text-slate-500 text-sm -mt-8 mb-10 sm:mb-12"></p>
+
         <!-- Container health summary (live, from the Health page's containers) -->
         <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
             <h2 class="text-sm uppercase tracking-widest text-slate-500 font-bold">Container Health</h2>
@@ -101,6 +126,37 @@
     </main>
 
     <script>
+        (async function loadServerData() {
+            const grid = document.getElementById('serverDataGrid');
+            const messageEl = document.getElementById('serverDataMessage');
+            if (!grid) return;
+
+            try {
+                const res = await fetch('/admin/server-data/status');
+                const data = await res.json();
+
+                if (!data.ok) {
+                    grid.classList.add('hidden');
+                    if (messageEl) {
+                        messageEl.classList.remove('hidden');
+                        messageEl.innerHTML = (data.message || 'Could not load server data.') + ' Set it up in <a href="/admin/settings" class="text-sky-400 hover:text-sky-300">Settings</a>.';
+                    }
+                    return;
+                }
+
+                ['uptime', 'load', 'memory', 'disk'].forEach(function (key) {
+                    const el = grid.querySelector('[data-server-stat="' + key + '"]');
+                    if (el) el.textContent = data[key];
+                });
+            } catch (e) {
+                grid.classList.add('hidden');
+                if (messageEl) {
+                    messageEl.classList.remove('hidden');
+                    messageEl.textContent = 'Could not load server data.';
+                }
+            }
+        })();
+
         (async function loadHealthSummary() {
             const grid = document.getElementById('healthSummaryGrid');
             if (!grid) return; // no containers configured - nothing to summarize

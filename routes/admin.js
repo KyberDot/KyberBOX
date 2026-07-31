@@ -4,11 +4,12 @@ const bcrypt = require('bcryptjs');
 const db = require('../db');
 const { encrypt } = require('../utils/crypto');
 const { getAllSettings, setSetting, getSiteBaseUrl } = require('../utils/settings');
-const { sendMail, isConfigured } = require('../utils/mailer');
+const { sendMail, isConfigured, notifyResetStarted } = require('../utils/mailer');
 const { londonInputToUtcIso, formatUK } = require('../utils/time');
 const { serviceLabel } = require('../utils/labels');
 const { runCommand, getContainerStatuses } = require('../utils/ssh');
 const { upload } = require('../utils/uploads');
+const { startReset, endReset, getResetState } = require('../utils/resetLock');
 
 const router = express.Router();
 const brandingUpload = upload.fields([{ name: 'favicon', maxCount: 1 }, { name: 'apple_icon', maxCount: 1 }]);
@@ -749,6 +750,43 @@ router.get('/admin/health/status', async (req, res) => {
   });
 });
 
+// Basic host stats (uptime, load average, memory, disk) for the Admin
+// Overview page - shown next to Container Health, above the account stats.
+router.get('/admin/server-data/status', async (req, res) => {
+  const target = db.prepare('SELECT * FROM admin_ssh LIMIT 1').get();
+  if (!target) {
+    return res.json({ ok: false, message: 'No admin SSH access configured yet.' });
+  }
+
+  const marker = '::';
+  const command = [
+    `echo "UPTIME${marker}$(uptime -p 2>/dev/null || uptime)"`,
+    `echo "LOAD${marker}$(cut -d' ' -f1-3 /proc/loadavg 2>/dev/null)"`,
+    `echo "MEM${marker}$(free -m 2>/dev/null | awk '/^Mem:/ {printf "%s MB / %s MB", $3, $2}')"`,
+    `echo "DISK${marker}$(df -h / 2>/dev/null | awk 'NR==2 {printf "%s / %s (%s used)", $3, $2, $5}')"`,
+  ].join(' ; ');
+
+  const result = await runCommand(target, command);
+  if (result.connectionFailed) {
+    return res.json({ ok: false, message: 'Could not reach the server.' });
+  }
+
+  const parsed = {};
+  result.output.split('\n').forEach((line) => {
+    const idx = line.indexOf(marker);
+    if (idx === -1) return;
+    parsed[line.slice(0, idx).trim()] = line.slice(idx + marker.length).trim();
+  });
+
+  res.json({
+    ok: true,
+    uptime: parsed.UPTIME || '—',
+    load: parsed.LOAD || '—',
+    memory: parsed.MEM || '—',
+    disk: parsed.DISK || '—',
+  });
+});
+
 // Snapshot log viewer (not a live stream) - fetches the most recent lines
 // each time it's called. The page polls this on an interval to approximate
 // "follow" behaviour without needing a persistent streaming connection.
@@ -766,6 +804,14 @@ router.get('/admin/health/containers/:id/logs', async (req, res) => {
 });
 
 async function handleHealthAction(req, res, action) {
+  const globalState = getResetState();
+  if (globalState.active) {
+    return res.status(409).json({
+      ok: false,
+      message: `A reset is already in progress (${globalState.source || 'another action'}) - wait for it to finish first.`,
+    });
+  }
+
   const container = db.prepare('SELECT * FROM admin_health_containers WHERE id = ?').get(req.params.id);
   if (!container) return res.status(404).json({ ok: false, message: 'Container not found.' });
 
@@ -795,6 +841,14 @@ router.post('/admin/health/containers/:id/restart', (req, res) => handleHealthAc
 // Bulk action - runs ONE combined command (e.g. "docker restart a b c") over
 // a single SSH connection instead of one call per container.
 router.post('/admin/health/containers/bulk-action', async (req, res) => {
+  const globalState = getResetState();
+  if (globalState.active) {
+    return res.status(409).json({
+      ok: false,
+      message: `A reset is already in progress (${globalState.source || 'another action'}) - wait for it to finish first.`,
+    });
+  }
+
   const action = req.body.action === 'stop' ? 'stop' : 'restart';
   const ids = Array.isArray(req.body.ids) ? req.body.ids : [req.body.ids].filter(Boolean);
 
@@ -839,8 +893,12 @@ router.post('/admin/health/containers/bulk-action', async (req, res) => {
 let fullResetState = { running: false, lastResult: null };
 
 router.post('/admin/health/full-reset', (req, res) => {
-  if (fullResetState.running) {
-    return res.status(409).json({ ok: false, message: 'A full reset is already running - wait for it to finish first.' });
+  const globalState = getResetState();
+  if (globalState.active) {
+    return res.status(409).json({
+      ok: false,
+      message: `A reset is already in progress (${globalState.source || 'another action'}) - wait for it to finish first.`,
+    });
   }
 
   const settings = getAllSettings();
@@ -871,6 +929,16 @@ router.post('/admin/health/full-reset', (req, res) => {
   const command = `cd '${safePath}' && SERVICES=$(docker compose config --services | grep -vxE '${exclusionPattern}') && docker compose stop $SERVICES && docker compose pull $SERVICES && docker compose up -d $SERVICES`;
 
   fullResetState = { running: true, lastResult: null };
+  startReset('Admin: Full Reset & Update');
+
+  const allActiveSubscribers = db
+    .prepare(
+      `SELECT DISTINCT u.id, u.email, u.name FROM subscriptions s
+       JOIN users u ON u.id = s.user_id
+       WHERE s.status = 'active'`
+    )
+    .all();
+  notifyResetStarted(allActiveSubscribers);
 
   // Deliberately not awaited: the HTTP request/response below finishes in
   // well under a second regardless of how long this actually takes, so no
@@ -892,9 +960,11 @@ router.post('/admin/health/full-reset', (req, res) => {
             : `Full reset failed: ${result.output}`,
         },
       };
+      endReset();
     })
     .catch((err) => {
       fullResetState = { running: false, lastResult: { ok: false, message: `Full reset failed: ${err.message}` } };
+      endReset();
     });
 
   res.json({ ok: true, started: true, message: 'Full reset started in the background — this can take several minutes.' });

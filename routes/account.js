@@ -1,8 +1,17 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const db = require('../db');
+const { getResetState } = require('../utils/resetLock');
 
 const router = express.Router();
+
+// Polled by the site-wide banner (see partials/nav.ejs) on every logged-in
+// page, admin or subscriber - lets anyone see at a glance that a reset
+// (admin Full Reset, or any user's danger-style action) is in progress
+// anywhere in the app.
+router.get('/system/reset-status', (req, res) => {
+  res.json(getResetState());
+});
 
 router.get('/account', (req, res) => {
   res.render('account', { passwordError: null, passwordSuccess: false, emailError: null, emailSuccess: false });

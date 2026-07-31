@@ -124,4 +124,28 @@
     const target = document.querySelector('[data-toggle-key="' + btn.getAttribute('data-toggle-target') + '"]');
     if (target) target.classList.toggle('hidden');
   });
+
+  // ---------- Site-wide "a reset is in progress" banner ----------
+  // Lives in partials/nav.ejs, present on every logged-in page. Server-side
+  // render gets the initial state right; this keeps it accurate afterwards
+  // without needing a page reload (e.g. it appearing because someone else
+  // just started one, or disappearing the moment it finishes).
+  function pollResetBanner() {
+    fetch('/system/reset-status')
+      .then(function (res) { return res.json(); })
+      .then(function (data) {
+        const banner = document.getElementById('resetBanner');
+        const text = document.getElementById('resetBannerText');
+        if (!banner) return;
+        if (data.active) {
+          if (text) text.textContent = (data.source || 'A server reset') + ' is currently in progress — service may be briefly interrupted. Expected to resume within 5–15 minutes.';
+          banner.classList.remove('hidden');
+        } else {
+          banner.classList.add('hidden');
+        }
+      })
+      .catch(function () { /* transient network hiccup - try again next tick */ });
+  }
+  pollResetBanner();
+  setInterval(pollResetBanner, 15000);
 })();

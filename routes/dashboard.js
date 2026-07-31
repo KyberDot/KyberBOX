@@ -1,6 +1,8 @@
 const express = require('express');
 const db = require('../db');
 const { runCommand, getContainerStatuses } = require('../utils/ssh');
+const { startReset, endReset, getResetState } = require('../utils/resetLock');
+const { notifyResetStarted } = require('../utils/mailer');
 
 const router = express.Router();
 
@@ -122,6 +124,14 @@ router.post('/dashboard/actions/:actionId/run', async (req, res) => {
     });
   }
 
+  const globalResetState = getResetState();
+  if (globalResetState.active) {
+    return res.status(409).json({
+      ok: false,
+      message: `A server reset is already in progress (${globalResetState.source || 'elsewhere'}) - please wait for it to finish before running anything else.`,
+    });
+  }
+
   const lastRun = db
     .prepare('SELECT * FROM action_log WHERE user_id = ? AND plan_action_id = ? ORDER BY requested_at DESC LIMIT 1')
     .get(req.user.id, action.id);
@@ -164,9 +174,6 @@ router.post('/dashboard/actions/:actionId/run', async (req, res) => {
   // real result. Quick actions (restarts, etc.) stay synchronous as before.
   if (action.style === 'danger') {
     const key = `${req.user.id}:${action.id}`;
-    if (dangerActionState[key] && dangerActionState[key].running) {
-      return res.status(409).json({ ok: false, message: `"${action.label}" is already running - wait for it to finish first.` });
-    }
 
     // Cooldown starts the moment the action is triggered, not when it
     // finishes, and this same row also blocks a second click while running.
@@ -177,6 +184,16 @@ router.post('/dashboard/actions/:actionId/run', async (req, res) => {
     );
 
     dangerActionState[key] = { running: true, lastResult: null };
+    startReset(`${action.label} (triggered by ${req.user.name})`);
+
+    const otherSubscribers = db
+      .prepare(
+        `SELECT DISTINCT u.id, u.email, u.name FROM subscriptions s
+         JOIN users u ON u.id = s.user_id
+         WHERE s.plan_id = ? AND s.status = 'active' AND u.id != ?`
+      )
+      .all(action.plan_id, req.user.id);
+    notifyResetStarted(otherSubscribers);
 
     runCommand(target, action.command, 15 * 60 * 1000)
       .then((result) => {
@@ -192,10 +209,12 @@ router.post('/dashboard/actions/:actionId/run', async (req, res) => {
             message: result.success ? `"${action.label}" completed successfully.` : `"${action.label}" failed: ${result.output}`,
           },
         };
+        endReset();
       })
       .catch((err) => {
         db.prepare('UPDATE action_log SET success = 0, output = ? WHERE id = ?').run(err.message, info.lastInsertRowid);
         dangerActionState[key] = { running: false, lastResult: { ok: false, message: `"${action.label}" failed: ${err.message}` } };
+        endReset();
       });
 
     return res.json({
