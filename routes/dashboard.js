@@ -269,8 +269,9 @@ router.get('/dashboard/plex/history', async (req, res) => {
 
   const userRecord = db.prepare('SELECT plex_username FROM users WHERE id = ?').get(req.user.id);
   const settings = getAllSettings();
+  const page = Math.max(1, parseInt(req.query.page, 10) || 1);
 
-  const result = await getWatchHistory(settings.tautulli_url, settings.tautulli_api_key, userRecord ? userRecord.plex_username : null);
+  const result = await getWatchHistory(settings.tautulli_url, settings.tautulli_api_key, userRecord ? userRecord.plex_username : null, page);
 
   if (result.ok) {
     result.items = result.items.map((item) => ({

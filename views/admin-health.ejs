@@ -236,19 +236,19 @@
             <div class="glass rounded-3xl p-6 sm:p-8 max-w-md w-full my-auto">
                 <div class="flex items-center justify-between mb-4">
                     <h3 class="text-lg font-bold text-white"><i class="fas fa-chart-line mr-2 text-sky-400"></i>Usage — <span id="usageModalLabel"></span></h3>
-                    <button type="button" onclick="closeUsage()" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5">
-                        <i class="fas fa-xmark"></i>
-                    </button>
+                    <div class="flex items-center gap-1 flex-shrink-0">
+                        <button type="button" onclick="refreshUsage()" title="Refresh" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5">
+                            <i class="fas fa-rotate"></i>
+                        </button>
+                        <button type="button" onclick="closeUsage()" title="Close" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5">
+                            <i class="fas fa-xmark"></i>
+                        </button>
+                    </div>
                 </div>
                 <div id="usageContent" class="grid grid-cols-2 gap-3">
                     <p class="text-slate-500 text-sm col-span-2">Loading…</p>
                 </div>
                 <p class="text-slate-500 text-xs mt-3">Only meaningful while the container is running.</p>
-                <div class="flex justify-end mt-3">
-                    <button type="button" onclick="refreshUsage()" class="btn-outline px-4 py-2 rounded-lg text-xs">
-                        <i class="fas fa-rotate mr-2"></i>Refresh Now
-                    </button>
-                </div>
             </div>
         </div>
     </main>
