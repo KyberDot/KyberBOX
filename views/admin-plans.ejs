@@ -112,21 +112,49 @@
                         <summary class="cursor-pointer text-sky-400 text-xs font-semibold uppercase tracking-wide">Action Buttons (e.g. Restart Plex)</summary>
                         <div class="mt-3 space-y-2 mb-3">
                             <% (actionsByPlan[plan.id] || []).forEach(function(action) { %>
-                                <form method="POST" action="/admin/plans/<%= plan.id %>/actions/<%= action.id %>/delete" data-ajax-form class="flex items-center justify-between text-xs text-slate-400 bg-slate-900/40 rounded-lg px-3 py-2 gap-2">
-                                    <span class="truncate">
-                                        <i class="fas <%= action.icon %> mr-2 <%= action.style === 'danger' ? 'text-red-400' : 'text-sky-400' %>"></i><strong class="text-white"><%= action.label %></strong>
-                                        <% if (action.style === 'danger') { %><span class="badge badge-expired ml-1">danger</span><% } %>
-                                        — <span class="font-mono"><%= action.command %></span> (every <%= action.cooldown_hours %>h)
-                                    </span>
-                                    <button type="submit" class="text-red-400 hover:text-red-300 flex-shrink-0"><i class="fas fa-trash"></i></button>
-                                </form>
+                                <div class="bg-slate-900/40 rounded-lg px-3 py-2">
+                                    <div class="flex items-center justify-between gap-2 text-xs text-slate-400">
+                                        <span class="truncate">
+                                            <i class="fas <%= action.icon %> mr-2 <%= action.style === 'danger' ? 'text-red-400' : 'text-sky-400' %>"></i><strong class="text-white"><%= action.label %></strong>
+                                            <% if (action.style === 'danger') { %><span class="badge badge-expired ml-1">danger</span><% } %>
+                                            — <span class="font-mono"><%= action.command %></span> (every <%= action.cooldown_hours %>h)
+                                        </span>
+                                        <button type="button" class="text-sky-400 hover:text-sky-300 flex-shrink-0 text-xs" data-toggle-target="action-<%= action.id %>-edit">
+                                            <i class="fas fa-pen mr-1"></i>Edit
+                                        </button>
+                                    </div>
+                                    <div class="hidden mt-3 pt-3 border-t border-white/5" data-toggle-key="action-<%= action.id %>-edit">
+                                        <form method="POST" action="/admin/plans/<%= plan.id %>/actions/<%= action.id %>/update" data-ajax-form class="grid sm:grid-cols-4 gap-3">
+                                            <input type="text" name="label" required class="input" value="<%= action.label %>" placeholder="Button label">
+                                            <input type="text" name="command" required class="input sm:col-span-2" value="<%= action.command %>" placeholder="Command (e.g. docker compose restart plex)">
+                                            <input type="number" name="cooldown_hours" class="input" value="<%= action.cooldown_hours %>" placeholder="Cooldown hrs">
+                                            <select name="icon" class="input sm:col-span-2">
+                                                <% ['fa-rotate','fa-arrows-rotate','fa-power-off','fa-play','fa-stop','fa-triangle-exclamation','fa-download','fa-broom','fa-wrench','fa-server','fa-database','fa-terminal','fa-circle-play','fa-gear'].forEach(function(iconOption) { %>
+                                                    <option value="<%= iconOption %>" <%= action.icon === iconOption ? 'selected' : '' %>><%= iconOption %></option>
+                                                <% }); %>
+                                            </select>
+                                            <select name="style" class="input sm:col-span-2">
+                                                <option value="warning" <%= action.style !== 'danger' ? 'selected' : '' %>>Warning (amber) — quick actions like a restart</option>
+                                                <option value="danger" <%= action.style === 'danger' ? 'selected' : '' %>>Danger (red) — slow/heavy actions like a full stack reset</option>
+                                            </select>
+                                            <button type="submit" class="btn-primary py-3 rounded-xl text-sm sm:col-span-2">Save Changes</button>
+                                        </form>
+                                        <form method="POST" action="/admin/plans/<%= plan.id %>/actions/<%= action.id %>/delete" data-ajax-form data-confirm="Delete this action button?" class="mt-2">
+                                            <button type="submit" class="text-red-400 hover:text-red-300 text-xs"><i class="fas fa-trash mr-1"></i>Delete Action</button>
+                                        </form>
+                                    </div>
+                                </div>
                             <% }); %>
                         </div>
                         <form method="POST" action="/admin/plans/<%= plan.id %>/actions" data-ajax-form class="grid sm:grid-cols-4 gap-3">
                             <input type="text" name="label" required class="input" placeholder="Button label (e.g. Restart Plex)">
                             <input type="text" name="command" required class="input sm:col-span-2" placeholder="Command (e.g. docker compose restart plex)">
                             <input type="number" name="cooldown_hours" class="input" placeholder="Cooldown hrs (6)" value="6">
-                            <input type="text" name="icon" class="input sm:col-span-2" placeholder="Font Awesome icon class (default: fa-rotate)">
+                            <select name="icon" class="input sm:col-span-2">
+                                <% ['fa-rotate','fa-arrows-rotate','fa-power-off','fa-play','fa-stop','fa-triangle-exclamation','fa-download','fa-broom','fa-wrench','fa-server','fa-database','fa-terminal','fa-circle-play','fa-gear'].forEach(function(iconOption) { %>
+                                    <option value="<%= iconOption %>"><%= iconOption %></option>
+                                <% }); %>
+                            </select>
                             <select name="style" class="input sm:col-span-2">
                                 <option value="warning">Warning (amber) — quick actions like a restart</option>
                                 <option value="danger">Danger (red) — slow/heavy actions like a full stack reset</option>

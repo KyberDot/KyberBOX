@@ -90,7 +90,12 @@
                 <div class="sm:col-span-3">
                     <label class="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-1.5 block">Docker Compose Path</label>
                     <input type="text" name="compose_path" class="input" placeholder="/opt/media-stack" value="<%= settings.compose_path %>">
-                    <p class="text-slate-500 text-xs mt-2">The folder on this server containing your docker-compose.yml — used by the "Full Reset &amp; Update" button on the Health page (runs <code class="font-mono">docker compose down</code>, <code class="font-mono">pull</code>, then <code class="font-mono">up -d</code> there, in that order).</p>
+                    <p class="text-slate-500 text-xs mt-2">The folder on this server containing your docker-compose.yml — used by the "Full Reset &amp; Update" button on the Health page (stops, pulls, and restarts every service there except the one below).</p>
+                </div>
+                <div class="sm:col-span-3">
+                    <label class="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-1.5 block">This Portal's Own Service Name</label>
+                    <input type="text" name="self_service_name" class="input" placeholder="kyberbox" value="<%= settings.self_service_name %>">
+                    <p class="text-slate-500 text-xs mt-2">The service/container name for KyberBOX itself in that same docker-compose.yml. "Full Reset &amp; Update" always excludes this one, so the portal stays online and can report back when it's done — set this to whatever you actually named it if it isn't "kyberbox".</p>
                 </div>
                 <button type="submit" class="btn-primary py-3 rounded-xl text-sm sm:col-span-3">
                     <i class="fas fa-lock mr-2"></i>Save (encrypted at rest)

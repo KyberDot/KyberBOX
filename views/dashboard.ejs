@@ -109,33 +109,31 @@
 
                     <!-- Actions -->
                     <% if (pv.actions.length > 0) { %>
-                        <div class="flex flex-col sm:flex-row sm:flex-wrap gap-3">
+                        <div class="flex flex-col sm:flex-row sm:flex-wrap gap-4">
                             <% pv.actions.forEach(function(action) { %>
-                                <button
-                                    class="<%= action.style === 'danger' ? 'btn-danger' : 'btn-amber' %> px-6 py-3 rounded-2xl text-sm w-full sm:w-auto"
-                                    data-action-btn
-                                    data-action-id="<%= action.id %>"
-                                    data-action-label="<%= action.label %>"
-                                    data-action-style="<%= action.style || 'warning' %>"
-                                    data-cooldown-hours="<%= action.cooldown_hours %>"
-                                    <%= (action.nextAllowedAt || pv.plan.maintenance_mode) ? 'disabled' : '' %>
-                                >
-                                    <i class="fas <%= action.icon %> mr-2"></i>
-                                    <span data-action-btn-label><%= pv.plan.maintenance_mode ? 'Unavailable (Maintenance)' : (action.nextAllowedAt ? action.label + ' Unavailable' : action.label) %></span>
-                                </button>
-                            <% }); %>
-                        </div>
-                        <div class="mt-4 flex flex-col gap-1">
-                            <% pv.actions.forEach(function(action) { %>
-                                <% if (!pv.plan.maintenance_mode) { %>
-                                    <p class="text-slate-500 text-xs <%= action.nextAllowedAt ? '' : 'hidden' %>"
-                                       data-cooldown-timer
-                                       data-action-id="<%= action.id %>"
-                                       data-action-label="<%= action.label %>"
-                                       data-next-allowed-at="<%= action.nextAllowedAt || '' %>">
-                                        Available again in <span data-countdown-text>—</span>
-                                    </p>
-                                <% } %>
+                                <div class="flex flex-col gap-1.5 w-full sm:w-auto">
+                                    <button
+                                        class="<%= action.style === 'danger' ? 'btn-danger' : 'btn-amber' %> px-6 py-3 rounded-2xl text-sm w-full sm:w-auto"
+                                        data-action-btn
+                                        data-action-id="<%= action.id %>"
+                                        data-action-label="<%= action.label %>"
+                                        data-action-style="<%= action.style || 'warning' %>"
+                                        data-cooldown-hours="<%= action.cooldown_hours %>"
+                                        <%= (action.nextAllowedAt || pv.plan.maintenance_mode) ? 'disabled' : '' %>
+                                    >
+                                        <i class="fas <%= action.icon %> mr-2"></i>
+                                        <span data-action-btn-label><%= pv.plan.maintenance_mode ? 'Unavailable (Maintenance)' : (action.nextAllowedAt ? action.label + ' Unavailable' : action.label) %></span>
+                                    </button>
+                                    <% if (!pv.plan.maintenance_mode) { %>
+                                        <p class="text-slate-500 text-xs text-center sm:text-left <%= action.nextAllowedAt ? '' : 'hidden' %>"
+                                           data-cooldown-timer
+                                           data-action-id="<%= action.id %>"
+                                           data-action-label="<%= action.label %>"
+                                           data-next-allowed-at="<%= action.nextAllowedAt || '' %>">
+                                            <%= action.label %> available in <span data-countdown-text>—</span>
+                                        </p>
+                                    <% } %>
+                                </div>
                             <% }); %>
                         </div>
                         <div id="actionResult-<%= pv.plan.id %>" class="mt-4 hidden text-sm rounded-xl p-4"></div>

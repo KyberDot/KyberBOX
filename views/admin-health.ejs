@@ -295,7 +295,7 @@
 
         // ---------- Full Reset & Update ----------
         async function confirmFullReset() {
-            if (!confirm('This will run "docker compose down", then "pull", then "up -d" for your ENTIRE stack, in that order. Every container will go offline briefly. Continue?')) return;
+            if (!confirm('This will stop, pull, and restart every container in your stack EXCEPT this portal itself (so it stays online). Continue?')) return;
             if (!confirm('Are you sure? This affects everything, not just one container. This can take several minutes, especially the pull step.')) return;
 
             const resultBox = document.getElementById('fullResetResult');
@@ -392,11 +392,24 @@
             const btn = e.target.closest('[data-refresh-btn]');
             if (!btn) return;
             const icon = btn.querySelector('i');
+            const id = btn.getAttribute('data-refresh-id');
+
             if (icon) icon.classList.add('fa-spin');
+            btn.disabled = true;
+
+            // Immediate feedback on this specific card so it's obvious the
+            // click registered, rather than waiting silently for the fetch.
+            const pill = document.querySelector('[data-container-id="' + id + '"] [data-status-pill]');
+            if (pill) {
+                pill.className = 'badge badge-suspended text-[10px] px-2 py-0.5';
+                pill.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> checking';
+            }
+
             try {
                 await refreshHealth();
             } finally {
                 if (icon) icon.classList.remove('fa-spin');
+                btn.disabled = false;
             }
         });
 

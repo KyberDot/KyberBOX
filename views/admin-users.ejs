@@ -124,6 +124,9 @@
                         <form method="POST" action="/admin/users/<%= u.id %>/reset-password" data-ajax-form data-confirm="Reset this user's password?">
                             <button type="submit" class="text-amber-400 hover:text-amber-300"><i class="fas fa-key mr-1"></i>Reset Password</button>
                         </form>
+                        <form method="POST" action="/admin/users/<%= u.id %>/reset-timers" data-ajax-form data-confirm="Clear all cooldown timers for this user? Every action button will become available to them immediately.">
+                            <button type="submit" class="text-sky-400 hover:text-sky-300"><i class="fas fa-clock-rotate-left mr-1"></i>Reset Timers</button>
+                        </form>
                         <form method="POST" action="/admin/users/<%= u.id %>/delete" data-ajax-form data-confirm="Delete this user permanently? This cannot be undone.">
                             <button type="submit" class="text-red-400 hover:text-red-300"><i class="fas fa-user-slash mr-1"></i>Delete User</button>
                         </form>

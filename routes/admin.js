@@ -207,18 +207,60 @@ router.post('/admin/plans/:id/ssh', (req, res) => {
   res.redirect('/admin/plans');
 });
 
+// Curated set of icons offered in the picker - keeps the icon field a
+// closed choice instead of free text, so it can no longer end up holding
+// a command (or vice versa) by mistake.
+const ACTION_ICONS = [
+  'fa-rotate', 'fa-arrows-rotate', 'fa-power-off', 'fa-play', 'fa-stop',
+  'fa-triangle-exclamation', 'fa-download', 'fa-broom', 'fa-wrench',
+  'fa-server', 'fa-database', 'fa-terminal', 'fa-circle-play', 'fa-gear',
+];
+
+function sanitizeActionIcon(value) {
+  return ACTION_ICONS.includes(value) ? value : 'fa-rotate';
+}
+
+// Catches the specific mistake that caused "fa-exclamation-triangle: command
+// not found" - someone pasted an icon class into the Command field. Command
+// text should never be just a bare "fa-..." token.
+function looksLikeIconNotCommand(command) {
+  return /^fa[-\s][a-z0-9-]+$/i.test(command.trim());
+}
+
 router.post('/admin/plans/:id/actions', (req, res) => {
   const label = String(req.body.label || '').trim();
   const command = String(req.body.command || '').trim();
-  const icon = String(req.body.icon || 'fa-rotate').trim();
+  const icon = sanitizeActionIcon(String(req.body.icon || 'fa-rotate').trim());
   const style = req.body.style === 'danger' ? 'danger' : 'warning';
   const cooldownHours = Math.max(0, parseInt(req.body.cooldown_hours, 10) || 6);
 
   if (!label || !command) return res.status(400).render('error', { message: 'Missing required fields - please fill in everything marked required and try again.' });
+  if (looksLikeIconNotCommand(command)) {
+    return res.status(400).render('error', { message: `"${command}" looks like an icon name, not a command - check the Command and Icon fields weren't swapped.` });
+  }
 
   db.prepare(
     'INSERT INTO plan_actions (plan_id, label, command, icon, style, cooldown_hours) VALUES (?, ?, ?, ?, ?, ?)'
   ).run(req.params.id, label, command, icon, style, cooldownHours);
+
+  res.redirect('/admin/plans');
+});
+
+router.post('/admin/plans/:id/actions/:actionId/update', (req, res) => {
+  const label = String(req.body.label || '').trim();
+  const command = String(req.body.command || '').trim();
+  const icon = sanitizeActionIcon(String(req.body.icon || 'fa-rotate').trim());
+  const style = req.body.style === 'danger' ? 'danger' : 'warning';
+  const cooldownHours = Math.max(0, parseInt(req.body.cooldown_hours, 10) || 6);
+
+  if (!label || !command) return res.status(400).render('error', { message: 'Missing required fields - please fill in everything marked required and try again.' });
+  if (looksLikeIconNotCommand(command)) {
+    return res.status(400).render('error', { message: `"${command}" looks like an icon name, not a command - check the Command and Icon fields weren't swapped.` });
+  }
+
+  db.prepare(
+    'UPDATE plan_actions SET label = ?, command = ?, icon = ?, style = ?, cooldown_hours = ? WHERE id = ? AND plan_id = ?'
+  ).run(label, command, icon, style, cooldownHours, req.params.actionId, req.params.id);
 
   res.redirect('/admin/plans');
 });
@@ -370,6 +412,11 @@ router.post('/admin/users/:id/reset-password', async (req, res) => {
     ...loadUsersPageData(),
     newUser: { name: user.name, email: user.email, tempPassword, emailSent: emailResult.sent, emailReason: emailResult.reason },
   });
+});
+
+router.post('/admin/users/:id/reset-timers', (req, res) => {
+  db.prepare('DELETE FROM action_log WHERE user_id = ?').run(req.params.id);
+  res.redirect('/admin/users');
 });
 
 router.post('/admin/users/:id/update', (req, res) => {
@@ -529,7 +576,7 @@ router.post('/admin/settings/branding', (req, res) => {
 });
 
 router.post('/admin/settings/health-ssh', (req, res) => {
-  const { host, port, username, auth_type, secret, compose_path } = req.body;
+  const { host, port, username, auth_type, secret, compose_path, self_service_name } = req.body;
   if (!host || !username) return res.status(400).render('error', { message: 'Missing required fields - please fill in everything marked required and try again.' });
 
   const existing = db.prepare('SELECT * FROM admin_ssh LIMIT 1').get();
@@ -552,6 +599,7 @@ router.post('/admin/settings/health-ssh', (req, res) => {
   }
 
   setSetting('compose_path', String(compose_path || '').trim());
+  setSetting('self_service_name', String(self_service_name || 'kyberbox').trim() || 'kyberbox');
 
   res.render('admin-settings', { ...loadSettingsPageData(), saved: 'health-ssh', testResult: null, brandingError: null });
 });
@@ -771,7 +819,8 @@ router.post('/admin/health/containers/bulk-action', async (req, res) => {
 // endpoint (not reusing bulk-action) since it affects the whole stack, not
 // a chosen set of containers.
 router.post('/admin/health/full-reset', async (req, res) => {
-  const composePath = getAllSettings().compose_path;
+  const settings = getAllSettings();
+  const composePath = settings.compose_path;
   if (!composePath) {
     return res.status(400).json({ ok: false, message: 'Set a Docker Compose path in Settings first (e.g. /opt/media-stack).' });
   }
@@ -781,18 +830,26 @@ router.post('/admin/health/full-reset', async (req, res) => {
     return res.status(400).json({ ok: false, message: 'No admin SSH access configured yet. Set it up in Settings first.' });
   }
 
+  const selfService = (settings.self_service_name || 'kyberbox').replace(/[^a-zA-Z0-9_.-]/g, '') || 'kyberbox';
   const safePath = composePath.replace(/'/g, `'"'"'`);
-  const command = `cd '${safePath}' && docker compose down && docker compose pull && docker compose up -d`;
+
+  // "docker compose down" can't be limited to specific services - it tears
+  // down the whole project, which would kill this app's own container
+  // mid-request (it's part of the same stack) and the browser would never
+  // get a response back. "stop" (which CAN be scoped to specific services)
+  // achieves the same practical result once combined with a pull + up -d,
+  // while leaving the portal's own container running throughout.
+  const command = `cd '${safePath}' && SERVICES=$(docker compose config --services | grep -v -x '${selfService}') && docker compose stop $SERVICES && docker compose pull $SERVICES && docker compose up -d $SERVICES`;
   const result = await runCommand(target, command, 15 * 60 * 1000); // up to 15 minutes for pulls
 
   db.prepare(
     'INSERT INTO admin_health_log (admin_user_id, container_name, action, success, output) VALUES (?, ?, ?, ?, ?)'
-  ).run(req.user.id, 'ALL (full stack)', 'full-reset', result.success ? 1 : 0, result.output);
+  ).run(req.user.id, `ALL except ${selfService}`, 'full-reset', result.success ? 1 : 0, result.output);
 
   res.json({
     ok: result.success,
     message: result.success
-      ? 'Full reset complete: stack was taken down, images pulled, and brought back up.'
+      ? `Full reset complete: stack (except "${selfService}", this portal's own container) was stopped, images pulled, and brought back up.`
       : `Full reset failed: ${result.output}`,
   });
 });
