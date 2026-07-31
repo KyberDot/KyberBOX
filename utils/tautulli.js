@@ -127,9 +127,7 @@ async function getNowWatching(baseUrl, apiKey, plexUsername) {
  * Fetches a poster image's raw bytes from Tautulli's own Plex image proxy,
  * server-side, so the API key is never exposed to the browser. Returns the
  * bytes plus content-type, or null on any failure (caller falls back to a
- * placeholder rather than erroring the whole page out) - failures are
- * logged server-side (visible in `docker logs`) since a silently-missing
- * poster is otherwise very hard to diagnose.
+ * placeholder rather than erroring the whole page out).
  */
 async function fetchPosterImage(baseUrl, apiKey, imgPath) {
   if (!baseUrl || !apiKey || !imgPath) return null;
@@ -138,20 +136,12 @@ async function fetchPosterImage(baseUrl, apiKey, imgPath) {
 
   try {
     const res = await fetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
-    if (!res.ok) {
-      const bodyText = await res.text().catch(() => '');
-      console.error(`[tautulli] poster fetch failed for "${imgPath}": HTTP ${res.status} ${bodyText.slice(0, 200)}`);
-      return null;
-    }
+    if (!res.ok) return null;
     const contentType = res.headers.get('content-type') || 'image/jpeg';
     const buffer = Buffer.from(await res.arrayBuffer());
-    if (!contentType.startsWith('image/')) {
-      console.error(`[tautulli] poster fetch for "${imgPath}" returned non-image content-type "${contentType}" - likely an error page, not a poster.`);
-      return null;
-    }
+    if (!contentType.startsWith('image/')) return null;
     return { buffer, contentType };
-  } catch (err) {
-    console.error(`[tautulli] poster fetch threw for "${imgPath}":`, err.message);
+  } catch (_) {
     return null;
   }
 }

@@ -316,7 +316,6 @@ router.get('/dashboard/plex/poster', async (req, res) => {
 
   const path = String(req.query.path || '');
   if (!/^\/library\/metadata\/[a-zA-Z0-9/_.-]+$/.test(path) || path.includes('..')) {
-    console.error(`[tautulli] rejected poster path (didn't look like a Plex metadata path): "${path}"`);
     return res.status(400).end();
   }
 
