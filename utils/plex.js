@@ -218,7 +218,46 @@ async function shareLibraries({ plexToken, clientIdentifier, machineIdentifier, 
   }
 }
 
-/** Revokes a previously-created share, removing that person's library access entirely. */
+/**
+ * Updates the library sections on a share that already exists, in place -
+ * distinct from shareLibraries (creating a brand new one). This is the
+ * piece that was missing before: repeatedly deleting and recreating an
+ * existing share is not the same operation as updating it, and Wizarr's
+ * own changelog confirms they hit and fixed this exact distinction
+ * ("update existing Plex share on re-invite instead of failing").
+ */
+async function updateSharedLibraries({ plexToken, clientIdentifier, machineIdentifier, shareId, sectionIds }) {
+  if (!plexToken || !clientIdentifier || !machineIdentifier || !shareId) {
+    return { ok: false, message: 'Missing Plex configuration or existing share id.' };
+  }
+
+  const url = `https://plex.tv/api/servers/${encodeURIComponent(machineIdentifier)}/shared_servers/${encodeURIComponent(shareId)}?X-Plex-Client-Identifier=${encodeURIComponent(clientIdentifier)}&X-Plex-Token=${encodeURIComponent(plexToken)}`;
+
+  try {
+    const res = await fetch(url, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        server_id: machineIdentifier,
+        shared_server: {
+          library_section_ids: sectionIds.map(Number),
+        },
+      }),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+
+    const bodyText = await res.text();
+    if (!res.ok) {
+      return { ok: false, message: `Plex declined the update (HTTP ${res.status}): ${bodyText.slice(0, 300)}` };
+    }
+
+    return { ok: true, shareId };
+  } catch (err) {
+    const reason = err.name === 'TimeoutError' ? 'Timed out reaching Plex.' : `Could not reach Plex: ${err.message}`;
+    return { ok: false, message: reason };
+  }
+}
+
 /** Revokes a previously-created share, removing that person's library access entirely. Keyed on their Plex account id (from username matching), not the id returned by shareLibraries. */
 async function unshareServer({ plexToken, clientIdentifier, plexUserId }) {
   if (!plexToken || !clientIdentifier || !plexUserId) {
@@ -241,4 +280,4 @@ async function unshareServer({ plexToken, clientIdentifier, plexUserId }) {
   }
 }
 
-module.exports = { getSharedUsers, getServerIdentity, verifyServerWithPlexTv, getLibrarySections, shareLibraries, unshareServer };
+module.exports = { getSharedUsers, getServerIdentity, verifyServerWithPlexTv, getLibrarySections, shareLibraries, updateSharedLibraries, unshareServer };

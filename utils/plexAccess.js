@@ -6,7 +6,7 @@
 
 const db = require('../db');
 const { getAllSettings } = require('./settings');
-const { shareLibraries, unshareServer, getSharedUsers } = require('./plex');
+const { shareLibraries, updateSharedLibraries, unshareServer, getSharedUsers } = require('./plex');
 
 // Don't hit Plex more than this often for the same unlinked user - someone
 // who hasn't accepted their invite yet will fail this lookup on every
@@ -89,47 +89,47 @@ async function syncPlexAccessForUser(userId) {
 
   if (!user.email) return { ok: false, message: 'This user has no email address to invite.' };
 
-  // Whether they already have a share or not, the simplest reliable way to
-  // guarantee the section list is correct is to drop any existing share
-  // and create a fresh one with the full current set - avoids depending on
-  // an "update sections" endpoint this integration hasn't been built
-  // against, at the cost of one extra API call when access was already
-  // correct.
-  if (user.plex_shared_server_id) {
-    await unshareServer({
-      plexToken: settings.plex_token,
-      clientIdentifier: settings.plex_client_identifier,
-      plexUserId: user.plex_user_id,
-    });
-    // Deliberately not clearing plex_library_synced_sections here yet - if
-    // the re-share below fails, "what's actually still live on Plex" is
-    // now genuinely unknown (the old share is gone, the new one didn't
-    // take), so it's cleared only once we know the real outcome below.
-    db.prepare('UPDATE users SET plex_shared_server_id = NULL WHERE id = ?').run(userId);
-  }
+  // An existing share gets updated in place (PUT) rather than deleted and
+  // recreated - these are genuinely different Plex operations, not
+  // interchangeable. Wizarr's own changelog independently confirms this
+  // distinction mattered enough to need a dedicated fix ("update existing
+  // Plex share on re-invite instead of failing"), which lines up exactly
+  // with what was happening here: brand-new shares succeeded, but
+  // re-syncing anyone who already had one kept failing.
+  const result = user.plex_shared_server_id
+    ? await updateSharedLibraries({
+        plexToken: settings.plex_token,
+        clientIdentifier: settings.plex_client_identifier,
+        machineIdentifier: settings.plex_machine_identifier,
+        shareId: user.plex_shared_server_id,
+        sectionIds,
+      })
+    : await shareLibraries({
+        plexToken: settings.plex_token,
+        clientIdentifier: settings.plex_client_identifier,
+        machineIdentifier: settings.plex_machine_identifier,
+        sectionIds,
+        invitedEmail: user.email,
+      });
 
-  const shareResult = await shareLibraries({
-    plexToken: settings.plex_token,
-    clientIdentifier: settings.plex_client_identifier,
-    machineIdentifier: settings.plex_machine_identifier,
-    sectionIds,
-    invitedEmail: user.email,
-  });
-
-  if (shareResult.ok && shareResult.shareId) {
+  if (result.ok && result.shareId) {
     // Only on confirmed success does plex_library_synced_sections get
     // updated to match - this (not plex_library_override, which is just
     // the configured intent) is what the admin UI shows as someone's
     // real, current Plex access.
-    db.prepare('UPDATE users SET plex_shared_server_id = ?, plex_library_synced_sections = ? WHERE id = ?').run(shareResult.shareId, sectionIds.join(','), userId);
-  } else {
-    // The share attempt failed - whatever was live before (if anything)
-    // is gone now too, since it was unshared above before retrying. Make
-    // that explicit rather than leaving a stale, now-inaccurate value.
-    db.prepare('UPDATE users SET plex_library_synced_sections = NULL WHERE id = ?').run(userId);
+    db.prepare('UPDATE users SET plex_shared_server_id = ?, plex_library_synced_sections = ? WHERE id = ?').run(result.shareId, sectionIds.join(','), userId);
+  } else if (!result.ok && user.plex_shared_server_id) {
+    // An update attempt failed on a share we believed existed - if Plex
+    // says it doesn't exist anymore (they removed themselves, etc.),
+    // clear our record instead of retrying an update against nothing
+    // forever. Otherwise leave plex_shared_server_id as-is so the next
+    // retry tries the update again rather than assuming it's gone.
+    if (result.message && /404|not found/i.test(result.message)) {
+      db.prepare('UPDATE users SET plex_shared_server_id = NULL, plex_library_synced_sections = NULL WHERE id = ?').run(userId);
+    }
   }
 
-  return { ok: shareResult.ok, action: 'granted', message: shareResult.message };
+  return { ok: result.ok, action: 'granted', message: result.message };
 }
 
 /**
