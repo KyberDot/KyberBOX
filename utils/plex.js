@@ -169,12 +169,15 @@ async function getLibrarySections(serverUrl, plexToken) {
  * already have access, the same as clicking "Share" in Plex's web app.
  * Returns the new share's id, needed later to revoke it.
  */
-async function shareLibraries({ plexToken, clientIdentifier, machineIdentifier, sectionIds, invitedEmail }) {
+async function shareLibraries({ plexToken, clientIdentifier, machineIdentifier, sectionIds, invitedEmail, invitedId }) {
   if (!plexToken || !clientIdentifier || !machineIdentifier) {
     return { ok: false, message: 'Plex is not fully configured yet (token, server, or client identifier missing).' };
   }
   if (!sectionIds || sectionIds.length === 0) {
     return { ok: false, message: 'No library sections are configured for this plan.' };
+  }
+  if (!invitedId && !invitedEmail) {
+    return { ok: false, message: 'No Plex account id or email to invite.' };
   }
 
   // This is the endpoint python-plexapi's inviteFriend() actually uses
@@ -184,6 +187,16 @@ async function shareLibraries({ plexToken, clientIdentifier, machineIdentifier, 
   // /api/v2/shared_servers with the identifier elsewhere both 404'd,
   // which in hindsight fits: that specific shape likely isn't a real
   // endpoint at all.
+  //
+  // Every confirmed-working example found researching this (Plex's own
+  // docs, a real working gist, and plexapi's actual wire format) invites
+  // by a resolved numeric account id, not a raw email - that's used here
+  // whenever it's known (from a prior "Sync from Plex" match). Email is
+  // only a last resort for someone never matched at all, and may not
+  // actually be accepted by this endpoint for people with no existing
+  // Plex account - if that turns out to be the case, they may need to be
+  // manually invited once through Plex directly before this can pick them
+  // up automatically.
   const url = `https://plex.tv/api/servers/${encodeURIComponent(machineIdentifier)}/shared_servers?X-Plex-Client-Identifier=${encodeURIComponent(clientIdentifier)}&X-Plex-Token=${encodeURIComponent(plexToken)}`;
 
   try {
@@ -194,7 +207,7 @@ async function shareLibraries({ plexToken, clientIdentifier, machineIdentifier, 
         server_id: machineIdentifier,
         shared_server: {
           library_section_ids: sectionIds.map(Number),
-          invited_email: invitedEmail,
+          ...(invitedId ? { invited_id: Number(invitedId) } : { invited_email: invitedEmail }),
         },
       }),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),

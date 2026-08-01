@@ -110,6 +110,7 @@ async function syncPlexAccessForUser(userId) {
         machineIdentifier: settings.plex_machine_identifier,
         sectionIds,
         invitedEmail: user.email,
+        invitedId: user.plex_user_id,
       });
 
   if (result.ok && result.shareId) {
