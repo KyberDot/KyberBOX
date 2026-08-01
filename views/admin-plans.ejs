@@ -11,6 +11,12 @@
         <h1 class="text-2xl sm:text-3xl font-extrabold mb-2">Plans</h1>
         <p class="text-slate-400 text-sm mb-8">Each plan controls what subscribers on it see when they log in: its feature list, its server access, its action buttons (like a Plex restart), and which containers' health is shown.</p>
 
+        <% if (typeof plexSyncResult !== 'undefined' && plexSyncResult) { %>
+            <div class="mb-8 px-4 sm:px-5 py-4 rounded-xl <%= plexSyncResult.ok ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400' : 'bg-red-500/10 border border-red-500/30 text-red-400' %> text-sm">
+                <i class="fas <%= plexSyncResult.ok ? 'fa-circle-check' : 'fa-triangle-exclamation' %> mr-2"></i><%= plexSyncResult.message %>
+            </div>
+        <% } %>
+
         <!-- Create plan trigger -->
         <div class="flex justify-end mb-8">
             <button type="button" onclick="openModal('createPlanModal')" class="btn-primary px-6 py-3 rounded-xl text-sm">

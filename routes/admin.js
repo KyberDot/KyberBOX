@@ -43,6 +43,20 @@ function loadPlans() {
   return { plans, sshByPlan, actionsByPlan, containersByPlan };
 }
 
+// Turns a syncPlexAccessForUser(...) result into a message worth showing
+// an admin - the previous version of these routes fired this in the
+// background and never surfaced the outcome at all, so a misconfigured
+// Plex connection (or Plex itself rejecting the change) looked identical
+// to success: the page just redirected either way.
+function describeSyncResult(result) {
+  if (!result) return null;
+  if (result.skipped) return { ok: false, message: `Saved here, but not applied on Plex: ${result.message}` };
+  if (!result.ok) return { ok: false, message: `Saved here, but Plex rejected the change: ${result.message || 'unknown error'}` };
+  if (result.action === 'none') return { ok: true, message: 'Saved - no change in Plex access was needed.' };
+  if (result.action === 'revoked') return { ok: true, message: 'Saved and access revoked on Plex.' };
+  return { ok: true, message: 'Saved and synced to Plex successfully.' };
+}
+
 function loadUsersPageData() {
   const users = db.prepare("SELECT * FROM users WHERE role = 'subscriber' ORDER BY created_at DESC").all();
 
@@ -50,7 +64,7 @@ function loadUsersPageData() {
 
   const subsByUser = {};
   db.prepare(
-    `SELECT s.*, p.name AS plan_display_name FROM subscriptions s
+    `SELECT s.*, p.name AS plan_display_name, p.plex_library_section_ids AS plan_plex_sections FROM subscriptions s
      LEFT JOIN plans p ON p.id = s.plan_id`
   ).all().forEach((s) => {
     // Precomputed here (rather than in the view) so the same "3 days"
@@ -76,10 +90,21 @@ function loadUsersPageData() {
   // Plex isn't relevant to them at all - drives the status badge on this
   // page instead of admins having to infer it from a blank username field.
   users.forEach((u) => {
-    const onPlexPlan = (subsByUser[u.id] || []).some(
+    const plexSubs = (subsByUser[u.id] || []).filter(
       (s) => s.status === 'active' && (s.service === 'plex' || s.service === 'multiple')
     );
-    u.plexStatus = u.plex_username ? 'approved' : (onPlexPlan ? 'pending' : null);
+    u.plexStatus = u.plex_username ? 'approved' : (plexSubs.length > 0 ? 'pending' : null);
+
+    // What the library picker should show as checked - the actual
+    // override if one's set (even an empty one), otherwise the plan's own
+    // default sections. Without this, the picker looked "empty" for
+    // everyone using their plan's default access, which wasn't a bug in
+    // what was saved, just in what the checkboxes were being compared
+    // against (the raw override column instead of the real effective set).
+    const hasOverride = u.plex_library_override !== null && u.plex_library_override !== undefined;
+    u.effectivePlexSections = hasOverride
+      ? u.plex_library_override
+      : [...new Set(plexSubs.flatMap((s) => String(s.plan_plex_sections || '').split(',')).map((id) => id.trim()).filter(Boolean))].join(',');
   });
 
   return { users, subsByUser, plans, paymentMethods };
@@ -157,19 +182,33 @@ router.get('/admin/plex/library-sections', async (req, res) => {
   res.json(result);
 });
 
-router.post('/admin/plans/:id/plex-libraries', (req, res) => {
+router.post('/admin/plans/:id/plex-libraries', async (req, res) => {
   const sectionIds = Array.isArray(req.body.section_ids) ? req.body.section_ids : [req.body.section_ids].filter(Boolean);
   db.prepare('UPDATE plans SET plex_library_section_ids = ? WHERE id = ?').run(sectionIds.join(','), req.params.id);
 
   // Anyone currently active on this plan may need their access updated to
-  // match the new library selection (added, removed, or unchanged).
+  // match the new library selection (added, removed, or unchanged) -
+  // awaited (not fire-and-forget) so a failure here is actually visible
+  // instead of the page just redirecting as if it worked.
   const activeUserIds = db
     .prepare(`SELECT DISTINCT user_id FROM subscriptions WHERE plan_id = ? AND status = 'active'`)
     .all(req.params.id)
     .map((r) => r.user_id);
-  activeUserIds.forEach((userId) => syncPlexAccessForUser(userId).catch(() => {}));
 
-  res.redirect('/admin/plans');
+  const results = await Promise.all(activeUserIds.map((userId) => syncPlexAccessForUser(userId)));
+  const failed = results.filter((r) => !r.ok && !r.skipped);
+  const skipped = results.filter((r) => r.skipped);
+
+  let plexSyncResult = null;
+  if (skipped.length > 0) {
+    plexSyncResult = { ok: false, message: skipped[0].message }; // "Plex is not fully configured yet" etc.
+  } else if (failed.length > 0) {
+    plexSyncResult = { ok: false, message: `Saved, but Plex rejected the update for ${failed.length} of ${results.length} affected user(s): ${failed[0].message}` };
+  } else if (results.length > 0) {
+    plexSyncResult = { ok: true, message: `Library access saved and synced to Plex for ${results.length} affected user(s).` };
+  }
+
+  res.render('admin-plans', { ...loadPlans(), newPlanId: null, plexSyncResult });
 });
 
 router.post('/admin/plans/:id/maintenance', async (req, res) => {
@@ -523,21 +562,21 @@ router.post('/admin/users/:id/plex-username', (req, res) => {
   res.redirect('/admin/users');
 });
 
-router.post('/admin/users/:id/plex-libraries', (req, res) => {
+router.post('/admin/users/:id/plex-libraries', async (req, res) => {
   const sectionIds = Array.isArray(req.body.section_ids) ? req.body.section_ids : [req.body.section_ids].filter(Boolean);
   // Stored even if empty - an explicit "" override (no libraries picked)
   // is meaningfully different from no override at all (NULL), which
   // syncPlexAccessForUser relies on to distinguish "block everything for
   // just this person" from "use whatever their plan grants".
   db.prepare('UPDATE users SET plex_library_override = ? WHERE id = ?').run(sectionIds.join(','), req.params.id);
-  syncPlexAccessForUser(req.params.id).catch(() => {});
-  res.redirect('/admin/users');
+  const result = await syncPlexAccessForUser(req.params.id);
+  res.render('admin-users', { ...loadUsersPageData(), newUser: null, plexSyncResult: describeSyncResult(result) });
 });
 
-router.post('/admin/users/:id/plex-libraries/clear', (req, res) => {
+router.post('/admin/users/:id/plex-libraries/clear', async (req, res) => {
   db.prepare('UPDATE users SET plex_library_override = NULL WHERE id = ?').run(req.params.id);
-  syncPlexAccessForUser(req.params.id).catch(() => {});
-  res.redirect('/admin/users');
+  const result = await syncPlexAccessForUser(req.params.id);
+  res.render('admin-users', { ...loadUsersPageData(), newUser: null, plexSyncResult: describeSyncResult(result) });
 });
 
 // Pulls everyone your Plex server is shared with and matches them to portal

@@ -73,9 +73,9 @@
                                 <span class="badge badge-answered"><i class="fas fa-credit-card"></i> <%= pm ? pm.name : 'Payment method' %></span>
                             <% } %>
                             <% if (u.plexStatus === 'approved') { %>
-                                <span class="badge badge-active"><i class="fas fa-circle-check"></i> Plex Access Approved</span>
+                                <span class="badge badge-active"><i class="fas fa-circle-check"></i> PLEX SYNCED</span>
                             <% } else if (u.plexStatus === 'pending') { %>
-                                <span class="badge badge-suspended"><i class="fas fa-hourglass-half"></i> Plex Invite Not Yet Accepted</span>
+                                <span class="badge badge-suspended"><i class="fas fa-hourglass-half"></i> NOT SYNCED</span>
                             <% } %>
                         </div>
                     </div>
@@ -216,7 +216,7 @@
                                 Override here to limit (or expand) just their own access.
                             </p>
                             <form method="POST" action="/admin/users/<%= u.id %>/plex-libraries" data-ajax-form>
-                                <div class="grid sm:grid-cols-2 gap-2 mb-3" data-plex-library-picker data-selected="<%= u.plex_library_override || '' %>" data-context="user-<%= u.id %>">
+                                <div class="grid sm:grid-cols-2 gap-2 mb-3" data-plex-library-picker data-selected="<%= u.effectivePlexSections || '' %>" data-context="user-<%= u.id %>">
                                     <p class="text-slate-500 text-sm col-span-2">Loading libraries…</p>
                                 </div>
                                 <div class="flex flex-wrap gap-2">
