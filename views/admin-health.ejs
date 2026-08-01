@@ -327,7 +327,7 @@
         let fullResetPollTimer = null;
 
         async function confirmFullReset() {
-            if (!confirm('This will stop, pull, and restart every container in your stack EXCEPT this portal itself (so it stays online). Continue?')) return;
+            if (!confirm('This will run "docker compose down", then "pull", then "up -d" for your ENTIRE stack, in that order. Every container in it will go offline briefly. Continue?')) return;
             if (!confirm('Are you sure? This affects everything, not just one container. This can take several minutes, especially the pull step.')) return;
 
             const resultBox = document.getElementById('fullResetResult');

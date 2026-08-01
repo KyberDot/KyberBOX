@@ -230,19 +230,6 @@ function looksLikeIconNotCommand(command) {
   return /^fa[-\s][a-z0-9-]+$/i.test(command.trim());
 }
 
-// Splits the admin's "extra exclusions" setting (comma and/or newline
-// separated) into a clean list of container/service names.
-function parseExclusionNames(raw) {
-  return String(raw || '')
-    .split(/[,\n]/)
-    .map((name) => name.trim().replace(/[^a-zA-Z0-9_.-]/g, ''))
-    .filter(Boolean);
-}
-
-function escapeRegex(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
 router.post('/admin/plans/:id/actions', (req, res) => {
   const label = String(req.body.label || '').trim();
   const command = String(req.body.command || '').trim();
@@ -598,7 +585,7 @@ router.post('/admin/settings/branding', (req, res) => {
 });
 
 router.post('/admin/settings/health-ssh', (req, res) => {
-  const { host, port, username, auth_type, secret, compose_path, self_service_name, reset_exclusions } = req.body;
+  const { host, port, username, auth_type, secret, compose_path } = req.body;
   if (!host || !username) return res.status(400).render('error', { message: 'Missing required fields - please fill in everything marked required and try again.' });
 
   const existing = db.prepare('SELECT * FROM admin_ssh LIMIT 1').get();
@@ -621,8 +608,6 @@ router.post('/admin/settings/health-ssh', (req, res) => {
   }
 
   setSetting('compose_path', String(compose_path || '').trim());
-  setSetting('self_service_name', String(self_service_name || 'kyberbox').trim() || 'kyberbox');
-  setSetting('reset_exclusions', String(reset_exclusions || '').trim());
 
   res.render('admin-settings', { ...loadSettingsPageData(), saved: 'health-ssh', testResult: null, brandingError: null });
 });
@@ -1014,20 +999,10 @@ router.post('/admin/health/full-reset', (req, res) => {
     return res.status(400).json({ ok: false, message: 'No admin SSH access configured yet. Set it up in Settings first.' });
   }
 
-  const selfService = (settings.self_service_name || 'kyberbox').replace(/[^a-zA-Z0-9_.-]/g, '') || 'kyberbox';
-  const extraExclusions = parseExclusionNames(settings.reset_exclusions);
-  const allExclusions = [...new Set([selfService, ...extraExclusions])];
   const safePath = composePath.replace(/'/g, `'"'"'`);
   const adminUserId = req.user.id;
 
-  // "docker compose down" can't be limited to specific services - it tears
-  // down the whole project, which would kill this app's own container
-  // mid-request (it's part of the same stack) and the browser would never
-  // get a response back. "stop" (which CAN be scoped to specific services)
-  // leaves the portal's own container - and any other excluded containers
-  // an admin has configured - running throughout.
-  const exclusionPattern = allExclusions.map(escapeRegex).join('|');
-  const command = `cd '${safePath}' && SERVICES=$(docker compose config --services | grep -vxE '${exclusionPattern}') && docker compose stop $SERVICES && docker compose pull $SERVICES && docker compose up -d $SERVICES`;
+  const command = `cd '${safePath}' && docker compose down && docker compose pull && docker compose up -d`;
 
   fullResetState = { running: true, lastResult: null };
   startReset('Admin: Full Reset & Update');
@@ -1050,14 +1025,14 @@ router.post('/admin/health/full-reset', (req, res) => {
     .then((result) => {
       db.prepare(
         'INSERT INTO admin_health_log (admin_user_id, container_name, action, success, output) VALUES (?, ?, ?, ?, ?)'
-      ).run(adminUserId, `ALL except ${allExclusions.join(', ')}`, 'full-reset', result.success ? 1 : 0, result.output);
+      ).run(adminUserId, 'ALL (full stack)', 'full-reset', result.success ? 1 : 0, result.output);
 
       fullResetState = {
         running: false,
         lastResult: {
           ok: result.success,
           message: result.success
-            ? `Full reset complete: stack (except ${allExclusions.map((n) => `"${n}"`).join(', ')}) was stopped, images pulled, and brought back up.`
+            ? 'Full reset complete: stack was taken down, images pulled, and brought back up.'
             : `Full reset failed: ${result.output}`,
         },
       };

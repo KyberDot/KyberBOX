@@ -42,8 +42,6 @@ function getAllSettings() {
     smtp_from_name: getSetting('smtp_from_name', 'KyberBOX'),
     smtp_from_email: getSetting('smtp_from_email', ''),
     compose_path: getSetting('compose_path', ''),
-    self_service_name: getSetting('self_service_name', 'kyberbox'),
-    reset_exclusions: getSetting('reset_exclusions', ''),
     tautulli_url: getSetting('tautulli_url', ''),
     tautulli_api_key: getSetting('tautulli_api_key', ''), // decrypted value, for internal use only
   };
