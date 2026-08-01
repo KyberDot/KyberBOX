@@ -79,7 +79,7 @@ async function syncPlexAccessForUser(userId) {
     const result = await unshareServer({
       plexToken: settings.plex_token,
       clientIdentifier: settings.plex_client_identifier,
-      shareId: user.plex_shared_server_id,
+      plexUserId: user.plex_user_id,
     });
     if (result.ok) {
       db.prepare('UPDATE users SET plex_shared_server_id = NULL, plex_library_synced_sections = NULL WHERE id = ?').run(userId);
@@ -99,7 +99,7 @@ async function syncPlexAccessForUser(userId) {
     await unshareServer({
       plexToken: settings.plex_token,
       clientIdentifier: settings.plex_client_identifier,
-      shareId: user.plex_shared_server_id,
+      plexUserId: user.plex_user_id,
     });
     // Deliberately not clearing plex_library_synced_sections here yet - if
     // the re-share below fails, "what's actually still live on Plex" is

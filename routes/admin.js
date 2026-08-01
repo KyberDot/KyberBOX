@@ -616,13 +616,36 @@ router.post('/admin/users/sync-plex', async (req, res) => {
 
   const unmatchedCount = subscribers.length - matched.length;
 
+  // Matching a username doesn't grant any actual library access on its
+  // own - it just identifies who someone is. This button's name implies
+  // it does the whole job though, so it now also pushes real access to
+  // everyone it just matched (and anyone matched previously but never
+  // actually confirmed synced), instead of leaving that as a separate,
+  // easy-to-miss step.
+  const plexSubscriberIds = db
+    .prepare(
+      `SELECT DISTINCT u.id FROM users u
+       JOIN subscriptions s ON s.user_id = u.id
+       JOIN plans p ON p.id = s.plan_id
+       WHERE u.role = 'subscriber' AND u.plex_username IS NOT NULL
+         AND s.status = 'active' AND p.service IN ('plex', 'multiple')`
+    )
+    .all()
+    .map((r) => r.id);
+  const syncResults = await Promise.all(plexSubscriberIds.map((id) => syncPlexAccessForUser(id)));
+  const syncFailures = syncResults.filter((r) => !r.ok && !r.skipped);
+
+  let message = `Checked ${result.users.length} Plex share(s) against ${subscribers.length} client(s): ${matched.length} matched and linked${unmatchedCount > 0 ? `, ${unmatchedCount} client(s) still unmatched (no Plex account with the same email was found)` : ''}.`;
+  if (plexSubscriberIds.length > 0) {
+    message += syncFailures.length > 0
+      ? ` Library access sync: ${plexSubscriberIds.length - syncFailures.length} of ${plexSubscriberIds.length} confirmed - ${syncFailures.length} failed (${syncFailures[0].message}).`
+      : ` Library access confirmed synced for all ${plexSubscriberIds.length} Plex-plan client(s).`;
+  }
+
   res.render('admin-users', {
     ...loadUsersPageData(),
     newUser: null,
-    plexSyncResult: {
-      ok: true,
-      message: `Checked ${result.users.length} Plex share(s) against ${subscribers.length} client(s): ${matched.length} matched and linked${unmatchedCount > 0 ? `, ${unmatchedCount} client(s) still unmatched (no Plex account with the same email was found)` : ''}.`,
-    },
+    plexSyncResult: { ok: syncFailures.length === 0, message },
   });
 });
 

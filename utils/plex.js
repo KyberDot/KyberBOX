@@ -177,19 +177,25 @@ async function shareLibraries({ plexToken, clientIdentifier, machineIdentifier, 
     return { ok: false, message: 'No library sections are configured for this plan.' };
   }
 
-  // invitedEmail goes in the query string alongside the other identity
-  // params, not the JSON body - putting it in the body (as an earlier
-  // version of this did) caused Plex to 404 on this endpoint, since it
-  // couldn't resolve who the share request was even for.
-  const url = `https://plex.tv/api/v2/shared_servers?X-Plex-Client-Identifier=${encodeURIComponent(clientIdentifier)}&X-Plex-Token=${encodeURIComponent(plexToken)}&invitedEmail=${encodeURIComponent(invitedEmail)}`;
+  // This is the endpoint python-plexapi's inviteFriend() actually uses
+  // internally (confirmed via its own source constants) - machine ID goes
+  // in the URL path, not the body or query string, and the payload nests
+  // everything under "shared_server". Two earlier attempts using
+  // /api/v2/shared_servers with the identifier elsewhere both 404'd,
+  // which in hindsight fits: that specific shape likely isn't a real
+  // endpoint at all.
+  const url = `https://plex.tv/api/servers/${encodeURIComponent(machineIdentifier)}/shared_servers?X-Plex-Client-Identifier=${encodeURIComponent(clientIdentifier)}&X-Plex-Token=${encodeURIComponent(plexToken)}`;
 
   try {
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        machineIdentifier,
-        librarySectionIds: sectionIds.map(Number),
+        server_id: machineIdentifier,
+        shared_server: {
+          library_section_ids: sectionIds.map(Number),
+          invited_email: invitedEmail,
+        },
       }),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
@@ -201,10 +207,11 @@ async function shareLibraries({ plexToken, clientIdentifier, machineIdentifier, 
       return { ok: false, alreadyShared: res.status === 422, message: `Plex declined the share (HTTP ${res.status}): ${bodyText.slice(0, 300)}` };
     }
 
-    let json = {};
-    try { json = JSON.parse(bodyText); } catch (_) { /* some responses are empty on success */ }
-
-    return { ok: true, shareId: json.id != null ? String(json.id) : null };
+    // This endpoint's successful response is XML (the older Plex API
+    // family), unlike the v2 JSON endpoints elsewhere in this file - pull
+    // the new share's id straight out of the root element's attribute.
+    const idMatch = bodyText.match(/<SharedServer\b[^>]*\bid="([^"]*)"/);
+    return { ok: true, shareId: idMatch ? idMatch[1] : null };
   } catch (err) {
     const reason = err.name === 'TimeoutError' ? 'Timed out reaching Plex.' : `Could not reach Plex: ${err.message}`;
     return { ok: false, message: reason };
@@ -212,12 +219,13 @@ async function shareLibraries({ plexToken, clientIdentifier, machineIdentifier, 
 }
 
 /** Revokes a previously-created share, removing that person's library access entirely. */
-async function unshareServer({ plexToken, clientIdentifier, shareId }) {
-  if (!plexToken || !clientIdentifier || !shareId) {
-    return { ok: false, message: 'Missing Plex configuration or share id.' };
+/** Revokes a previously-created share, removing that person's library access entirely. Keyed on their Plex account id (from username matching), not the id returned by shareLibraries. */
+async function unshareServer({ plexToken, clientIdentifier, plexUserId }) {
+  if (!plexToken || !clientIdentifier || !plexUserId) {
+    return { ok: false, message: 'Missing Plex configuration or account id.' };
   }
 
-  const url = `https://plex.tv/api/v2/shared_servers/${encodeURIComponent(shareId)}?X-Plex-Client-Identifier=${encodeURIComponent(clientIdentifier)}&X-Plex-Token=${encodeURIComponent(plexToken)}`;
+  const url = `https://plex.tv/api/v2/sharings/${encodeURIComponent(plexUserId)}?X-Plex-Client-Identifier=${encodeURIComponent(clientIdentifier)}&X-Plex-Token=${encodeURIComponent(plexToken)}`;
 
   try {
     const res = await fetch(url, { method: 'DELETE', signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
