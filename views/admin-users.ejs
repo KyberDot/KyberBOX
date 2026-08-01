@@ -208,6 +208,9 @@
 
                         <div class="mt-4 pt-4 border-t border-white/5">
                             <p class="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-1">Individual Library Access</p>
+                            <p class="text-slate-500 text-xs mb-2" data-plex-synced-status="<%= u.plex_library_synced_sections || '' %>" data-context="user-<%= u.id %>">
+                                <i class="fas fa-circle-notch fa-spin mr-1"></i>Checking what's actually live on Plex…
+                            </p>
                             <p class="text-slate-500 text-xs mb-3">
                                 By default they get whatever libraries their plan grants.
                                 <% if (u.plex_library_override !== null && u.plex_library_override !== undefined) { %>
@@ -356,6 +359,33 @@
                         section.title + ' <span class="text-slate-600 text-[10px]">(' + section.type + ')</span>' +
                         '</label>';
                 }).join('');
+            });
+
+            // Real, currently-confirmed-live-on-Plex status - separate from
+            // the editable picker above, so a failed sync attempt doesn't
+            // make it look like a saved choice just vanished.
+            document.querySelectorAll('[data-plex-synced-status]').forEach(function (statusEl) {
+                const syncedKeys = (statusEl.getAttribute('data-plex-synced-status') || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+
+                if (errorMessage) {
+                    statusEl.innerHTML = '<i class="fas fa-triangle-exclamation mr-1"></i>Could not check live Plex status.';
+                    return;
+                }
+                if (syncedKeys.length === 0) {
+                    statusEl.innerHTML = '<i class="fas fa-circle-xmark text-red-400 mr-1"></i>Not currently synced on Plex.';
+                    return;
+                }
+
+                const names = syncedKeys
+                    .map(function (key) {
+                        const match = sections.find(function (s) { return s.key === key; });
+                        return match ? match.title : null;
+                    })
+                    .filter(Boolean);
+
+                statusEl.innerHTML = names.length > 0
+                    ? '<i class="fas fa-circle-check text-emerald-400 mr-1"></i>Live on Plex now: ' + names.join(', ')
+                    : '<i class="fas fa-circle-check text-emerald-400 mr-1"></i>Live on Plex now (' + syncedKeys.length + ' librar' + (syncedKeys.length === 1 ? 'y' : 'ies') + ').';
             });
         }
 

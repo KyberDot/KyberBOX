@@ -62,6 +62,18 @@ async function syncPlexAccessForUser(userId) {
 
   const shouldHaveAccess = sectionIds.length > 0;
 
+  // Already exactly matches what's confirmed live - nothing to do. This
+  // matters now that syncing can happen periodically in the background
+  // (not just when something explicitly changes): without this check,
+  // every retry cycle would needlessly tear down and recreate a share
+  // that was already correct.
+  const currentlySynced = new Set(String(user.plex_library_synced_sections || '').split(',').map((id) => id.trim()).filter(Boolean));
+  const desiredSet = new Set(sectionIds);
+  const alreadyCorrect = user.plex_shared_server_id && currentlySynced.size === desiredSet.size && [...desiredSet].every((id) => currentlySynced.has(id));
+  if (shouldHaveAccess && alreadyCorrect) {
+    return { ok: true, action: 'none' };
+  }
+
   if (!shouldHaveAccess) {
     if (!user.plex_shared_server_id) return { ok: true, action: 'none' }; // nothing to do
     const result = await unshareServer({
@@ -70,7 +82,7 @@ async function syncPlexAccessForUser(userId) {
       shareId: user.plex_shared_server_id,
     });
     if (result.ok) {
-      db.prepare('UPDATE users SET plex_shared_server_id = NULL WHERE id = ?').run(userId);
+      db.prepare('UPDATE users SET plex_shared_server_id = NULL, plex_library_synced_sections = NULL WHERE id = ?').run(userId);
     }
     return { ok: result.ok, action: 'revoked', message: result.message };
   }
@@ -89,6 +101,10 @@ async function syncPlexAccessForUser(userId) {
       clientIdentifier: settings.plex_client_identifier,
       shareId: user.plex_shared_server_id,
     });
+    // Deliberately not clearing plex_library_synced_sections here yet - if
+    // the re-share below fails, "what's actually still live on Plex" is
+    // now genuinely unknown (the old share is gone, the new one didn't
+    // take), so it's cleared only once we know the real outcome below.
     db.prepare('UPDATE users SET plex_shared_server_id = NULL WHERE id = ?').run(userId);
   }
 
@@ -101,7 +117,16 @@ async function syncPlexAccessForUser(userId) {
   });
 
   if (shareResult.ok && shareResult.shareId) {
-    db.prepare('UPDATE users SET plex_shared_server_id = ? WHERE id = ?').run(shareResult.shareId, userId);
+    // Only on confirmed success does plex_library_synced_sections get
+    // updated to match - this (not plex_library_override, which is just
+    // the configured intent) is what the admin UI shows as someone's
+    // real, current Plex access.
+    db.prepare('UPDATE users SET plex_shared_server_id = ?, plex_library_synced_sections = ? WHERE id = ?').run(shareResult.shareId, sectionIds.join(','), userId);
+  } else {
+    // The share attempt failed - whatever was live before (if anything)
+    // is gone now too, since it was unshared above before retrying. Make
+    // that explicit rather than leaving a stale, now-inaccurate value.
+    db.prepare('UPDATE users SET plex_library_synced_sections = NULL WHERE id = ?').run(userId);
   }
 
   return { ok: shareResult.ok, action: 'granted', message: shareResult.message };
@@ -162,4 +187,38 @@ async function attemptAutoLinkAllPending() {
   await Promise.all(unlinked.map((row) => attemptAutoLinkPlexUsername(row.id).catch(() => {})));
 }
 
-module.exports = { syncPlexAccessForUser, attemptAutoLinkPlexUsername, attemptAutoLinkAllPending };
+/**
+ * Retries syncPlexAccessForUser for anyone whose Plex-linked account is on
+ * an active Plex-granting plan - cheap to call often since the function
+ * itself now no-ops instantly for anyone already correctly synced, and is
+ * individually rate-limited per user so a persistently-failing account
+ * (misconfiguration, Plex rejecting it, etc.) doesn't get hammered every
+ * cycle. This is what makes a failed sync actually resolve itself once
+ * the underlying issue is fixed, instead of staying stuck until an admin
+ * happens to manually re-trigger it.
+ */
+async function retryPendingPlexAccessSyncs() {
+  const candidates = db
+    .prepare(
+      `SELECT DISTINCT u.id, u.plex_sync_attempted_at FROM users u
+       JOIN subscriptions s ON s.user_id = u.id
+       JOIN plans p ON p.id = s.plan_id
+       WHERE u.role = 'subscriber' AND u.plex_username IS NOT NULL
+         AND s.status = 'active' AND p.service IN ('plex', 'multiple')`
+    )
+    .all();
+
+  const due = candidates.filter((u) => {
+    if (!u.plex_sync_attempted_at) return true;
+    return Date.now() - new Date(u.plex_sync_attempted_at).getTime() >= LINK_RETRY_INTERVAL_MS;
+  });
+
+  await Promise.all(
+    due.map(async (u) => {
+      db.prepare(`UPDATE users SET plex_sync_attempted_at = datetime('now') WHERE id = ?`).run(u.id);
+      await syncPlexAccessForUser(u.id).catch(() => {});
+    })
+  );
+}
+
+module.exports = { syncPlexAccessForUser, attemptAutoLinkPlexUsername, attemptAutoLinkAllPending, retryPendingPlexAccessSyncs };

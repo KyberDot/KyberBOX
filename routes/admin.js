@@ -6,7 +6,7 @@ const { encrypt } = require('../utils/crypto');
 const { getAllSettings, setSetting, getSiteBaseUrl } = require('../utils/settings');
 const { sendMail, isConfigured, notifyResetStarted } = require('../utils/mailer');
 const { testConnection: testTautulliConnection, getWatchHistory, getNowWatching, getAllActivity, getGeoLookup, fetchPosterImage } = require('../utils/tautulli');
-const { getSharedUsers, getServerIdentity, getLibrarySections } = require('../utils/plex');
+const { getSharedUsers, getServerIdentity, verifyServerWithPlexTv, getLibrarySections } = require('../utils/plex');
 const { syncPlexAccessForUser, attemptAutoLinkPlexUsername, attemptAutoLinkAllPending } = require('../utils/plexAccess');
 const { londonInputToUtcIso, formatUK } = require('../utils/time');
 const { serviceLabel } = require('../utils/labels');
@@ -896,8 +896,20 @@ router.post('/admin/settings/plex/detect-server', async (req, res) => {
   const settings = getAllSettings();
   const result = await getServerIdentity(settings.plex_server_url);
 
-  if (result.ok) {
-    setSetting('plex_machine_identifier', result.machineIdentifier);
+  let finalResult;
+  if (!result.ok) {
+    finalResult = { ok: false, message: result.message };
+  } else {
+    // Detecting locally isn't enough on its own - sharing calls happen
+    // entirely on plex.tv's side, so what matters is whether plex.tv
+    // itself recognizes this exact server under this token's account.
+    const verified = await verifyServerWithPlexTv(result.machineIdentifier, settings.plex_token);
+    if (!verified.ok) {
+      finalResult = { ok: false, message: `Found this server locally, but Plex.tv rejected it: ${verified.message}` };
+    } else {
+      setSetting('plex_machine_identifier', result.machineIdentifier);
+      finalResult = { ok: true, message: `Linked to your Plex server successfully${verified.serverName ? ` ("${verified.serverName}")` : ''} - confirmed by Plex.tv.` };
+    }
   }
 
   res.render('admin-settings', {
@@ -905,10 +917,7 @@ router.post('/admin/settings/plex/detect-server', async (req, res) => {
     saved: null,
     testResult: null,
     brandingError: null,
-    plexDetectResult: {
-      ok: result.ok,
-      message: result.ok ? `Linked to your Plex server successfully.` : result.message,
-    },
+    plexDetectResult: finalResult,
   });
 });
 

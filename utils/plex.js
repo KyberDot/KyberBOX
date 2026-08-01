@@ -109,6 +109,35 @@ async function getServerIdentity(serverUrl) {
   }
 }
 
+/**
+ * Confirms plex.tv itself (not just the PMS's own self-report) recognizes
+ * this machine identifier as a server tied to this token's account - the
+ * two can disagree (unclaimed server, re-claimed server, wrong URL
+ * pointing at the wrong instance, etc.), and library-sharing calls happen
+ * entirely on plex.tv's side, so this is the source of truth that
+ * actually matters for whether sharing will work at all.
+ */
+async function verifyServerWithPlexTv(machineIdentifier, plexToken) {
+  if (!machineIdentifier || !plexToken) return { ok: false, message: 'Missing machine identifier or token.' };
+
+  const url = `https://plex.tv/api/servers/${encodeURIComponent(machineIdentifier)}?X-Plex-Token=${encodeURIComponent(plexToken)}`;
+
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+    if (res.status === 404) {
+      return { ok: false, message: "Plex.tv doesn't recognize this server under your account. It may not be claimed by the same Plex account as this token, or the machine identifier may be stale." };
+    }
+    if (!res.ok) return { ok: false, message: `Plex.tv returned an error (HTTP ${res.status}).` };
+
+    const xmlText = await res.text();
+    const nameMatch = xmlText.match(/<Server\b[^>]*\bname="([^"]*)"/);
+    return { ok: true, serverName: nameMatch ? decodeXmlEntities(nameMatch[1]) : null };
+  } catch (err) {
+    const reason = err.name === 'TimeoutError' ? 'Timed out reaching Plex.' : `Could not reach Plex: ${err.message}`;
+    return { ok: false, message: reason };
+  }
+}
+
 /** Lists this server's libraries (Movies, TV Shows, etc.), for picking which ones a plan grants. */
 async function getLibrarySections(serverUrl, plexToken) {
   if (!serverUrl) return { ok: false, message: 'A Plex server URL is not configured yet.' };
@@ -204,4 +233,4 @@ async function unshareServer({ plexToken, clientIdentifier, shareId }) {
   }
 }
 
-module.exports = { getSharedUsers, getServerIdentity, getLibrarySections, shareLibraries, unshareServer };
+module.exports = { getSharedUsers, getServerIdentity, verifyServerWithPlexTv, getLibrarySections, shareLibraries, unshareServer };
