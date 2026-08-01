@@ -22,6 +22,11 @@
                 <% } %>
                 <a href="/support" class="text-slate-400 hover:text-white transition font-medium">Support</a>
                 <a href="/account" class="text-slate-400 hover:text-white transition font-medium">Account</a>
+                <% if (expiringSoon) { %>
+                    <span class="badge badge-suspended" title="<%= expiringSoon.plan_name %> expires <%= expiringSoon.days === 0 ? 'today' : ('in ' + expiringSoon.days + ' day' + (expiringSoon.days === 1 ? '' : 's')) %> unless renewed">
+                        <i class="fas fa-triangle-exclamation"></i> <%= expiringSoon.days %>d expiring
+                    </span>
+                <% } %>
             <% } %>
             <span class="text-slate-600">|</span>
             <span class="text-slate-500"><%= currentUser.name %></span>
@@ -56,6 +61,11 @@
             <% } %>
             <a href="/support" class="text-slate-300 hover:text-white transition font-medium py-2 px-2 rounded-lg hover:bg-white/5">Support</a>
             <a href="/account" class="text-slate-300 hover:text-white transition font-medium py-2 px-2 rounded-lg hover:bg-white/5">Account</a>
+            <% if (expiringSoon) { %>
+                <span class="badge badge-suspended w-fit" title="<%= expiringSoon.plan_name %> expires <%= expiringSoon.days === 0 ? 'today' : ('in ' + expiringSoon.days + ' day' + (expiringSoon.days === 1 ? '' : 's')) %> unless renewed">
+                    <i class="fas fa-triangle-exclamation"></i> <%= expiringSoon.days %>d expiring
+                </span>
+            <% } %>
         <% } %>
         <div class="border-t border-white/10 my-2"></div>
         <span class="text-slate-500 px-2 py-1"><%= currentUser.name %></span>

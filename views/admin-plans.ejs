@@ -70,6 +70,17 @@
                         </form>
                     </details>
 
+                    <details class="mb-3" data-ajax-key="plan-<%= plan.id %>-plex-libraries">
+                        <summary class="cursor-pointer text-sky-400 text-xs font-semibold uppercase tracking-wide">Plex Library Access</summary>
+                        <p class="text-slate-500 text-xs mt-3 mb-2">Which libraries subscribers on this plan get automatically invited to. Only meaningful for a Plex/Multiple Services plan — configure the Plex account itself from <a href="/admin/settings" class="text-sky-400 hover:text-sky-300">Settings</a> first.</p>
+                        <form method="POST" action="/admin/plans/<%= plan.id %>/plex-libraries" data-ajax-form class="mt-2">
+                            <div class="grid sm:grid-cols-2 gap-2 mb-3" data-plex-library-picker data-selected="<%= plan.plex_library_section_ids || '' %>">
+                                <p class="text-slate-500 text-sm col-span-2"><i class="fas fa-circle-notch fa-spin mr-2"></i>Loading libraries…</p>
+                            </div>
+                            <button type="submit" class="btn-primary py-3 rounded-xl text-sm">Save Library Access</button>
+                        </form>
+                    </details>
+
                     <details class="mb-3" data-ajax-key="plan-<%= plan.id %>-maintenance">
                         <summary class="cursor-pointer text-amber-400 text-xs font-semibold uppercase tracking-wide">Maintenance Mode <% if (plan.maintenance_mode) { %>(currently ON)<% } %></summary>
                         <form method="POST" action="/admin/plans/<%= plan.id %>/maintenance" data-ajax-form class="grid sm:grid-cols-2 gap-3 mt-3">
@@ -224,5 +235,56 @@
             </div>
         </div>
     </main>
+
+    <script>
+        // Same Plex server for every plan, so fetch the library list once
+        // per load and fill in every picker on the page from that single
+        // response. Also re-runs after an ajax form swap (e.g. editing plan
+        // details replaces <main>, including these pickers) so they don't
+        // get stuck showing "Loading..." forever.
+        async function loadPlexLibraryPickers() {
+            const pickers = document.querySelectorAll('[data-plex-library-picker]');
+            if (pickers.length === 0) return;
+
+            let sections = null;
+            let errorMessage = null;
+            try {
+                const res = await fetch('/admin/plex/library-sections');
+                const data = await res.json();
+                if (data.ok) {
+                    sections = data.sections;
+                } else {
+                    errorMessage = data.message || 'Could not load Plex libraries.';
+                }
+            } catch (e) {
+                errorMessage = 'Could not reach the server to load Plex libraries.';
+            }
+
+            pickers.forEach(function (picker) {
+                const selected = (picker.getAttribute('data-selected') || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+
+                if (errorMessage) {
+                    picker.innerHTML = '<p class="text-slate-500 text-sm col-span-2">' + errorMessage + '</p>';
+                    return;
+                }
+                if (!sections || sections.length === 0) {
+                    picker.innerHTML = '<p class="text-slate-500 text-sm col-span-2">No libraries found on your Plex server.</p>';
+                    return;
+                }
+
+                picker.innerHTML = sections.map(function (section) {
+                    const checked = selected.indexOf(section.key) !== -1 ? 'checked' : '';
+                    const id = 'section-' + picker.closest('details').getAttribute('data-ajax-key') + '-' + section.key;
+                    return '<label for="' + id + '" class="flex items-center gap-2 bg-slate-900/40 rounded-lg px-3 py-2.5 text-sm text-slate-300 cursor-pointer">' +
+                        '<input type="checkbox" id="' + id + '" name="section_ids" value="' + section.key + '" ' + checked + ' class="accent-sky-500">' +
+                        section.title + ' <span class="text-slate-600 text-xs">(' + section.type + ')</span>' +
+                        '</label>';
+                }).join('');
+            });
+        }
+
+        loadPlexLibraryPickers();
+        document.addEventListener('main:updated', loadPlexLibraryPickers);
+    </script>
 </body>
 </html>

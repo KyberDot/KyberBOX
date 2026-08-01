@@ -3,7 +3,7 @@ const db = require('../db');
 const { runCommand, getContainerStatuses } = require('../utils/ssh');
 const { startReset, endReset, getResetState } = require('../utils/resetLock');
 const { notifyResetStarted } = require('../utils/mailer');
-const { getWatchHistory, getNowWatching, fetchPosterImage } = require('../utils/tautulli');
+const { getWatchHistory, getNowWatching, getGeoLookup, fetchPosterImage } = require('../utils/tautulli');
 const { getAllSettings } = require('../utils/settings');
 const { formatUK } = require('../utils/time');
 
@@ -270,8 +270,9 @@ router.get('/dashboard/plex/history', async (req, res) => {
   const userRecord = db.prepare('SELECT plex_username FROM users WHERE id = ?').get(req.user.id);
   const settings = getAllSettings();
   const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+  const afterDate = typeof req.query.after === 'string' ? req.query.after.trim() : null;
 
-  const result = await getWatchHistory(settings.tautulli_url, settings.tautulli_api_key, userRecord ? userRecord.plex_username : null, page);
+  const result = await getWatchHistory(settings.tautulli_url, settings.tautulli_api_key, userRecord ? userRecord.plex_username : null, page, 15, afterDate);
 
   if (result.ok) {
     result.items = result.items.map((item) => ({
@@ -296,13 +297,16 @@ router.get('/dashboard/plex/now-watching', async (req, res) => {
   const result = await getNowWatching(settings.tautulli_url, settings.tautulli_api_key, userRecord ? userRecord.plex_username : null);
 
   if (result.ok) {
-    result.items = result.items.map((item) => ({
-      ...item,
-      // The browser never talks to Tautulli directly (that would mean
-      // exposing the API key), so every poster is served through our own
-      // proxy route below instead of Tautulli's URL.
-      posterUrl: item.posterPath ? `/dashboard/plex/poster?path=${encodeURIComponent(item.posterPath)}` : null,
-    }));
+    result.items = await Promise.all(
+      result.items.map(async (item) => ({
+        ...item,
+        // The browser never talks to Tautulli directly (that would mean
+        // exposing the API key), so every poster is served through our own
+        // proxy route below instead of Tautulli's URL.
+        posterUrl: item.posterPath ? `/dashboard/plex/poster?path=${encodeURIComponent(item.posterPath)}` : null,
+        location: await getGeoLookup(settings.tautulli_url, settings.tautulli_api_key, item.ipAddress),
+      }))
+    );
   }
 
   res.json(result);

@@ -89,14 +89,18 @@
                 <p class="text-slate-500 text-xs uppercase tracking-widest font-semibold mb-2">Active Subscriptions</p>
                 <p class="text-2xl sm:text-3xl font-extrabold text-sky-400"><%= activeSubs %></p>
             </div>
-            <div class="glass rounded-2xl p-5 sm:p-6">
+            <a href="/admin/tickets" class="glass rounded-2xl p-5 sm:p-6 hover:bg-white/5 transition block">
                 <p class="text-slate-500 text-xs uppercase tracking-widest font-semibold mb-2">Open Tickets</p>
                 <p class="text-2xl sm:text-3xl font-extrabold text-amber-400"><%= openTickets %></p>
-            </div>
+            </a>
         </div>
 
         <div class="flex flex-wrap gap-3 sm:gap-4 mb-10 sm:mb-12">
             <a href="/admin/users" class="btn-primary px-5 sm:px-6 py-3 rounded-2xl text-sm"><i class="fas fa-users mr-2"></i>Manage Users</a>
+            <button type="button" onclick="openNowWatchingModal()" class="btn-outline px-5 sm:px-6 py-3 rounded-2xl text-sm relative">
+                <i class="fas fa-tv mr-2"></i>Now Watching
+                <span id="nowWatchingCountBadge" class="hidden absolute -top-2 -right-2 w-5 h-5 rounded-full bg-sky-500 text-[#0b0f1a] text-[10px] font-bold flex items-center justify-center">0</span>
+            </button>
             <a href="/admin/plans" class="btn-outline px-5 sm:px-6 py-3 rounded-2xl text-sm"><i class="fas fa-layer-group mr-2"></i>Manage Plans</a>
             <a href="/admin/tickets" class="btn-outline px-5 sm:px-6 py-3 rounded-2xl text-sm"><i class="fas fa-life-ring mr-2"></i>View Tickets</a>
         </div>
@@ -128,6 +132,21 @@
             <% } %>
         </div>
     </main>
+
+    <!-- Now Watching Modal -->
+    <div id="nowWatchingModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden items-center justify-center z-50 px-4 py-8 overflow-y-auto">
+        <div class="glass rounded-3xl p-6 sm:p-8 max-w-2xl w-full my-auto">
+            <div class="flex items-center justify-between mb-5">
+                <h3 class="text-lg font-bold text-white"><i class="fas fa-tv mr-2 text-sky-400"></i>Now Watching</h3>
+                <button type="button" onclick="closeNowWatchingModal()" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5">
+                    <i class="fas fa-xmark"></i>
+                </button>
+            </div>
+            <div id="nowWatchingModalContent" class="space-y-3">
+                <p class="text-slate-500 text-sm"><i class="fas fa-circle-notch fa-spin mr-2"></i>Loading…</p>
+            </div>
+        </div>
+    </div>
 
     <script>
         (async function loadServerData() {
@@ -185,6 +204,95 @@
                 // leave placeholders as "—" on failure
             }
         })();
+
+        // ---------- Now Watching (system-wide) ----------
+        // One continuous poll drives both the button's count badge (always
+        // running, so the number stays current even with the modal
+        // closed) and the modal's full detail list (only rendered when
+        // it's actually open) - avoids two separate timers hitting the
+        // same endpoint at once when both happen to be active together.
+        const mediaIconFor = function (type) {
+            if (type === 'movie') return 'fa-film';
+            if (type === 'episode') return 'fa-tv';
+            if (type === 'track') return 'fa-music';
+            return 'fa-play';
+        };
+        const stateBadgeFor = function (state) {
+            if (state === 'playing') return ['badge-active', 'fa-circle-play', 'Playing'];
+            if (state === 'buffering') return ['badge-suspended', 'fa-circle-notch fa-spin', 'Buffering'];
+            return ['badge-closed', 'fa-circle-pause', 'Paused'];
+        };
+
+        function openNowWatchingModal() {
+            openModal('nowWatchingModal');
+            refreshNowWatching();
+        }
+
+        function closeNowWatchingModal() {
+            closeModal('nowWatchingModal');
+        }
+
+        async function refreshNowWatching() {
+            const countBadge = document.getElementById('nowWatchingCountBadge');
+            const modal = document.getElementById('nowWatchingModal');
+            const modalOpen = modal && !modal.classList.contains('hidden');
+            const content = document.getElementById('nowWatchingModalContent');
+
+            try {
+                const res = await fetch('/admin/plex/now-watching-all');
+                const data = await res.json();
+
+                if (!data.ok) {
+                    countBadge.classList.add('hidden');
+                    if (modalOpen) content.innerHTML = '<p class="text-slate-500 text-sm">' + (data.message || 'Could not load current activity.') + '</p>';
+                    return;
+                }
+
+                const count = data.items ? data.items.length : 0;
+                if (count > 0) {
+                    countBadge.textContent = count;
+                    countBadge.classList.remove('hidden');
+                } else {
+                    countBadge.classList.add('hidden');
+                }
+
+                if (!modalOpen) return; // count is all that needs updating while it's closed
+
+                if (count === 0) {
+                    content.innerHTML = '<p class="text-slate-500 text-sm">Nobody is watching anything right now.</p>';
+                    return;
+                }
+
+                content.innerHTML = data.items.map(function (item) {
+                    const badge = stateBadgeFor(item.state);
+                    const icon = mediaIconFor(item.mediaType);
+                    const poster = item.posterUrl
+                        ? '<img src="' + item.posterUrl + '" alt="" class="w-14 h-20 rounded-lg object-cover flex-shrink-0 bg-slate-800" onerror="this.style.display=\'none\'">'
+                        : '<div class="w-14 h-20 rounded-lg bg-slate-800 flex items-center justify-center flex-shrink-0"><i class="fas ' + icon + ' text-slate-600"></i></div>';
+                    const meta = [item.device, item.client].filter(Boolean).join(' — ');
+                    return '<div class="flex items-center gap-4 bg-slate-900/40 rounded-2xl p-4">' +
+                        poster +
+                        '<div class="flex-1 min-w-0">' +
+                        '<div class="flex items-center gap-2 flex-wrap mb-1">' +
+                        '<span class="text-white font-bold text-sm">' + item.subscriberName + '</span>' +
+                        '<span class="badge ' + badge[0] + '"><i class="fas ' + badge[1] + '"></i> ' + badge[2] + '</span>' +
+                        '</div>' +
+                        '<p class="text-slate-300 text-sm truncate">' + item.title + '</p>' +
+                        (meta ? '<p class="text-slate-500 text-xs mt-1"><i class="fas fa-tablet-screen-button mr-1"></i>' + meta + '</p>' : '') +
+                        (item.location ? '<p class="text-slate-500 text-xs mt-1"><i class="fas fa-location-dot mr-1"></i>' + item.location + '</p>' : '') +
+                        '<div class="w-full bg-slate-800 rounded-full h-1.5 mt-2">' +
+                        '<div class="bg-sky-500 h-1.5 rounded-full" style="width:' + Math.max(0, Math.min(100, item.progressPercent)) + '%"></div>' +
+                        '</div>' +
+                        '<p class="text-slate-500 text-xs mt-1">' + Math.round(item.progressPercent) + '% watched</p>' +
+                        '</div></div>';
+                }).join('');
+            } catch (e) {
+                if (modalOpen) content.innerHTML = '<p class="text-slate-500 text-sm">Could not load current activity.</p>';
+            }
+        }
+
+        refreshNowWatching();
+        setInterval(refreshNowWatching, 15000);
     </script>
 </body>
 </html>

@@ -5,7 +5,9 @@ const db = require('../db');
 const { encrypt } = require('../utils/crypto');
 const { getAllSettings, setSetting, getSiteBaseUrl } = require('../utils/settings');
 const { sendMail, isConfigured, notifyResetStarted } = require('../utils/mailer');
-const { testConnection: testTautulliConnection } = require('../utils/tautulli');
+const { testConnection: testTautulliConnection, getWatchHistory, getNowWatching, getAllActivity, getGeoLookup, fetchPosterImage } = require('../utils/tautulli');
+const { getSharedUsers, getServerIdentity, getLibrarySections } = require('../utils/plex');
+const { syncPlexAccessForUser, attemptAutoLinkPlexUsername, attemptAutoLinkAllPending } = require('../utils/plexAccess');
 const { londonInputToUtcIso, formatUK } = require('../utils/time');
 const { serviceLabel } = require('../utils/labels');
 const { runCommand, getContainerStatuses } = require('../utils/ssh');
@@ -44,16 +46,41 @@ function loadPlans() {
 function loadUsersPageData() {
   const users = db.prepare("SELECT * FROM users WHERE role = 'subscriber' ORDER BY created_at DESC").all();
 
+  const today = new Date(new Date().toISOString().slice(0, 10) + 'T00:00:00Z');
+
   const subsByUser = {};
   db.prepare(
     `SELECT s.*, p.name AS plan_display_name FROM subscriptions s
      LEFT JOIN plans p ON p.id = s.plan_id`
   ).all().forEach((s) => {
+    // Precomputed here (rather than in the view) so the same "3 days"
+    // window used for the actual warning email/nav badge stays in sync
+    // with what admins see on this page - one source of truth.
+    if (s.status === 'active' && s.renewal_mode === 'manual' && s.expires_at) {
+      const expiry = new Date(String(s.expires_at).slice(0, 10) + 'T00:00:00Z');
+      const daysLeft = Math.round((expiry - today) / (1000 * 60 * 60 * 24));
+      s.daysUntilExpiry = daysLeft;
+      s.inGracePeriod = daysLeft >= 0 && daysLeft <= 3;
+    } else {
+      s.daysUntilExpiry = null;
+      s.inGracePeriod = false;
+    }
     (subsByUser[s.user_id] = subsByUser[s.user_id] || []).push(s);
   });
 
   const plans = db.prepare('SELECT * FROM plans ORDER BY name ASC').all();
   const paymentMethods = db.prepare('SELECT * FROM payment_methods ORDER BY name ASC').all();
+
+  // "Approved" once we've matched their Plex account; "Pending" if they're
+  // on a Plex-granting plan but haven't accepted the invite yet; null if
+  // Plex isn't relevant to them at all - drives the status badge on this
+  // page instead of admins having to infer it from a blank username field.
+  users.forEach((u) => {
+    const onPlexPlan = (subsByUser[u.id] || []).some(
+      (s) => s.status === 'active' && (s.service === 'plex' || s.service === 'multiple')
+    );
+    u.plexStatus = u.plex_username ? 'approved' : (onPlexPlan ? 'pending' : null);
+  });
 
   return { users, subsByUser, plans, paymentMethods };
 }
@@ -118,6 +145,29 @@ router.post('/admin/plans/:id/update', (req, res) => {
   db.prepare(
     `UPDATE plans SET name = ?, service = ?, description = ?, features = ?, price = ?, currency = ?, updated_at = datetime('now') WHERE id = ?`
   ).run(name, service, description, features, price, currency, req.params.id);
+
+  res.redirect('/admin/plans');
+});
+
+// Live library list for the checkbox picker on the Plans page - fetched
+// via JS so a slow/unreachable Plex server never blocks the page itself.
+router.get('/admin/plex/library-sections', async (req, res) => {
+  const settings = getAllSettings();
+  const result = await getLibrarySections(settings.plex_server_url, settings.plex_token);
+  res.json(result);
+});
+
+router.post('/admin/plans/:id/plex-libraries', (req, res) => {
+  const sectionIds = Array.isArray(req.body.section_ids) ? req.body.section_ids : [req.body.section_ids].filter(Boolean);
+  db.prepare('UPDATE plans SET plex_library_section_ids = ? WHERE id = ?').run(sectionIds.join(','), req.params.id);
+
+  // Anyone currently active on this plan may need their access updated to
+  // match the new library selection (added, removed, or unchanged).
+  const activeUserIds = db
+    .prepare(`SELECT DISTINCT user_id FROM subscriptions WHERE plan_id = ? AND status = 'active'`)
+    .all(req.params.id)
+    .map((r) => r.user_id);
+  activeUserIds.forEach((userId) => syncPlexAccessForUser(userId).catch(() => {}));
 
   res.redirect('/admin/plans');
 });
@@ -298,7 +348,15 @@ router.post('/admin/plans/:id/containers/:containerId/delete', (req, res) => {
 
 // ---------- Users ----------
 
-router.get('/admin/users', (req, res) => {
+router.get('/admin/users', async (req, res) => {
+  // Anyone on an active Plex-service plan who hasn't been linked yet gets
+  // one attempt right now (still rate-limited internally, so this is cheap
+  // even with several unlinked people) - keeps this page always showing
+  // the real current state instead of only updating when that subscriber
+  // themselves happens to log back in. The background scheduler also runs
+  // this independently, so linking doesn't depend on anyone visiting at all.
+  await attemptAutoLinkAllPending().catch(() => {});
+
   res.render('admin-users', { ...loadUsersPageData(), newUser: null });
 });
 
@@ -329,6 +387,9 @@ router.post('/admin/users/invite', async (req, res) => {
         db.prepare(
           `INSERT INTO subscriptions (user_id, plan_id, service, plan_name, status, renewal_mode, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)`
         ).run(info.lastInsertRowid, plan.id, plan.service, plan.name, status, renewalMode, expiresAt);
+        // Fire-and-forget: sends the actual Plex share invite email if this
+        // plan grants library access, without making the admin wait on it.
+        syncPlexAccessForUser(info.lastInsertRowid).catch(() => {});
       }
     }
 
@@ -374,7 +435,7 @@ router.post('/admin/users/:id/subscription', (req, res) => {
 
   if (existing) {
     db.prepare(
-      `UPDATE subscriptions SET service = ?, plan_name = ?, status = ?, renewal_mode = ?, expires_at = ?, notes = ?, updated_at = datetime('now') WHERE id = ?`
+      `UPDATE subscriptions SET service = ?, plan_name = ?, status = ?, renewal_mode = ?, expires_at = ?, notes = ?, expiry_warning_sent_at = NULL, updated_at = datetime('now') WHERE id = ?`
     ).run(plan.service, plan.name, finalStatus, mode, expires_at || null, notes || null, existing.id);
   } else {
     db.prepare(
@@ -382,11 +443,16 @@ router.post('/admin/users/:id/subscription', (req, res) => {
     ).run(req.params.id, plan.id, plan.service, plan.name, finalStatus, mode, expires_at || null, notes || null);
   }
 
+  // Fire-and-forget: could mean granting, updating, or revoking Plex access
+  // depending on what changed - syncPlexAccessForUser figures out which.
+  syncPlexAccessForUser(req.params.id).catch(() => {});
+
   res.redirect('/admin/users');
 });
 
 router.post('/admin/users/:id/subscription/:subId/delete', (req, res) => {
   db.prepare('DELETE FROM subscriptions WHERE id = ? AND user_id = ?').run(req.params.subId, req.params.id);
+  syncPlexAccessForUser(req.params.id).catch(() => {});
   res.redirect('/admin/users');
 });
 
@@ -450,8 +516,136 @@ router.post('/admin/users/:id/payment-method', (req, res) => {
 
 router.post('/admin/users/:id/plex-username', (req, res) => {
   const plexUsername = String(req.body.plex_username || '').trim() || null;
-  db.prepare('UPDATE users SET plex_username = ? WHERE id = ?').run(plexUsername, req.params.id);
+  // A manual edit might not match whatever was linked by the last Plex
+  // sync, so clear that link rather than show a stale "synced" badge -
+  // running "Sync from Plex" again will re-link it if it's still correct.
+  db.prepare('UPDATE users SET plex_username = ?, plex_user_id = NULL WHERE id = ?').run(plexUsername, req.params.id);
   res.redirect('/admin/users');
+});
+
+// Pulls everyone your Plex server is shared with and matches them to portal
+// accounts by email - no manual typing of Plex usernames needed once this
+// is set up. Safe to re-run any time (e.g. after inviting someone new).
+router.post('/admin/users/sync-plex', async (req, res) => {
+  const settings = getAllSettings();
+  const result = await getSharedUsers(settings.plex_token);
+
+  if (!result.ok) {
+    return res.render('admin-users', { ...loadUsersPageData(), newUser: null, plexSyncResult: { ok: false, message: result.message } });
+  }
+
+  const byEmail = new Map();
+  result.users.forEach((u) => {
+    if (u.email) byEmail.set(u.email, u);
+  });
+
+  const subscribers = db.prepare("SELECT id, name, email FROM users WHERE role = 'subscriber'").all();
+  const matched = [];
+
+  subscribers.forEach((sub) => {
+    const plexUser = byEmail.get(String(sub.email || '').toLowerCase().trim());
+    if (!plexUser) return;
+    db.prepare('UPDATE users SET plex_username = ?, plex_user_id = ? WHERE id = ?').run(plexUser.username, plexUser.id, sub.id);
+    matched.push({ name: sub.name, plexUsername: plexUser.username });
+  });
+
+  const unmatchedCount = subscribers.length - matched.length;
+
+  res.render('admin-users', {
+    ...loadUsersPageData(),
+    newUser: null,
+    plexSyncResult: {
+      ok: true,
+      message: `Checked ${result.users.length} Plex share(s) against ${subscribers.length} client(s): ${matched.length} matched and linked${unmatchedCount > 0 ? `, ${unmatchedCount} client(s) still unmatched (no Plex account with the same email was found)` : ''}.`,
+    },
+  });
+});
+
+// Lets admin view any subscriber's Plex activity directly from Admin →
+// Users, without needing to be that subscriber - same underlying Tautulli
+// calls the subscriber's own dashboard/watch-history pages use, just
+// looked up by a specific user id instead of req.user.
+
+router.get('/admin/users/:id/plex/history', async (req, res) => {
+  const user = db.prepare('SELECT plex_username FROM users WHERE id = ?').get(req.params.id);
+  const settings = getAllSettings();
+  const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+
+  const result = await getWatchHistory(settings.tautulli_url, settings.tautulli_api_key, user ? user.plex_username : null, page, 10);
+
+  if (result.ok) {
+    result.items = result.items.map((item) => ({
+      ...item,
+      watchedAtLabel: item.watchedAtIso ? formatUK(item.watchedAtIso) : '',
+    }));
+  }
+
+  res.json(result);
+});
+
+router.get('/admin/users/:id/plex/now-watching', async (req, res) => {
+  const user = db.prepare('SELECT plex_username FROM users WHERE id = ?').get(req.params.id);
+  const settings = getAllSettings();
+
+  const result = await getNowWatching(settings.tautulli_url, settings.tautulli_api_key, user ? user.plex_username : null);
+
+  if (result.ok) {
+    result.items = await Promise.all(
+      result.items.map(async (item) => ({
+        ...item,
+        posterUrl: item.posterPath ? `/admin/plex/poster?path=${encodeURIComponent(item.posterPath)}` : null,
+        location: await getGeoLookup(settings.tautulli_url, settings.tautulli_api_key, item.ipAddress),
+      }))
+    );
+  }
+
+  res.json(result);
+});
+
+router.get('/admin/plex/poster', async (req, res) => {
+  const path = String(req.query.path || '');
+  if (!/^\/library\/metadata\/[a-zA-Z0-9/_.-]+$/.test(path) || path.includes('..')) {
+    return res.status(400).end();
+  }
+
+  const settings = getAllSettings();
+  const image = await fetchPosterImage(settings.tautulli_url, settings.tautulli_api_key, path);
+  if (!image) return res.status(404).end();
+
+  res.setHeader('Content-Type', image.contentType);
+  res.setHeader('Cache-Control', 'private, max-age=300');
+  res.send(image.buffer);
+});
+
+// Every active Plex session right now, system-wide, for the "Now Watching"
+// button on the admin overview page - one Tautulli call covers everyone,
+// then each session gets matched back to a portal account (by Plex
+// username, falling back to Plex's own display name) so admin sees who
+// it actually is, not just a raw Plex account.
+router.get('/admin/plex/now-watching-all', async (req, res) => {
+  const settings = getAllSettings();
+  const result = await getAllActivity(settings.tautulli_url, settings.tautulli_api_key);
+  if (!result.ok) return res.json(result);
+
+  const linkedUsers = db.prepare("SELECT id, name, email, plex_username FROM users WHERE role = 'subscriber' AND plex_username IS NOT NULL").all();
+
+  const items = await Promise.all(
+    result.items.map(async (item) => {
+      const match = linkedUsers.find((u) => u.plex_username === item.plexUser || u.plex_username === item.plexFriendlyName);
+      return {
+        ...item,
+        // Falls back to whatever Plex itself calls them if this session
+        // isn't tied to a portal account (e.g. the admin's own personal
+        // Plex login, or a friend never invited through this portal).
+        subscriberName: match ? match.name : (item.plexFriendlyName || item.plexUser || 'Unknown'),
+        subscriberEmail: match ? match.email : null,
+        posterUrl: item.posterPath ? `/admin/plex/poster?path=${encodeURIComponent(item.posterPath)}` : null,
+        location: await getGeoLookup(settings.tautulli_url, settings.tautulli_api_key, item.ipAddress),
+      };
+    })
+  );
+
+  res.json({ ok: true, items });
 });
 
 // ---------- Tickets ----------
@@ -621,6 +815,36 @@ router.post('/admin/settings/payment-methods', (req, res) => {
 router.post('/admin/settings/payment-methods/:id/delete', (req, res) => {
   db.prepare('DELETE FROM payment_methods WHERE id = ?').run(req.params.id);
   res.render('admin-settings', { ...loadSettingsPageData(), saved: null, testResult: null, brandingError: null });
+});
+
+router.post('/admin/settings/plex', (req, res) => {
+  const { plex_token, plex_server_url } = req.body;
+  // Only overwrite the stored token if a new one was actually typed in -
+  // the settings form always shows this field blank for security.
+  if (plex_token) setSetting('plex_token', plex_token);
+  setSetting('plex_server_url', String(plex_server_url || '').trim());
+
+  res.render('admin-settings', { ...loadSettingsPageData(), saved: 'plex', testResult: null, brandingError: null });
+});
+
+router.post('/admin/settings/plex/detect-server', async (req, res) => {
+  const settings = getAllSettings();
+  const result = await getServerIdentity(settings.plex_server_url);
+
+  if (result.ok) {
+    setSetting('plex_machine_identifier', result.machineIdentifier);
+  }
+
+  res.render('admin-settings', {
+    ...loadSettingsPageData(),
+    saved: null,
+    testResult: null,
+    brandingError: null,
+    plexDetectResult: {
+      ok: result.ok,
+      message: result.ok ? `Linked to your Plex server successfully.` : result.message,
+    },
+  });
 });
 
 router.post('/admin/settings/tautulli', (req, res) => {

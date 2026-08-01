@@ -6,9 +6,11 @@ const REQUEST_TIMEOUT_MS = 10000;
 /**
  * Fetches one page of watch history for one Plex user (filtered
  * server-side by Tautulli itself via the "user" param, so we never see or
- * need to filter anyone else's activity).
+ * need to filter anyone else's activity). startDate, if given, only
+ * returns history from that date onward ("YYYY-MM-DD") - Tautulli only
+ * supports a single from-date, not a full from/to range.
  */
-async function getWatchHistory(baseUrl, apiKey, plexUsername, page = 1, pageSize = 15) {
+async function getWatchHistory(baseUrl, apiKey, plexUsername, page = 1, pageSize = 15, startDate = null) {
   if (!baseUrl || !apiKey) {
     return { ok: false, message: 'Tautulli is not configured yet.' };
   }
@@ -20,7 +22,10 @@ async function getWatchHistory(baseUrl, apiKey, plexUsername, page = 1, pageSize
   const safePageSize = Number(pageSize) || 15;
   const start = (safePage - 1) * safePageSize;
 
-  const url = `${baseUrl.replace(/\/$/, '')}/api/v2?apikey=${encodeURIComponent(apiKey)}&cmd=get_history&user=${encodeURIComponent(plexUsername)}&order_column=date&order_dir=desc&start=${start}&length=${safePageSize}`;
+  let url = `${baseUrl.replace(/\/$/, '')}/api/v2?apikey=${encodeURIComponent(apiKey)}&cmd=get_history&user=${encodeURIComponent(plexUsername)}&order_column=date&order_dir=desc&start=${start}&length=${safePageSize}`;
+  if (startDate && /^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
+    url += `&start_date=${encodeURIComponent(startDate)}`;
+  }
 
   try {
     const res = await fetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
@@ -64,6 +69,55 @@ async function getWatchHistory(baseUrl, apiKey, plexUsername, page = 1, pageSize
   }
 }
 
+/** Maps one raw Tautulli session object into the shape our routes/views use. */
+function mapSession(s) {
+  const episodeTag = s.media_type === 'episode' && s.parent_media_index && s.media_index
+    ? `S${s.parent_media_index}E${s.media_index} — `
+    : '';
+  return {
+    title: s.grandparent_title ? `${s.grandparent_title} — ${episodeTag}${s.title}` : s.title,
+    mediaType: s.media_type || 'unknown',
+    state: s.state || 'playing', // playing | paused | buffering
+    progressPercent: typeof s.progress_percent === 'string' ? Number(s.progress_percent) : (s.progress_percent || 0),
+    // What they're watching on, e.g. device "Living Room Roku" via the
+    // client app "Plex for Roku".
+    device: s.player || null,
+    client: s.product || null,
+    // Used to look up an approximate location - public IP for remote
+    // streams, falling back to the local IP for LAN-only sessions
+    // (which won't resolve to a real location, but keeps this from
+    // crashing on a missing field).
+    ipAddress: s.ip_address_public || s.ip_address || null,
+    // The raw internal Plex image path - never send this (or the API
+    // key) to the browser directly; the caller should route it through
+    // our own server-side poster proxy instead. Episode-level "thumb"
+    // is frequently empty in Tautulli's activity data, so fall back to
+    // the season/show artwork rather than showing nothing.
+    posterPath: s.thumb || s.parent_thumb || s.grandparent_thumb || null,
+    // Raw Plex identifiers, kept only for matching against our own users
+    // table server-side - never sent to the browser as-is.
+    plexUser: s.user || null,
+    plexFriendlyName: s.friendly_name || null,
+  };
+}
+
+async function fetchActivitySessions(baseUrl, apiKey) {
+  const url = `${baseUrl.replace(/\/$/, '')}/api/v2?apikey=${encodeURIComponent(apiKey)}&cmd=get_activity`;
+
+  const res = await fetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+  if (!res.ok) {
+    return { ok: false, message: `Tautulli returned an error (HTTP ${res.status}).` };
+  }
+
+  const json = await res.json();
+  if (!json || !json.response || json.response.result !== 'success') {
+    const apiMessage = json && json.response && json.response.message;
+    return { ok: false, message: apiMessage || 'Tautulli request did not succeed.' };
+  }
+
+  return { ok: true, sessions: (json.response.data && json.response.data.sessions) || [] };
+}
+
 /**
  * Fetches currently-active Plex sessions and filters down to just this
  * user's own stream(s) - same server-side filtering principle as watch
@@ -77,46 +131,34 @@ async function getNowWatching(baseUrl, apiKey, plexUsername) {
     return { ok: false, message: "Your Plex username hasn't been linked to your account yet - contact support to get this set up." };
   }
 
-  const url = `${baseUrl.replace(/\/$/, '')}/api/v2?apikey=${encodeURIComponent(apiKey)}&cmd=get_activity`;
+  try {
+    const result = await fetchActivitySessions(baseUrl, apiKey);
+    if (!result.ok) return result;
+
+    const mine = result.sessions.filter((s) => s.user === plexUsername || s.friendly_name === plexUsername);
+    return { ok: true, items: mine.map(mapSession) };
+  } catch (err) {
+    const reason = err.name === 'TimeoutError' ? 'Timed out reaching Tautulli.' : `Could not reach Tautulli: ${err.message}`;
+    return { ok: false, message: reason };
+  }
+}
+
+/**
+ * Fetches every currently-active Plex session, system-wide - unlike
+ * getNowWatching, this isn't filtered to one person. Used for the admin
+ * overview's "who's watching right now" view, where the caller matches
+ * each session's plexUser/plexFriendlyName back to a portal account.
+ */
+async function getAllActivity(baseUrl, apiKey) {
+  if (!baseUrl || !apiKey) {
+    return { ok: false, message: 'Tautulli is not configured yet.' };
+  }
 
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
-    if (!res.ok) {
-      return { ok: false, message: `Tautulli returned an error (HTTP ${res.status}).` };
-    }
+    const result = await fetchActivitySessions(baseUrl, apiKey);
+    if (!result.ok) return result;
 
-    const json = await res.json();
-    if (!json || !json.response || json.response.result !== 'success') {
-      const apiMessage = json && json.response && json.response.message;
-      return { ok: false, message: apiMessage || 'Tautulli request did not succeed.' };
-    }
-
-    const sessions = (json.response.data && json.response.data.sessions) || [];
-    const mine = sessions.filter((s) => s.user === plexUsername || s.friendly_name === plexUsername);
-
-    const items = mine.map((s) => {
-      const episodeTag = s.media_type === 'episode' && s.parent_media_index && s.media_index
-        ? `S${s.parent_media_index}E${s.media_index} — `
-        : '';
-      return {
-        title: s.grandparent_title ? `${s.grandparent_title} — ${episodeTag}${s.title}` : s.title,
-        mediaType: s.media_type || 'unknown',
-        state: s.state || 'playing', // playing | paused | buffering
-        progressPercent: typeof s.progress_percent === 'string' ? Number(s.progress_percent) : (s.progress_percent || 0),
-        // What they're watching on, e.g. device "Living Room Roku" via the
-        // client app "Plex for Roku".
-        device: s.player || null,
-        client: s.product || null,
-        // The raw internal Plex image path - never send this (or the API
-        // key) to the browser directly; the caller should route it through
-        // our own server-side poster proxy instead. Episode-level "thumb"
-        // is frequently empty in Tautulli's activity data, so fall back to
-        // the season/show artwork rather than showing nothing.
-        posterPath: s.thumb || s.parent_thumb || s.grandparent_thumb || null,
-      };
-    });
-
-    return { ok: true, items };
+    return { ok: true, items: result.sessions.map(mapSession) };
   } catch (err) {
     const reason = err.name === 'TimeoutError' ? 'Timed out reaching Tautulli.' : `Could not reach Tautulli: ${err.message}`;
     return { ok: false, message: reason };
@@ -171,4 +213,27 @@ async function testConnection(baseUrl, apiKey) {
   }
 }
 
-module.exports = { getWatchHistory, getNowWatching, fetchPosterImage, testConnection };
+/** Resolves an IP address to an approximate city/region/country via Tautulli's own geo database. */
+async function getGeoLookup(baseUrl, apiKey, ipAddress) {
+  if (!baseUrl || !apiKey || !ipAddress) return null;
+
+  const url = `${baseUrl.replace(/\/$/, '')}/api/v2?apikey=${encodeURIComponent(apiKey)}&cmd=get_geoip_lookup&ip_address=${encodeURIComponent(ipAddress)}`;
+
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+    if (!res.ok) return null;
+
+    const json = await res.json();
+    if (!json || !json.response || json.response.result !== 'success') return null;
+
+    const data = json.response.data || {};
+    const parts = [data.city, data.region, data.country].filter(Boolean);
+    if (parts.length === 0) return null;
+
+    return parts.join(', ');
+  } catch (_) {
+    return null; // location is a nice-to-have, never worth failing the whole card over
+  }
+}
+
+module.exports = { getWatchHistory, getNowWatching, getAllActivity, getGeoLookup, fetchPosterImage, testConnection };

@@ -222,9 +222,14 @@ ensureColumn('plans', 'currency', "currency TEXT NOT NULL DEFAULT 'GBP'");
 ensureColumn('plans', 'maintenance_mode', 'maintenance_mode INTEGER NOT NULL DEFAULT 0');
 ensureColumn('plans', 'maintenance_resume_at', 'maintenance_resume_at TEXT');
 ensureColumn('plans', 'maintenance_message', 'maintenance_message TEXT');
+ensureColumn('plans', 'plex_library_section_ids', 'plex_library_section_ids TEXT'); // comma-separated Plex library section keys
+ensureColumn('users', 'plex_shared_server_id', 'plex_shared_server_id TEXT'); // Plex's id for this user's active library share, if any
 ensureColumn('users', 'payment_method_id', 'payment_method_id INTEGER REFERENCES payment_methods(id)');
 ensureColumn('users', 'plex_username', 'plex_username TEXT');
+ensureColumn('users', 'plex_user_id', 'plex_user_id TEXT'); // Plex.tv account id, from syncing shared users
+ensureColumn('users', 'plex_link_attempted_at', 'plex_link_attempted_at TEXT');
 ensureColumn('subscriptions', 'renewal_mode', "renewal_mode TEXT NOT NULL DEFAULT 'manual'"); // auto | manual | expired
+ensureColumn('subscriptions', 'expiry_warning_sent_at', 'expiry_warning_sent_at TEXT');
 ensureColumn('admin_health_containers', 'logo_path', 'logo_path TEXT');
 ensureColumn('admin_health_containers', 'link_url', 'link_url TEXT');
 ensureColumn('admin_health_containers', 'logo_bg', "logo_bg TEXT NOT NULL DEFAULT 'default'"); // default | white | none

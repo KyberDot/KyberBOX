@@ -17,6 +17,11 @@
             </div>
         <% } else { %>
             <div class="glass rounded-2xl sm:rounded-3xl p-5 sm:p-8">
+                <div class="flex items-center gap-3 flex-wrap mb-5">
+                    <label class="text-xs uppercase tracking-widest text-slate-500 font-semibold">Show from</label>
+                    <input type="date" id="watchHistoryFromDate" class="input w-auto" onchange="loadWatchHistory(1)">
+                    <button type="button" onclick="clearDateFilter()" class="text-slate-500 hover:text-white text-xs">Clear</button>
+                </div>
                 <div id="watchHistoryList" class="space-y-2">
                     <p class="text-slate-500 text-sm"><i class="fas fa-circle-notch fa-spin mr-2"></i>Loading…</p>
                 </div>
@@ -75,8 +80,11 @@
             const list = document.getElementById('watchHistoryList');
             list.innerHTML = '<p class="text-slate-500 text-sm"><i class="fas fa-circle-notch fa-spin mr-2"></i>Loading…</p>';
 
+            const fromDate = document.getElementById('watchHistoryFromDate').value;
+            const query = 'page=' + currentPage + (fromDate ? '&after=' + encodeURIComponent(fromDate) : '');
+
             try {
-                const res = await fetch('/dashboard/plex/history?page=' + currentPage);
+                const res = await fetch('/dashboard/plex/history?' + query);
                 const data = await res.json();
 
                 if (!data.ok) {
@@ -85,7 +93,7 @@
                     return;
                 }
                 if (!data.items || data.items.length === 0) {
-                    list.innerHTML = '<p class="text-slate-500 text-sm">No watch history yet.</p>';
+                    list.innerHTML = '<p class="text-slate-500 text-sm">No watch history' + (fromDate ? ' in that date range' : '') + '.</p>';
                     document.getElementById('watchHistoryPagination').classList.add('hidden');
                     return;
                 }
@@ -108,6 +116,11 @@
             } catch (e) {
                 list.innerHTML = '<p class="text-slate-500 text-sm">Could not load your Plex activity.</p>';
             }
+        }
+
+        function clearDateFilter() {
+            document.getElementById('watchHistoryFromDate').value = '';
+            loadWatchHistory(1);
         }
 
         loadWatchHistory(1);

@@ -1,7 +1,8 @@
 const db = require('../db');
+const crypto = require('crypto');
 const { encrypt, decrypt } = require('./crypto');
 
-const SECRET_KEYS = new Set(['smtp_pass', 'tautulli_api_key']);
+const SECRET_KEYS = new Set(['smtp_pass', 'tautulli_api_key', 'plex_token']);
 
 function getSetting(key, fallback = null) {
   const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
@@ -44,7 +45,23 @@ function getAllSettings() {
     compose_path: getSetting('compose_path', ''),
     tautulli_url: getSetting('tautulli_url', ''),
     tautulli_api_key: getSetting('tautulli_api_key', ''), // decrypted value, for internal use only
+    plex_token: getSetting('plex_token', ''), // decrypted value, for internal use only
+    plex_server_url: getSetting('plex_server_url', ''),
+    plex_machine_identifier: getSetting('plex_machine_identifier', ''),
+    plex_client_identifier: getOrCreateClientIdentifier(),
   };
+}
+
+// A stable identifier for "this app" as a Plex API client - Plex's sharing
+// endpoints require one, but don't care what it actually is beyond being
+// consistent. Generated once and reused forever after.
+function getOrCreateClientIdentifier() {
+  let id = getSetting('plex_client_identifier', '');
+  if (!id) {
+    id = crypto.randomUUID();
+    setSetting('plex_client_identifier', id);
+  }
+  return id;
 }
 
 module.exports = { getSetting, setSetting, getAllSettings, getSiteBaseUrl };

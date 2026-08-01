@@ -24,6 +24,12 @@
             </div>
         <% } %>
 
+        <% if (typeof plexSyncResult !== 'undefined' && plexSyncResult) { %>
+            <div class="mb-8 px-4 sm:px-5 py-4 rounded-xl <%= plexSyncResult.ok ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400' : 'bg-red-500/10 border border-red-500/30 text-red-400' %> text-sm">
+                <i class="fas <%= plexSyncResult.ok ? 'fa-circle-check' : 'fa-triangle-exclamation' %> mr-2"></i><%= plexSyncResult.message %>
+            </div>
+        <% } %>
+
         <% if (plans.length === 0) { %>
             <div class="mb-8 px-4 sm:px-5 py-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400 text-sm flex items-center justify-between flex-wrap gap-3">
                 <span><i class="fas fa-layer-group mr-2"></i>You haven't created any Plans yet — create one first so you can assign new clients to it.</span>
@@ -31,8 +37,13 @@
             </div>
         <% } %>
 
-        <!-- Invite trigger -->
-        <div class="flex justify-end mb-8">
+        <!-- Invite / Sync triggers -->
+        <div class="flex justify-end gap-2 mb-8 flex-wrap">
+            <form method="POST" action="/admin/users/sync-plex" data-ajax-form>
+                <button type="submit" class="btn-outline px-6 py-3 rounded-xl text-sm">
+                    <i class="fas fa-arrows-rotate mr-2"></i>Sync from Plex
+                </button>
+            </form>
             <button type="button" onclick="openModal('inviteModal')" class="btn-primary px-6 py-3 rounded-xl text-sm">
                 <i class="fas fa-user-plus mr-2"></i>Invite a New Client
             </button>
@@ -51,13 +62,27 @@
                         <div class="flex flex-wrap gap-2">
                             <% (subsByUser[u.id] || []).forEach(function(s) { %>
                                 <span class="badge badge-<%= s.status %>"><%= s.plan_display_name || s.plan_name %>: <%= s.status %></span>
+                                <% if (s.status === 'active' && s.renewal_mode === 'auto') { %>
+                                    <span class="badge badge-active"><i class="fas fa-rotate"></i> auto-renewing</span>
+                                <% } else if (s.inGracePeriod) { %>
+                                    <span class="badge badge-suspended"><i class="fas fa-triangle-exclamation"></i> <%= s.daysUntilExpiry %>d left</span>
+                                <% } %>
                             <% }); %>
                             <% if (u.payment_method_id) { %>
                                 <% const pm = paymentMethods.find(function(p) { return p.id === u.payment_method_id; }); %>
                                 <span class="badge badge-answered"><i class="fas fa-credit-card"></i> <%= pm ? pm.name : 'Payment method' %></span>
                             <% } %>
+                            <% if (u.plexStatus === 'approved') { %>
+                                <span class="badge badge-active"><i class="fas fa-circle-check"></i> Plex Access Approved</span>
+                            <% } else if (u.plexStatus === 'pending') { %>
+                                <span class="badge badge-suspended"><i class="fas fa-hourglass-half"></i> Plex Invite Not Yet Accepted</span>
+                            <% } %>
                         </div>
                     </div>
+
+                    <% if (u.plexStatus === 'approved') { %>
+                        <div class="hidden mb-3" data-now-watching-strip data-user-id="<%= u.id %>"></div>
+                    <% } %>
 
                     <details class="mb-2" data-ajax-key="user-<%= u.id %>-edit">
                         <summary class="cursor-pointer text-sky-400 text-xs font-semibold uppercase tracking-wide">Edit Details</summary>
@@ -91,16 +116,53 @@
                             <button type="submit" class="btn-primary rounded-xl text-sm sm:col-span-2">Assign Plan</button>
                         </form>
                         <% if ((subsByUser[u.id] || []).length > 0) { %>
-                            <div class="mt-3 space-y-1">
+                            <div class="mt-3 space-y-2">
                                 <% subsByUser[u.id].forEach(function(s) { %>
-                                    <form method="POST" action="/admin/users/<%= u.id %>/subscription/<%= s.id %>/delete" data-ajax-form class="flex items-center justify-between text-xs text-slate-500 bg-slate-900/40 rounded-lg px-3 py-2 gap-2">
-                                        <span class="truncate">
-                                            <%= s.plan_display_name || s.plan_name %> (<%= s.status %>)
-                                            <% if (s.expires_at) { %> — <%= s.renewal_mode === 'auto' ? 'auto-renews' : 'renews' %> <%= formatUKDate(s.expires_at) %><% } %>
-                                            <% if (s.renewal_mode) { %> <span class="text-slate-600">[<%= s.renewal_mode %>]</span><% } %>
-                                        </span>
-                                        <button type="submit" class="text-red-400 hover:text-red-300 flex-shrink-0"><i class="fas fa-trash"></i></button>
-                                    </form>
+                                    <div class="bg-slate-900/40 rounded-lg px-3 py-2">
+                                        <div class="flex items-center justify-between gap-2 text-xs text-slate-500">
+                                            <span class="truncate">
+                                                <%= s.plan_display_name || s.plan_name %>
+                                                <span class="badge badge-<%= s.status %> ml-1"><%= s.status %></span>
+                                                <% if (s.inGracePeriod) { %>
+                                                    <span class="badge badge-suspended"><i class="fas fa-triangle-exclamation"></i> <%= s.daysUntilExpiry %>d left — will revoke unless renewed</span>
+                                                <% } %>
+                                                <% if (s.expires_at) { %> — <%= s.renewal_mode === 'auto' ? 'auto-renews' : 'renews' %> <%= formatUKDate(s.expires_at) %><% } %>
+                                                <% if (s.renewal_mode) { %> <span class="text-slate-600">[<%= s.renewal_mode %>]</span><% } %>
+                                            </span>
+                                            <form method="POST" action="/admin/users/<%= u.id %>/subscription/<%= s.id %>/delete" data-ajax-form data-confirm="Remove this plan from <%= u.name %>? If it's their only Plex access, it will be revoked." class="flex-shrink-0">
+                                                <button type="submit" class="text-red-400 hover:text-red-300"><i class="fas fa-trash"></i></button>
+                                            </form>
+                                        </div>
+                                        <div class="flex flex-wrap gap-1.5 mt-2">
+                                            <% if (s.status !== 'active') { %>
+                                                <form method="POST" action="/admin/users/<%= u.id %>/subscription" data-ajax-form>
+                                                    <input type="hidden" name="plan_id" value="<%= s.plan_id %>">
+                                                    <input type="hidden" name="status" value="active">
+                                                    <input type="hidden" name="expires_at" value="<%= s.expires_at || '' %>">
+                                                    <input type="hidden" name="renewal_mode" value="<%= s.renewal_mode === 'expired' ? 'manual' : s.renewal_mode %>">
+                                                    <button type="submit" class="text-emerald-400 hover:text-emerald-300 text-[11px] bg-emerald-500/10 px-2 py-1 rounded-lg">Reactivate</button>
+                                                </form>
+                                            <% } %>
+                                            <% if (s.status !== 'suspended') { %>
+                                                <form method="POST" action="/admin/users/<%= u.id %>/subscription" data-ajax-form data-confirm="Suspend this plan? Plex access will be revoked if this was their only active Plex plan.">
+                                                    <input type="hidden" name="plan_id" value="<%= s.plan_id %>">
+                                                    <input type="hidden" name="status" value="suspended">
+                                                    <input type="hidden" name="expires_at" value="<%= s.expires_at || '' %>">
+                                                    <input type="hidden" name="renewal_mode" value="<%= s.renewal_mode === 'expired' ? 'manual' : s.renewal_mode %>">
+                                                    <button type="submit" class="text-amber-400 hover:text-amber-300 text-[11px] bg-amber-500/10 px-2 py-1 rounded-lg">Suspend</button>
+                                                </form>
+                                            <% } %>
+                                            <% if (s.status !== 'expired') { %>
+                                                <form method="POST" action="/admin/users/<%= u.id %>/subscription" data-ajax-form data-confirm="Mark this plan as expired now? Plex access will be revoked if this was their only active Plex plan.">
+                                                    <input type="hidden" name="plan_id" value="<%= s.plan_id %>">
+                                                    <input type="hidden" name="status" value="expired">
+                                                    <input type="hidden" name="expires_at" value="<%= s.expires_at || '' %>">
+                                                    <input type="hidden" name="renewal_mode" value="manual">
+                                                    <button type="submit" class="text-red-400 hover:text-red-300 text-[11px] bg-red-500/10 px-2 py-1 rounded-lg">Mark Expired</button>
+                                                </form>
+                                            <% } %>
+                                        </div>
+                                    </div>
                                 <% }); %>
                             </div>
                         <% } %>
@@ -121,13 +183,30 @@
                     </details>
 
                     <details class="mb-2" data-ajax-key="user-<%= u.id %>-plex">
-                        <summary class="cursor-pointer text-sky-400 text-xs font-semibold uppercase tracking-wide">Plex Username (Watch History)</summary>
-                        <form method="POST" action="/admin/users/<%= u.id %>/plex-username" data-ajax-form class="flex flex-col sm:flex-row gap-3 mt-3">
+                        <summary class="cursor-pointer text-sky-400 text-xs font-semibold uppercase tracking-wide">
+                            Plex Access
+                            <% if (u.plexStatus === 'approved') { %>
+                                <span class="badge badge-active ml-1"><i class="fas fa-circle-check"></i> Access Approved</span>
+                            <% } else if (u.plexStatus === 'pending') { %>
+                                <span class="badge badge-suspended ml-1"><i class="fas fa-hourglass-half"></i> Not Yet Accepted</span>
+                            <% } %>
+                        </summary>
+                        <p class="text-slate-500 text-xs mt-3">This fills in on its own once they accept their Plex invite — no need to set it by hand. The field below is only for manual overrides in edge cases.</p>
+                        <form method="POST" action="/admin/users/<%= u.id %>/plex-username" data-ajax-form class="flex flex-col sm:flex-row gap-3 mt-2">
                             <input type="text" name="plex_username" class="input" value="<%= u.plex_username || '' %>" placeholder="Their exact Plex username">
                             <button type="submit" class="btn-primary py-3 rounded-xl text-sm whitespace-nowrap">Save</button>
                         </form>
-                        <p class="text-slate-500 text-xs mt-2">Must match their Plex account exactly - this is how their watch history gets looked up in Tautulli. Configure Tautulli itself from <a href="/admin/settings" class="text-sky-400 hover:text-sky-300">Settings</a>.</p>
+                        <p class="text-slate-500 text-xs mt-2">Must match their Plex account exactly - this is how their watch history gets looked up in Tautulli. Use "Sync from Plex" above to re-check manually at any time, or configure Tautulli itself from <a href="/admin/settings" class="text-sky-400 hover:text-sky-300">Settings</a>.</p>
                     </details>
+
+                    <% if (u.plexStatus === 'approved') { %>
+                        <details class="mb-2" data-ajax-key="user-<%= u.id %>-watch-history" ontoggle="if (this.open) loadAdminWatchHistory(<%= u.id %>)">
+                            <summary class="cursor-pointer text-sky-400 text-xs font-semibold uppercase tracking-wide">Watch History</summary>
+                            <div class="mt-3 space-y-1.5" data-watch-history-list="<%= u.id %>">
+                                <p class="text-slate-500 text-sm">Loading…</p>
+                            </div>
+                        </details>
+                    <% } %>
 
                     <div class="flex flex-wrap gap-4 mt-4 text-xs">
                         <form method="POST" action="/admin/users/<%= u.id %>/reset-password" data-ajax-form data-confirm="Reset this user's password?">
@@ -194,5 +273,101 @@
             </div>
         </div>
     </main>
+
+    <script>
+        const mediaIconFor = function (type) {
+            if (type === 'movie') return 'fa-film';
+            if (type === 'episode') return 'fa-tv';
+            if (type === 'track') return 'fa-music';
+            return 'fa-play';
+        };
+        const stateBadgeFor = function (state) {
+            if (state === 'playing') return ['badge-active', 'fa-circle-play', 'Playing'];
+            if (state === 'buffering') return ['badge-suspended', 'fa-circle-notch fa-spin', 'Buffering'];
+            return ['badge-closed', 'fa-circle-pause', 'Paused'];
+        };
+
+        // ---------- Compact "Now Watching" strip per user ----------
+        async function refreshNowWatchingStrips() {
+            const strips = document.querySelectorAll('[data-now-watching-strip]');
+            await Promise.all(Array.from(strips).map(async function (strip) {
+                const userId = strip.getAttribute('data-user-id');
+                try {
+                    const res = await fetch('/admin/users/' + userId + '/plex/now-watching');
+                    const data = await res.json();
+
+                    if (!data.ok || !data.items || data.items.length === 0) {
+                        strip.classList.add('hidden');
+                        strip.innerHTML = '';
+                        return;
+                    }
+
+                    strip.classList.remove('hidden');
+                    strip.innerHTML = data.items.map(function (item) {
+                        const badge = stateBadgeFor(item.state);
+                        const icon = mediaIconFor(item.mediaType);
+                        const poster = item.posterUrl
+                            ? '<img src="' + item.posterUrl + '" alt="" class="w-9 h-9 rounded-lg object-cover flex-shrink-0 bg-slate-800" onerror="this.style.display=\'none\'">'
+                            : '<div class="w-9 h-9 rounded-lg bg-slate-800 flex items-center justify-center flex-shrink-0"><i class="fas ' + icon + ' text-slate-600 text-xs"></i></div>';
+                        const meta = [item.device, item.location].filter(Boolean).join(' — ');
+                        return '<div class="flex items-center gap-2.5 bg-slate-900/40 rounded-xl px-3 py-2">' +
+                            poster +
+                            '<div class="min-w-0 flex-1">' +
+                            '<div class="flex items-center gap-2">' +
+                            '<span class="badge ' + badge[0] + ' text-[10px] px-1.5 py-0.5"><i class="fas ' + badge[1] + '"></i> ' + badge[2] + '</span>' +
+                            '<span class="text-white text-xs font-semibold truncate">' + item.title + '</span>' +
+                            '<span class="text-slate-500 text-[10px] flex-shrink-0">' + Math.round(item.progressPercent) + '%</span>' +
+                            '</div>' +
+                            (meta ? '<p class="text-slate-500 text-[10px] truncate mt-0.5">' + meta + '</p>' : '') +
+                            '</div></div>';
+                    }).join('<div class="mt-1.5"></div>');
+                } catch (e) {
+                    strip.classList.add('hidden');
+                }
+            }));
+        }
+        refreshNowWatchingStrips();
+        setInterval(refreshNowWatchingStrips, 15000);
+        document.addEventListener('main:updated', refreshNowWatchingStrips);
+
+        // ---------- Watch History (lazy-loaded on open) ----------
+        let loadedWatchHistory = new Set();
+        // An ajax swap re-renders every <details> back to its closed,
+        // "Loading..." starting state - reset tracking so a reopened one
+        // actually re-fetches instead of getting stuck on that placeholder.
+        document.addEventListener('main:updated', function () { loadedWatchHistory = new Set(); });
+
+        async function loadAdminWatchHistory(userId) {
+            if (loadedWatchHistory.has(userId)) return; // only fetch once per page view
+            loadedWatchHistory.add(userId);
+
+            const list = document.querySelector('[data-watch-history-list="' + userId + '"]');
+            if (!list) return;
+
+            try {
+                const res = await fetch('/admin/users/' + userId + '/plex/history');
+                const data = await res.json();
+
+                if (!data.ok) {
+                    list.innerHTML = '<p class="text-slate-500 text-sm">' + (data.message || 'Could not load watch history.') + '</p>';
+                    return;
+                }
+                if (!data.items || data.items.length === 0) {
+                    list.innerHTML = '<p class="text-slate-500 text-sm">No watch history yet.</p>';
+                    return;
+                }
+
+                list.innerHTML = data.items.map(function (item) {
+                    const percent = typeof item.percentComplete === 'number' ? item.percentComplete : null;
+                    return '<div class="flex items-center justify-between gap-3 bg-slate-900/40 rounded-lg px-3 py-2 text-xs">' +
+                        '<span class="text-slate-300 truncate"><i class="fas ' + mediaIconFor(item.mediaType) + ' text-slate-500 mr-1.5"></i>' + item.title + '</span>' +
+                        '<span class="text-slate-500 flex-shrink-0">' + (percent !== null ? percent + '% — ' : '') + (item.watchedAtLabel || '') + '</span>' +
+                        '</div>';
+                }).join('');
+            } catch (e) {
+                list.innerHTML = '<p class="text-slate-500 text-sm">Could not load watch history.</p>';
+            }
+        }
+    </script>
 </body>
 </html>
