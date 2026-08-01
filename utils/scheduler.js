@@ -5,7 +5,7 @@
 // genuine background job instead, independent of anyone logging in.
 
 const { applyAutoRenewals, applyManualExpirations, applyExpiryWarnings } = require('./renewals');
-const { attemptAutoLinkAllPending, retryPendingPlexAccessSyncs } = require('./plexAccess');
+const { attemptAutoLinkAllPending, retryPendingPlexAccessSyncs, checkPendingWizarrInvites } = require('./plexAccess');
 
 const INTERVAL_MS = 5 * 60 * 1000; // every 5 minutes
 
@@ -27,6 +27,12 @@ async function runMaintenanceCycle() {
     await attemptAutoLinkAllPending();
   } catch (err) {
     console.error('[scheduler] plex auto-link failed:', err.message);
+  }
+
+  try {
+    await checkPendingWizarrInvites();
+  } catch (err) {
+    console.error('[scheduler] wizarr invite check failed:', err.message);
   }
 
   try {

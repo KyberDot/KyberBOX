@@ -120,10 +120,35 @@
             </form>
         </div>
 
-        <!-- Plex Account (for syncing shared users + managing library access) -->
+        <!-- Wizarr (grants/revokes actual Plex library access) -->
+        <div class="glass rounded-2xl sm:rounded-3xl p-5 sm:p-8 mb-8">
+            <h2 class="text-lg font-bold text-white mb-1"><i class="fas fa-hat-wizard mr-2 text-sky-400"></i>Wizarr</h2>
+            <p class="text-slate-400 text-sm mb-4">Handles actually granting and revoking Plex library access — when someone's assigned a Plex plan, this creates an invitation through Wizarr and emails it to them; when their subscription ends, this removes them.</p>
+
+            <% if (typeof wizarrTestResult !== 'undefined' && wizarrTestResult) { %>
+                <div class="mb-4 px-4 py-3 rounded-xl <%= wizarrTestResult.ok ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400' : 'bg-red-500/10 border border-red-500/30 text-red-400' %> text-sm">
+                    <i class="fas <%= wizarrTestResult.ok ? 'fa-circle-check' : 'fa-triangle-exclamation' %> mr-2"></i><%= wizarrTestResult.message %>
+                </div>
+            <% } %>
+
+            <form method="POST" action="/admin/settings/wizarr" data-ajax-form class="grid sm:grid-cols-2 gap-4">
+                <input type="text" name="wizarr_url" class="input sm:col-span-2" placeholder="http://wizarr:5690" value="<%= settings.wizarr_url %>">
+                <input type="password" name="wizarr_api_key" class="input sm:col-span-2" placeholder="API key (leave blank to keep current)">
+                <button type="submit" class="btn-primary px-6 py-3 rounded-xl text-sm sm:col-span-2">Save Wizarr Settings</button>
+            </form>
+            <form method="POST" action="/admin/settings/wizarr/test" data-ajax-form class="mt-4">
+                <button type="submit" class="btn-outline px-6 py-3 rounded-xl text-sm">
+                    <i class="fas fa-plug mr-2"></i>Test Connection
+                </button>
+            </form>
+
+            <p class="text-slate-500 text-xs mt-4">The URL should be reachable from this container — if Wizarr is on the same Docker network, that's usually its container name, e.g. <code class="font-mono">http://wizarr:5690</code>. Generate an API key from Wizarr's own Settings page. Once connected, pick which libraries each plan grants from <a href="/admin/plans" class="text-sky-400 hover:text-sky-300">Admin → Plans</a>.</p>
+        </div>
+
+        <!-- Plex Account (for matching Plex usernames to portal accounts, used by Tautulli watch history) -->
         <div class="glass rounded-2xl sm:rounded-3xl p-5 sm:p-8 mb-8">
             <h2 class="text-lg font-bold text-white mb-1"><i class="fas fa-user-group mr-2 text-sky-400"></i>Plex Account</h2>
-            <p class="text-slate-400 text-sm mb-4">Lets Admin → Users pull the list of people your Plex server is shared with (matched to portal accounts by email), and lets the portal automatically invite/remove clients' library access as their subscription starts, renews, or expires.</p>
+            <p class="text-slate-400 text-sm mb-4">Only used to match a client's Plex username to their portal account (for their watch history / now-watching, via Tautulli). Actual library access is handled by Wizarr above, not here.</p>
 
             <% if (typeof plexDetectResult !== 'undefined' && plexDetectResult) { %>
                 <div class="mb-4 px-4 py-3 rounded-xl <%= plexDetectResult.ok ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400' : 'bg-red-500/10 border border-red-500/30 text-red-400' %> text-sm">
@@ -146,7 +171,7 @@
                 <% } %>
             </form>
 
-            <p class="text-slate-500 text-xs mt-4">The token should be <strong>your own</strong> Plex account's (the server owner), not a subscriber's — find it via Plex's own docs on <a href="https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/" target="_blank" rel="noopener noreferrer" class="text-sky-400 hover:text-sky-300">finding an authentication token</a>. The server URL should be reachable from this container — if Plex is on the same Docker network, that's usually its container name, e.g. <code class="font-mono">http://plex:32400</code>. Click "Detect Server" after saving to link it, then pick which libraries each plan grants from <a href="/admin/plans" class="text-sky-400 hover:text-sky-300">Admin → Plans</a>.</p>
+            <p class="text-slate-500 text-xs mt-4">The token should be <strong>your own</strong> Plex account's (the server owner), not a subscriber's — find it via Plex's own docs on <a href="https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/" target="_blank" rel="noopener noreferrer" class="text-sky-400 hover:text-sky-300">finding an authentication token</a>. The server URL should be reachable from this container.</p>
         </div>
 
         <!-- Tautulli -->

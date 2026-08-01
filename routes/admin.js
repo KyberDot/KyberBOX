@@ -7,6 +7,7 @@ const { getAllSettings, setSetting, getSiteBaseUrl } = require('../utils/setting
 const { sendMail, isConfigured, notifyResetStarted } = require('../utils/mailer');
 const { testConnection: testTautulliConnection, getWatchHistory, getNowWatching, getAllActivity, getGeoLookup, fetchPosterImage } = require('../utils/tautulli');
 const { getSharedUsers, getServerIdentity, verifyServerWithPlexTv, getLibrarySections } = require('../utils/plex');
+const wizarr = require('../utils/wizarr');
 const { syncPlexAccessForUser, attemptAutoLinkPlexUsername, attemptAutoLinkAllPending } = require('../utils/plexAccess');
 const { londonInputToUtcIso, formatUK } = require('../utils/time');
 const { serviceLabel } = require('../utils/labels');
@@ -85,20 +86,20 @@ function loadUsersPageData() {
   const plans = db.prepare('SELECT * FROM plans ORDER BY name ASC').all();
   const paymentMethods = db.prepare('SELECT * FROM payment_methods ORDER BY name ASC').all();
 
-  // "Approved" (shown as PLEX SYNCED) only once their Plex account is
-  // matched AND their library share has actually succeeded on Plex's own
-  // side (plex_shared_server_id set) - matching the username alone isn't
-  // enough, since the share itself can still fail (wrong server config,
-  // Plex rejecting the request, etc.) even after a successful match.
-  // "Pending" (NOT SYNCED) covers everyone else on a Plex-granting plan;
-  // null means Plex isn't relevant to them at all.
+  // "Approved" (shown as PLEX SYNCED) once Wizarr confirms they've
+  // actually accepted their invitation (wizarr_user_id set) - this is
+  // separate from plex_username, which is only used for matching their
+  // watch history via Tautulli and says nothing about whether they
+  // actually have Plex access. "Pending" (NOT SYNCED) covers everyone
+  // else on a Plex-granting plan; null means Plex isn't relevant to them
+  // at all.
   users.forEach((u) => {
     const plexSubs = (subsByUser[u.id] || []).filter(
       (s) => s.status === 'active' && (s.service === 'plex' || s.service === 'multiple')
     );
     if (plexSubs.length === 0) {
       u.plexStatus = null;
-    } else if (u.plex_username && u.plex_shared_server_id) {
+    } else if (u.wizarr_user_id) {
       u.plexStatus = 'approved';
     } else {
       u.plexStatus = 'pending';
@@ -183,12 +184,18 @@ router.post('/admin/plans/:id/update', (req, res) => {
   res.redirect('/admin/plans');
 });
 
-// Live library list for the checkbox picker on the Plans page - fetched
-// via JS so a slow/unreachable Plex server never blocks the page itself.
+// Live library list for the checkbox pickers (Plans page, and each
+// user's individual override) - fetched via JS so a slow/unreachable
+// Wizarr instance never blocks the page itself.
 router.get('/admin/plex/library-sections', async (req, res) => {
   const settings = getAllSettings();
-  const result = await getLibrarySections(settings.plex_server_url, settings.plex_token);
-  res.json(result);
+  const result = await wizarr.getLibraries(settings.wizarr_url, settings.wizarr_api_key);
+  if (!result.ok) return res.json(result);
+
+  // Mapped into the same {key, title, type} shape the existing picker UI
+  // already expects, so nothing on the frontend needed to change.
+  const sections = result.libraries.map((lib) => ({ key: String(lib.id), title: lib.name, type: lib.type || '' }));
+  res.json({ ok: true, sections });
 });
 
 router.post('/admin/plans/:id/plex-libraries', async (req, res) => {
@@ -903,6 +910,22 @@ router.post('/admin/settings/payment-methods', (req, res) => {
 router.post('/admin/settings/payment-methods/:id/delete', (req, res) => {
   db.prepare('DELETE FROM payment_methods WHERE id = ?').run(req.params.id);
   res.render('admin-settings', { ...loadSettingsPageData(), saved: null, testResult: null, brandingError: null });
+});
+
+router.post('/admin/settings/wizarr', (req, res) => {
+  const { wizarr_url, wizarr_api_key } = req.body;
+  setSetting('wizarr_url', String(wizarr_url || '').trim());
+  // Only overwrite the stored key if a new one was actually typed in -
+  // the settings form always shows this field blank for security.
+  if (wizarr_api_key) setSetting('wizarr_api_key', wizarr_api_key);
+
+  res.render('admin-settings', { ...loadSettingsPageData(), saved: 'wizarr', testResult: null, brandingError: null });
+});
+
+router.post('/admin/settings/wizarr/test', async (req, res) => {
+  const settings = getAllSettings();
+  const result = await wizarr.testConnection(settings.wizarr_url, settings.wizarr_api_key);
+  res.render('admin-settings', { ...loadSettingsPageData(), saved: null, testResult: null, brandingError: null, wizarrTestResult: result });
 });
 
 router.post('/admin/settings/plex', (req, res) => {
