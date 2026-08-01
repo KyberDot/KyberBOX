@@ -143,7 +143,10 @@
                                 <option value="white" <%= c.logo_bg === 'white' ? 'selected' : '' %>>White background (for transparent logos)</option>
                                 <option value="none" <%= c.logo_bg === 'none' ? 'selected' : '' %>>No box / border</option>
                             </select>
-                            <input type="file" name="logo" accept="image/png,image/jpeg,image/webp,image/svg+xml" class="text-[10px]">
+                            <label for="logo-file-<%= c.id %>" class="btn-outline inline-flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-[11px] cursor-pointer w-fit">
+                                <i class="fas fa-image"></i>Choose Image
+                            </label>
+                            <input type="file" name="logo" id="logo-file-<%= c.id %>" accept="image/png,image/jpeg,image/webp,image/svg+xml" class="hidden">
                             <button type="submit" class="btn-primary py-1.5 rounded-lg text-[11px]">Save</button>
                         </form>
                         <form method="POST" action="/admin/health/containers/<%= c.id %>/delete" data-ajax-form data-confirm="Stop monitoring this container?" class="pt-2 border-t border-white/5">
@@ -204,7 +207,10 @@
                     </select>
                     <div>
                         <label class="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-1.5 block">Logo (optional)</label>
-                        <input type="file" name="logo" accept="image/png,image/jpeg,image/webp,image/svg+xml">
+                        <label for="add-container-logo" class="btn-outline inline-flex items-center justify-center gap-1.5 py-2 px-4 rounded-lg text-xs cursor-pointer w-fit">
+                            <i class="fas fa-image"></i>Choose Image
+                        </label>
+                        <input type="file" name="logo" id="add-container-logo" accept="image/png,image/jpeg,image/webp,image/svg+xml" class="hidden">
                         <p class="text-slate-500 text-xs mt-2">Square images work best - you can add or change it later too.</p>
                     </div>
                     <button type="submit" class="btn-primary py-3 rounded-xl text-sm w-full">Add Container</button>

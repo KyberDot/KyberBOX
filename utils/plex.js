@@ -148,7 +148,11 @@ async function shareLibraries({ plexToken, clientIdentifier, machineIdentifier, 
     return { ok: false, message: 'No library sections are configured for this plan.' };
   }
 
-  const url = `https://plex.tv/api/v2/shared_servers?X-Plex-Client-Identifier=${encodeURIComponent(clientIdentifier)}&X-Plex-Token=${encodeURIComponent(plexToken)}`;
+  // invitedEmail goes in the query string alongside the other identity
+  // params, not the JSON body - putting it in the body (as an earlier
+  // version of this did) caused Plex to 404 on this endpoint, since it
+  // couldn't resolve who the share request was even for.
+  const url = `https://plex.tv/api/v2/shared_servers?X-Plex-Client-Identifier=${encodeURIComponent(clientIdentifier)}&X-Plex-Token=${encodeURIComponent(plexToken)}&invitedEmail=${encodeURIComponent(invitedEmail)}`;
 
   try {
     const res = await fetch(url, {
@@ -157,7 +161,6 @@ async function shareLibraries({ plexToken, clientIdentifier, machineIdentifier, 
       body: JSON.stringify({
         machineIdentifier,
         librarySectionIds: sectionIds.map(Number),
-        invitedEmail,
       }),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });

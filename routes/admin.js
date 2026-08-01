@@ -85,15 +85,24 @@ function loadUsersPageData() {
   const plans = db.prepare('SELECT * FROM plans ORDER BY name ASC').all();
   const paymentMethods = db.prepare('SELECT * FROM payment_methods ORDER BY name ASC').all();
 
-  // "Approved" once we've matched their Plex account; "Pending" if they're
-  // on a Plex-granting plan but haven't accepted the invite yet; null if
-  // Plex isn't relevant to them at all - drives the status badge on this
-  // page instead of admins having to infer it from a blank username field.
+  // "Approved" (shown as PLEX SYNCED) only once their Plex account is
+  // matched AND their library share has actually succeeded on Plex's own
+  // side (plex_shared_server_id set) - matching the username alone isn't
+  // enough, since the share itself can still fail (wrong server config,
+  // Plex rejecting the request, etc.) even after a successful match.
+  // "Pending" (NOT SYNCED) covers everyone else on a Plex-granting plan;
+  // null means Plex isn't relevant to them at all.
   users.forEach((u) => {
     const plexSubs = (subsByUser[u.id] || []).filter(
       (s) => s.status === 'active' && (s.service === 'plex' || s.service === 'multiple')
     );
-    u.plexStatus = u.plex_username ? 'approved' : (plexSubs.length > 0 ? 'pending' : null);
+    if (plexSubs.length === 0) {
+      u.plexStatus = null;
+    } else if (u.plex_username && u.plex_shared_server_id) {
+      u.plexStatus = 'approved';
+    } else {
+      u.plexStatus = 'pending';
+    }
 
     // What the library picker should show as checked - the actual
     // override if one's set (even an empty one), otherwise the plan's own
