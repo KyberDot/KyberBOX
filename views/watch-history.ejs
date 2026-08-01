@@ -17,10 +17,19 @@
             </div>
         <% } else { %>
             <div class="glass rounded-2xl sm:rounded-3xl p-5 sm:p-8">
-                <div class="flex items-center gap-3 flex-wrap mb-5">
-                    <label class="text-xs uppercase tracking-widest text-slate-500 font-semibold">Show from</label>
-                    <input type="date" id="watchHistoryFromDate" class="input w-auto" onchange="loadWatchHistory(1)">
-                    <button type="button" onclick="clearDateFilter()" class="text-slate-500 hover:text-white text-xs">Clear</button>
+                <div class="flex items-center justify-between mb-5">
+                    <p class="text-xs uppercase tracking-widest text-slate-500 font-semibold">Recent Activity</p>
+                    <div class="relative">
+                        <button type="button" onclick="toggleDateFilterPopover()" class="text-slate-500 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5 relative" title="Filter by date">
+                            <i class="fas fa-calendar-days text-sm"></i>
+                            <span id="dateFilterDot" class="hidden absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-sky-500"></span>
+                        </button>
+                        <div id="dateFilterPopover" class="hidden absolute right-0 top-10 z-10 glass rounded-xl p-3 flex items-center gap-2 whitespace-nowrap shadow-lg">
+                            <label class="text-slate-500 text-xs">From</label>
+                            <input type="date" id="watchHistoryFromDate" class="input text-xs py-1.5 w-auto" onchange="loadWatchHistory(1)">
+                            <button type="button" onclick="clearDateFilter()" class="text-slate-500 hover:text-white text-xs">Clear</button>
+                        </div>
+                    </div>
                 </div>
                 <div id="watchHistoryList" class="space-y-2">
                     <p class="text-slate-500 text-sm"><i class="fas fa-circle-notch fa-spin mr-2"></i>Loading…</p>
@@ -100,11 +109,14 @@
 
                 list.innerHTML = data.items.map(function (item) {
                     const percent = typeof item.percentComplete === 'number' ? item.percentComplete : null;
+                    const deviceParts = [item.device, item.client].filter(Boolean).join(' — ');
                     return '<div class="flex items-center justify-between gap-3 bg-slate-900/40 rounded-xl px-4 py-3">' +
                         '<div class="flex items-center gap-3 min-w-0">' +
                         '<i class="fas ' + mediaIcon(item.mediaType) + ' text-slate-500 text-sm flex-shrink-0"></i>' +
-                        '<span class="text-sm text-slate-300 truncate">' + item.title + '</span>' +
-                        '</div>' +
+                        '<div class="min-w-0">' +
+                        '<span class="text-sm text-slate-300 truncate block">' + item.title + '</span>' +
+                        (deviceParts ? '<span class="text-slate-500 text-[11px] truncate block mt-0.5"><i class="fas fa-tablet-screen-button mr-1"></i>' + deviceParts + '</span>' : '') +
+                        '</div></div>' +
                         '<div class="flex items-center gap-3 flex-shrink-0">' +
                         (percent !== null ? '<span class="text-slate-500 text-xs">' + percent + '%</span>' : '') +
                         '<span class="text-slate-500 text-xs">' + (item.watchedAtLabel || '') + '</span>' +
@@ -118,10 +130,30 @@
             }
         }
 
+        function toggleDateFilterPopover() {
+            document.getElementById('dateFilterPopover').classList.toggle('hidden');
+        }
+
+        document.addEventListener('click', function (e) {
+            const popover = document.getElementById('dateFilterPopover');
+            if (!popover || popover.classList.contains('hidden')) return;
+            if (!e.target.closest('#dateFilterPopover') && !e.target.closest('[onclick="toggleDateFilterPopover()"]')) {
+                popover.classList.add('hidden');
+            }
+        });
+
+        function updateDateFilterDot() {
+            const hasFilter = !!document.getElementById('watchHistoryFromDate').value;
+            document.getElementById('dateFilterDot').classList.toggle('hidden', !hasFilter);
+        }
+
         function clearDateFilter() {
             document.getElementById('watchHistoryFromDate').value = '';
+            updateDateFilterDot();
             loadWatchHistory(1);
         }
+
+        document.getElementById('watchHistoryFromDate').addEventListener('change', updateDateFilterDot);
 
         loadWatchHistory(1);
     </script>

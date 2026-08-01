@@ -523,6 +523,23 @@ router.post('/admin/users/:id/plex-username', (req, res) => {
   res.redirect('/admin/users');
 });
 
+router.post('/admin/users/:id/plex-libraries', (req, res) => {
+  const sectionIds = Array.isArray(req.body.section_ids) ? req.body.section_ids : [req.body.section_ids].filter(Boolean);
+  // Stored even if empty - an explicit "" override (no libraries picked)
+  // is meaningfully different from no override at all (NULL), which
+  // syncPlexAccessForUser relies on to distinguish "block everything for
+  // just this person" from "use whatever their plan grants".
+  db.prepare('UPDATE users SET plex_library_override = ? WHERE id = ?').run(sectionIds.join(','), req.params.id);
+  syncPlexAccessForUser(req.params.id).catch(() => {});
+  res.redirect('/admin/users');
+});
+
+router.post('/admin/users/:id/plex-libraries/clear', (req, res) => {
+  db.prepare('UPDATE users SET plex_library_override = NULL WHERE id = ?').run(req.params.id);
+  syncPlexAccessForUser(req.params.id).catch(() => {});
+  res.redirect('/admin/users');
+});
+
 // Pulls everyone your Plex server is shared with and matches them to portal
 // accounts by email - no manual typing of Plex usernames needed once this
 // is set up. Safe to re-run any time (e.g. after inviting someone new).

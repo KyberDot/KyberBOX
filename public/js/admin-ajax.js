@@ -1,4 +1,53 @@
 (function () {
+  // ---------- Toast notifications ----------
+  // Bottom-right confirmation for any <form data-ajax-form> submission,
+  // success or failure - works on every page (admin and subscriber alike)
+  // since this script loads everywhere. For the rare fallback case where
+  // the page does a full navigation instead of an ajax swap, the message
+  // is queued in sessionStorage and shown once the new page loads, so a
+  // failure still gets confirmed even though the ajax swap itself never
+  // got to render it.
+  function showToast(message, type) {
+    let container = document.getElementById('kbToastContainer');
+    if (!container) {
+      container = document.createElement('div');
+      container.id = 'kbToastContainer';
+      container.style.cssText = 'position:fixed;bottom:1rem;right:1rem;z-index:100;display:flex;flex-direction:column;gap:0.5rem;align-items:flex-end;pointer-events:none;';
+      document.body.appendChild(container);
+    }
+
+    const isSuccess = type !== 'error';
+    const toast = document.createElement('div');
+    toast.className = 'rounded-xl px-4 py-3 text-sm shadow-lg border flex items-center gap-2 ' +
+      (isSuccess ? 'bg-emerald-500 border-emerald-400 text-[#0b0f1a]' : 'bg-red-500 border-red-400 text-white');
+    toast.style.cssText = 'max-width:320px;pointer-events:auto;opacity:0;transform:translateX(12px);transition:opacity 0.2s,transform 0.2s;';
+    toast.innerHTML = '<i class="fas ' + (isSuccess ? 'fa-circle-check' : 'fa-triangle-exclamation') + '"></i><span>' + message + '</span>';
+    container.appendChild(toast);
+
+    requestAnimationFrame(function () {
+      toast.style.opacity = '1';
+      toast.style.transform = 'translateX(0)';
+    });
+
+    setTimeout(function () {
+      toast.style.opacity = '0';
+      toast.style.transform = 'translateX(12px)';
+      setTimeout(function () { toast.remove(); }, 250);
+    }, 3200);
+  }
+  window.showToast = showToast;
+
+  // A toast queued (by the fallback-navigation path below) before this
+  // page loaded - show it once, then clear it so it doesn't repeat.
+  const queuedToast = sessionStorage.getItem('kb_toast');
+  if (queuedToast) {
+    sessionStorage.removeItem('kb_toast');
+    try {
+      const parsed = JSON.parse(queuedToast);
+      showToast(parsed.message, parsed.type);
+    } catch (_) { /* ignore a malformed/stale queued value */ }
+  }
+
   // ---------- Modals ----------
   window.openModal = function (id) {
     const m = document.getElementById(id);
@@ -81,6 +130,9 @@
       if (!res.ok || !newMain || !currentMain) {
         // Something unexpected (validation error page, network issue, etc.)
         // - do a real navigation so the person sees the actual result.
+        // The toast itself can't show before that navigation happens, so
+        // it's queued and picked up once the new page has loaded instead.
+        sessionStorage.setItem('kb_toast', JSON.stringify({ message: 'Something went wrong - please check and try again.', type: 'error' }));
         form.removeAttribute('data-ajax-form');
         form.submit();
         return;
@@ -91,8 +143,10 @@
       restoreOpenState(state);
       window.scrollTo(0, scrollY);
       document.dispatchEvent(new CustomEvent('main:updated'));
+      showToast('Changes saved', 'success');
     } catch (err) {
       console.error('Ajax form submit failed, falling back to normal navigation', err);
+      sessionStorage.setItem('kb_toast', JSON.stringify({ message: 'Something went wrong - please check and try again.', type: 'error' }));
       form.removeAttribute('data-ajax-form');
       form.submit();
     } finally {

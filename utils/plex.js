@@ -18,8 +18,11 @@ async function getSharedUsers(plexToken) {
   }
 
   try {
+    // This particular endpoint (unlike Plex's newer v2 API) ignores
+    // Accept: application/json in practice and always returns XML, so
+    // it's parsed as XML directly rather than assuming JSON.
     const res = await fetch('https://plex.tv/api/users', {
-      headers: { 'X-Plex-Token': plexToken, Accept: 'application/json' },
+      headers: { 'X-Plex-Token': plexToken },
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
 
@@ -28,10 +31,8 @@ async function getSharedUsers(plexToken) {
       return { ok: false, message: reason };
     }
 
-    const json = await res.json();
-    const container = json.MediaContainer || {};
-    let rawUsers = container.User || [];
-    if (!Array.isArray(rawUsers)) rawUsers = [rawUsers]; // a single friend comes back as an object, not a one-item array
+    const xmlText = await res.text();
+    const rawUsers = parseXmlUserTags(xmlText);
 
     const users = rawUsers
       .map((u) => ({
@@ -46,6 +47,39 @@ async function getSharedUsers(plexToken) {
     const reason = err.name === 'TimeoutError' ? 'Timed out reaching Plex.' : `Could not reach Plex: ${err.message}`;
     return { ok: false, message: reason };
   }
+}
+
+/**
+ * Lightweight attribute extraction for Plex's simple <User id="..."
+ * username="..." email="..."/> XML tags - avoids pulling in a full XML
+ * parsing dependency for what's just a flat list of attributes.
+ */
+function parseXmlUserTags(xmlText) {
+  const users = [];
+  const userTagRegex = /<User\b([^>]*?)\/?>/g;
+  const attrRegex = /([\w-]+)="([^"]*)"/g;
+  let tagMatch;
+
+  while ((tagMatch = userTagRegex.exec(xmlText)) !== null) {
+    const attrs = {};
+    let attrMatch;
+    attrRegex.lastIndex = 0;
+    while ((attrMatch = attrRegex.exec(tagMatch[1])) !== null) {
+      attrs[attrMatch[1]] = decodeXmlEntities(attrMatch[2]);
+    }
+    users.push(attrs);
+  }
+
+  return users;
+}
+
+function decodeXmlEntities(str) {
+  return str
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'");
 }
 
 /**

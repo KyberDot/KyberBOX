@@ -40,7 +40,7 @@ async function syncPlexAccessForUser(userId) {
     )
     .all(userId);
 
-  const sectionIds = [
+  const planSectionIds = [
     ...new Set(
       activePlexSubs
         .flatMap((s) => String(s.plex_library_section_ids || '').split(','))
@@ -48,6 +48,17 @@ async function syncPlexAccessForUser(userId) {
         .filter(Boolean)
     ),
   ];
+
+  // A per-user override (even an empty one, meaning "none of them")
+  // refines exactly which of the plan's libraries this specific person
+  // gets - it only ever narrows/customizes within an existing Plex plan,
+  // never grants access on its own to someone with no active plan at all.
+  const hasOverride = user.plex_library_override !== null && user.plex_library_override !== undefined;
+  const sectionIds = activePlexSubs.length === 0
+    ? []
+    : hasOverride
+      ? String(user.plex_library_override).split(',').map((id) => id.trim()).filter(Boolean)
+      : planSectionIds;
 
   const shouldHaveAccess = sectionIds.length > 0;
 

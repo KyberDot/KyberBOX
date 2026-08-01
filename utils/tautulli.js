@@ -50,6 +50,10 @@ async function getWatchHistory(baseUrl, apiKey, plexUsername, page = 1, pageSize
       title: row.grandparent_title ? `${row.grandparent_title} — ${row.title}` : row.title,
       mediaType: row.media_type || 'unknown',
       percentComplete: typeof row.percent_complete === 'number' ? row.percent_complete : null,
+      // What they watched it on, e.g. device "Living Room Roku" via the
+      // client app "Plex for Roku" - same fields get_activity uses.
+      device: row.player || null,
+      client: row.product || null,
       // Tautulli gives unix seconds; convert to ISO so the rest of the app's
       // UK-time formatter (utils/time.js) can handle it like everything else.
       watchedAtIso: row.date ? new Date(row.date * 1000).toISOString() : null,

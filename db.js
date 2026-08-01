@@ -228,6 +228,7 @@ ensureColumn('users', 'payment_method_id', 'payment_method_id INTEGER REFERENCES
 ensureColumn('users', 'plex_username', 'plex_username TEXT');
 ensureColumn('users', 'plex_user_id', 'plex_user_id TEXT'); // Plex.tv account id, from syncing shared users
 ensureColumn('users', 'plex_link_attempted_at', 'plex_link_attempted_at TEXT');
+ensureColumn('users', 'plex_library_override', 'plex_library_override TEXT'); // NULL = use plan default; comma-separated section keys = explicit per-user override
 ensureColumn('subscriptions', 'renewal_mode', "renewal_mode TEXT NOT NULL DEFAULT 'manual'"); // auto | manual | expired
 ensureColumn('subscriptions', 'expiry_warning_sent_at', 'expiry_warning_sent_at TEXT');
 ensureColumn('admin_health_containers', 'logo_path', 'logo_path TEXT');
