@@ -4,7 +4,6 @@ const { getSetting } = require('../utils/settings');
 const { formatUK, formatUKDate, formatMoney, utcToLondonInputValue } = require('../utils/time');
 const { serviceLabel } = require('../utils/labels');
 const { applyAutoRenewals, applyManualExpirations, applyExpiryWarnings } = require('../utils/renewals');
-const { attemptAutoLinkPlexUsername } = require('../utils/plexAccess');
 const { getResetState } = require('../utils/resetLock');
 
 function attachUser(req, res, next) {
@@ -62,16 +61,6 @@ function attachUser(req, res, next) {
     const today = new Date(new Date().toISOString().slice(0, 10) + 'T00:00:00Z');
     const expiry = new Date(String(res.locals.expiringSoon.expires_at).slice(0, 10) + 'T00:00:00Z');
     res.locals.expiringSoon.days = Math.max(0, Math.round((expiry - today) / (1000 * 60 * 60 * 24)));
-  }
-  // Fire-and-forget: if they're on a Plex plan but haven't been linked yet
-  // (they haven't accepted the invite, or did but nobody ran a manual
-  // sync), try to link them by matching their email against Plex's shared
-  // users - this is what makes watch history/now-watching start working
-  // on its own the moment they accept, without an admin needing to do
-  // anything. Internally rate-limited, so this is cheap to call on every
-  // page load even before they've accepted.
-  if (res.locals.hasPlexPlan) {
-    attemptAutoLinkPlexUsername(req.user.id).catch(() => {});
   }
   // Available in every EJS template so all dates/prices/labels render
   // consistently in UK time and the plan's chosen currency without each

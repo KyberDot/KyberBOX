@@ -24,12 +24,6 @@
             </div>
         <% } %>
 
-        <% if (typeof plexSyncResult !== 'undefined' && plexSyncResult) { %>
-            <div class="mb-8 px-4 sm:px-5 py-4 rounded-xl <%= plexSyncResult.ok ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400' : 'bg-red-500/10 border border-red-500/30 text-red-400' %> text-sm">
-                <i class="fas <%= plexSyncResult.ok ? 'fa-circle-check' : 'fa-triangle-exclamation' %> mr-2"></i><%= plexSyncResult.message %>
-            </div>
-        <% } %>
-
         <% if (plans.length === 0) { %>
             <div class="mb-8 px-4 sm:px-5 py-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400 text-sm flex items-center justify-between flex-wrap gap-3">
                 <span><i class="fas fa-layer-group mr-2"></i>You haven't created any Plans yet — create one first so you can assign new clients to it.</span>
@@ -37,13 +31,8 @@
             </div>
         <% } %>
 
-        <!-- Invite / Sync triggers -->
-        <div class="flex justify-end gap-2 mb-8 flex-wrap">
-            <form method="POST" action="/admin/users/sync-plex" data-ajax-form>
-                <button type="submit" class="btn-outline px-6 py-3 rounded-xl text-sm">
-                    <i class="fas fa-arrows-rotate mr-2"></i>Sync from Plex
-                </button>
-            </form>
+        <!-- Invite trigger -->
+        <div class="flex justify-end mb-8">
             <button type="button" onclick="openModal('inviteModal')" class="btn-primary px-6 py-3 rounded-xl text-sm">
                 <i class="fas fa-user-plus mr-2"></i>Invite a New Client
             </button>
@@ -204,7 +193,7 @@
                             <input type="text" name="plex_username" class="input" value="<%= u.plex_username || '' %>" placeholder="Their exact Plex username">
                             <button type="submit" class="btn-primary py-3 rounded-xl text-sm whitespace-nowrap">Save</button>
                         </form>
-                        <p class="text-slate-500 text-xs mt-2">Must match their Plex account exactly - this is how their watch history gets looked up in Tautulli. Use "Sync from Plex" above to re-check manually at any time, or configure Tautulli itself from <a href="/admin/settings" class="text-sky-400 hover:text-sky-300">Settings</a>.</p>
+                        <p class="text-slate-500 text-xs mt-2">Must match their Plex account exactly - this is how their watch history gets looked up in Tautulli. Configure Tautulli itself from <a href="/admin/settings" class="text-sky-400 hover:text-sky-300">Settings</a>.</p>
                     </details>
 
                     <% if (u.plexStatus === 'approved') { %>

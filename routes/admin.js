@@ -6,8 +6,6 @@ const { encrypt } = require('../utils/crypto');
 const { getAllSettings, setSetting, getSiteBaseUrl } = require('../utils/settings');
 const { sendMail, isConfigured, notifyResetStarted } = require('../utils/mailer');
 const { testConnection: testTautulliConnection, getWatchHistory, getNowWatching, getAllActivity, getGeoLookup, fetchPosterImage } = require('../utils/tautulli');
-const { getSharedUsers } = require('../utils/plex');
-const { attemptAutoLinkPlexUsername, attemptAutoLinkAllPending } = require('../utils/plexAccess');
 const { londonInputToUtcIso, formatUK } = require('../utils/time');
 const { serviceLabel } = require('../utils/labels');
 const { runCommand, getContainerStatuses } = require('../utils/ssh');
@@ -336,14 +334,6 @@ router.post('/admin/plans/:id/containers/:containerId/delete', (req, res) => {
 // ---------- Users ----------
 
 router.get('/admin/users', async (req, res) => {
-  // Anyone on an active Plex-service plan who hasn't been linked yet gets
-  // one attempt right now (still rate-limited internally, so this is cheap
-  // even with several unlinked people) - keeps this page always showing
-  // the real current state instead of only updating when that subscriber
-  // themselves happens to log back in. The background scheduler also runs
-  // this independently, so linking doesn't depend on anyone visiting at all.
-  await attemptAutoLinkAllPending().catch(() => {});
-
   res.render('admin-users', { ...loadUsersPageData(), newUser: null });
 });
 
@@ -495,49 +485,8 @@ router.post('/admin/users/:id/payment-method', (req, res) => {
 
 router.post('/admin/users/:id/plex-username', (req, res) => {
   const plexUsername = String(req.body.plex_username || '').trim() || null;
-  // A manual edit might not match whatever was linked by the last Plex
-  // sync, so clear that link rather than show a stale "synced" badge -
-  // running "Sync from Plex" again will re-link it if it's still correct.
-  db.prepare('UPDATE users SET plex_username = ?, plex_user_id = NULL WHERE id = ?').run(plexUsername, req.params.id);
+  db.prepare('UPDATE users SET plex_username = ? WHERE id = ?').run(plexUsername, req.params.id);
   res.redirect('/admin/users');
-});
-
-// Pulls everyone your Plex server is shared with and matches them to portal
-// accounts by email - no manual typing of Plex usernames needed once this
-// is set up. Safe to re-run any time (e.g. after inviting someone new).
-router.post('/admin/users/sync-plex', async (req, res) => {
-  const settings = getAllSettings();
-  const result = await getSharedUsers(settings.plex_token);
-
-  if (!result.ok) {
-    return res.render('admin-users', { ...loadUsersPageData(), newUser: null, plexSyncResult: { ok: false, message: result.message } });
-  }
-
-  const byEmail = new Map();
-  result.users.forEach((u) => {
-    if (u.email) byEmail.set(u.email, u);
-  });
-
-  const subscribers = db.prepare("SELECT id, name, email FROM users WHERE role = 'subscriber'").all();
-  const matched = [];
-
-  subscribers.forEach((sub) => {
-    const plexUser = byEmail.get(String(sub.email || '').toLowerCase().trim());
-    if (!plexUser) return;
-    db.prepare('UPDATE users SET plex_username = ?, plex_user_id = ? WHERE id = ?').run(plexUser.username, plexUser.id, sub.id);
-    matched.push({ name: sub.name, plexUsername: plexUser.username });
-  });
-
-  const unmatchedCount = subscribers.length - matched.length;
-
-  res.render('admin-users', {
-    ...loadUsersPageData(),
-    newUser: null,
-    plexSyncResult: {
-      ok: true,
-      message: `Checked ${result.users.length} Plex share(s) against ${subscribers.length} client(s): ${matched.length} matched and linked${unmatchedCount > 0 ? `, ${unmatchedCount} client(s) still unmatched (no Plex account with the same email was found)` : ''}.`,
-    },
-  });
 });
 
 // Lets admin view any subscriber's Plex activity directly from Admin →
@@ -794,15 +743,6 @@ router.post('/admin/settings/payment-methods', (req, res) => {
 router.post('/admin/settings/payment-methods/:id/delete', (req, res) => {
   db.prepare('DELETE FROM payment_methods WHERE id = ?').run(req.params.id);
   res.render('admin-settings', { ...loadSettingsPageData(), saved: null, testResult: null, brandingError: null });
-});
-
-router.post('/admin/settings/plex', (req, res) => {
-  const { plex_token } = req.body;
-  // Only overwrite the stored token if a new one was actually typed in -
-  // the settings form always shows this field blank for security.
-  if (plex_token) setSetting('plex_token', plex_token);
-
-  res.render('admin-settings', { ...loadSettingsPageData(), saved: 'plex', testResult: null, brandingError: null });
 });
 
 router.post('/admin/settings/tautulli', (req, res) => {

@@ -1,7 +1,7 @@
 const db = require('../db');
 const { encrypt, decrypt } = require('./crypto');
 
-const SECRET_KEYS = new Set(['smtp_pass', 'tautulli_api_key', 'plex_token']);
+const SECRET_KEYS = new Set(['smtp_pass', 'tautulli_api_key']);
 
 function getSetting(key, fallback = null) {
   const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
@@ -44,7 +44,6 @@ function getAllSettings() {
     compose_path: getSetting('compose_path', ''),
     tautulli_url: getSetting('tautulli_url', ''),
     tautulli_api_key: getSetting('tautulli_api_key', ''), // decrypted value, for internal use only
-    plex_token: getSetting('plex_token', ''), // decrypted value, for internal use only
   };
 }
 
