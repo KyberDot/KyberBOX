@@ -19,9 +19,13 @@ function buildPlanView(subscription, userId) {
   const plan = db.prepare('SELECT * FROM plans WHERE id = ?').get(subscription.plan_id);
   if (!plan) return null;
 
-  if (plan.pricing_mode === 'included_with' && plan.included_with_plan_id) {
-    const includedWithPlan = db.prepare('SELECT name FROM plans WHERE id = ?').get(plan.included_with_plan_id);
-    plan.includedWithPlanName = includedWithPlan ? includedWithPlan.name : null;
+  if (plan.pricing_mode === 'included_with' && plan.included_with_plan_ids) {
+    const triggerIds = String(plan.included_with_plan_ids).split(',').map((id) => Number(id.trim())).filter(Boolean);
+    if (triggerIds.length > 0) {
+      const placeholders = triggerIds.map(() => '?').join(',');
+      const triggerPlans = db.prepare(`SELECT name FROM plans WHERE id IN (${placeholders})`).all(...triggerIds);
+      plan.includedWithPlanName = triggerPlans.map((p) => p.name).join(' or ');
+    }
   }
 
   const hasPendingSeedReset = plan.service === 'minecraft'
@@ -68,10 +72,37 @@ router.get('/dashboard', (req, res) => {
     .prepare('SELECT * FROM subscriptions WHERE user_id = ? ORDER BY created_at DESC')
     .all(req.user.id);
 
-  const planViews = subscriptions
+  const allPlanViews = subscriptions
     .filter((s) => s.plan_id && s.status === 'active')
     .map((s) => buildPlanView(s, req.user.id))
     .filter(Boolean);
+
+  // Anything auto-granted (e.g. a Minecraft plan bundled with a Plex plan)
+  // gets nested under whichever plan actually triggered it, rather than
+  // shown as its own separate top-level card - "under their included
+  // plan, not over it". Falls back to showing it standalone only if its
+  // trigger plan isn't in the list for some reason (shouldn't normally
+  // happen, but better to show it than silently hide something they have
+  // access to).
+  const extrasByParentPlanId = {};
+  const planViews = [];
+
+  allPlanViews.forEach((pv) => {
+    const parentPlanId = pv.subscription.auto_granted_via_plan_id;
+    if (parentPlanId) {
+      (extrasByParentPlanId[parentPlanId] = extrasByParentPlanId[parentPlanId] || []).push(pv);
+    } else {
+      planViews.push(pv);
+    }
+  });
+
+  planViews.forEach((pv) => {
+    pv.includedExtras = extrasByParentPlanId[pv.plan.id] || [];
+    delete extrasByParentPlanId[pv.plan.id];
+  });
+
+  // Any leftover extras whose trigger plan isn't in the active list at all.
+  Object.values(extrasByParentPlanId).forEach((orphaned) => planViews.push(...orphaned));
 
   const legacySubscriptions = subscriptions.filter((s) => !s.plan_id);
 

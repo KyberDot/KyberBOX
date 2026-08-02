@@ -33,7 +33,11 @@ function syncIncludedPlansForUser(userId) {
       .map((id) => Number(id.trim()))
       .filter(Boolean);
 
-    const qualifies = triggerIds.some((id) => activePlanIds.has(id));
+    // Whichever specific trigger plan they actually qualify through - this
+    // is what the subscription gets tagged with, so the dashboard can
+    // nest it under the right parent plan's card rather than its own.
+    const qualifyingTriggerId = triggerIds.find((id) => activePlanIds.has(id)) || null;
+    const qualifies = qualifyingTriggerId !== null;
 
     const existing = db
       .prepare(`SELECT * FROM subscriptions WHERE user_id = ? AND plan_id = ? AND status = 'active'`)
@@ -42,7 +46,13 @@ function syncIncludedPlansForUser(userId) {
     if (qualifies && !existing) {
       db.prepare(
         `INSERT INTO subscriptions (user_id, plan_id, service, plan_name, status, renewal_mode, auto_granted_via_plan_id) VALUES (?, ?, ?, ?, 'active', 'manual', ?)`
-      ).run(userId, plan.id, plan.service, plan.name, plan.id);
+      ).run(userId, plan.id, plan.service, plan.name, qualifyingTriggerId);
+    } else if (qualifies && existing && existing.auto_granted_via_plan_id && existing.auto_granted_via_plan_id !== qualifyingTriggerId) {
+      // Still qualifies, but through a different trigger plan than before
+      // (e.g. the original one expired and a second trigger plan took
+      // over) - update which plan it's nested under rather than leaving
+      // it pointing at a trigger that's no longer active.
+      db.prepare(`UPDATE subscriptions SET auto_granted_via_plan_id = ? WHERE id = ?`).run(qualifyingTriggerId, existing.id);
     } else if (!qualifies && existing && existing.auto_granted_via_plan_id) {
       // Only ever removes a copy this function granted itself - a
       // manually-assigned subscription to the same plan (auto_granted_via_plan_id

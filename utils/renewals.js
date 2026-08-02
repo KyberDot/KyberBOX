@@ -1,6 +1,7 @@
 const db = require('../db');
 const { sendMail } = require('./mailer');
 const { getAllSettings } = require('./settings');
+const { syncIncludedPlansForUser } = require('./includedPlans');
 
 /**
  * For any active subscription set to auto-renew whose expiry date has
@@ -53,9 +54,23 @@ function applyManualExpirations() {
   if (due.length === 0) return;
 
   const update = db.prepare(`UPDATE subscriptions SET status = 'expired', updated_at = datetime('now') WHERE id = ?`);
+  const affectedUserIds = new Set();
 
   due.forEach((sub) => {
     update.run(sub.id);
+    affectedUserIds.add(sub.user_id);
+  });
+
+  // A plan that just expired might have been what qualified someone for
+  // an auto-granted "included with" plan (e.g. a Minecraft plan bundled
+  // with a Plex plan) - re-check so that gets revoked too, not left
+  // dangling now that its trigger is gone.
+  affectedUserIds.forEach((userId) => {
+    try {
+      syncIncludedPlansForUser(userId);
+    } catch (err) {
+      console.error('[renewals] included-plan sync failed:', err.message);
+    }
   });
 }
 

@@ -6,6 +6,7 @@ const { encrypt } = require('../utils/crypto');
 const { getAllSettings, setSetting, getSiteBaseUrl } = require('../utils/settings');
 const { sendMail, isConfigured, notifyResetStarted } = require('../utils/mailer');
 const { testConnection: testTautulliConnection, getWatchHistory, getNowWatching, getAllActivity, getGeoLookup, fetchPosterImage } = require('../utils/tautulli');
+const { syncIncludedPlansForUser } = require('../utils/includedPlans');
 const { londonInputToUtcIso, formatUK } = require('../utils/time');
 const { serviceLabel } = require('../utils/labels');
 const { runCommand, getContainerStatuses } = require('../utils/ssh');
@@ -123,14 +124,25 @@ router.post('/admin/plans', (req, res) => {
   const price = req.body.price ? Number(req.body.price) : null;
   const currency = String(req.body.currency || 'GBP').trim();
   const pricingMode = ['paid', 'free', 'included_with'].includes(req.body.pricing_mode) ? req.body.pricing_mode : 'paid';
-  const includedWithPlanId = pricingMode === 'included_with' && req.body.included_with_plan_id ? Number(req.body.included_with_plan_id) : null;
+  const includedWithPlanIds = pricingMode === 'included_with'
+    ? (Array.isArray(req.body.included_with_plan_ids) ? req.body.included_with_plan_ids : [req.body.included_with_plan_ids].filter(Boolean)).join(',')
+    : null;
   const serverConnectionInfo = String(req.body.server_connection_info || '').trim() || null;
 
   if (!name) return res.status(400).render('error', { message: 'Missing required fields - please fill in everything marked required and try again.' });
 
   const info = db
-    .prepare('INSERT INTO plans (name, service, description, features, price, currency, pricing_mode, included_with_plan_id, server_connection_info) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-    .run(name, service, description, features, price, currency, pricingMode, includedWithPlanId, serverConnectionInfo);
+    .prepare('INSERT INTO plans (name, service, description, features, price, currency, pricing_mode, included_with_plan_ids, server_connection_info) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(name, service, description, features, price, currency, pricingMode, includedWithPlanIds, serverConnectionInfo);
+
+  // A brand-new plan with trigger plans already checked needs everyone
+  // who currently qualifies synced immediately - this didn't happen
+  // before, so a newly-created "included with" plan never actually
+  // reached anyone until something else happened to trigger a sync.
+  if (pricingMode === 'included_with' && includedWithPlanIds) {
+    const affectedUserIds = db.prepare(`SELECT DISTINCT user_id FROM subscriptions WHERE status = 'active'`).all().map((r) => r.user_id);
+    affectedUserIds.forEach((userId) => syncIncludedPlansForUser(userId));
+  }
 
   res.render('admin-plans', { ...loadPlans(), newPlanId: info.lastInsertRowid });
 });
@@ -145,14 +157,27 @@ router.post('/admin/plans/:id/update', (req, res) => {
   const pricingMode = ['paid', 'free', 'included_with'].includes(req.body.pricing_mode) ? req.body.pricing_mode : 'paid';
   // Guard against a plan being set to include itself - meaningless and
   // would make the "included with" label loop back on itself in the UI.
-  const includedWithPlanId = pricingMode === 'included_with' && req.body.included_with_plan_id && Number(req.body.included_with_plan_id) !== Number(req.params.id)
-    ? Number(req.body.included_with_plan_id)
+  const includedWithPlanIds = pricingMode === 'included_with'
+    ? (Array.isArray(req.body.included_with_plan_ids) ? req.body.included_with_plan_ids : [req.body.included_with_plan_ids].filter(Boolean))
+        .map(Number)
+        .filter((id) => id && id !== Number(req.params.id))
+        .join(',')
     : null;
   const serverConnectionInfo = String(req.body.server_connection_info || '').trim() || null;
 
   db.prepare(
-    `UPDATE plans SET name = ?, service = ?, description = ?, features = ?, price = ?, currency = ?, pricing_mode = ?, included_with_plan_id = ?, server_connection_info = ?, updated_at = datetime('now') WHERE id = ?`
-  ).run(name, service, description, features, price, currency, pricingMode, includedWithPlanId, serverConnectionInfo, req.params.id);
+    `UPDATE plans SET name = ?, service = ?, description = ?, features = ?, price = ?, currency = ?, pricing_mode = ?, included_with_plan_ids = ?, server_connection_info = ?, updated_at = datetime('now') WHERE id = ?`
+  ).run(name, service, description, features, price, currency, pricingMode, includedWithPlanIds, serverConnectionInfo, req.params.id);
+
+  // The trigger list (or pricing mode) may have just changed, so
+  // everyone's inclusion needs re-checking - not just people on the
+  // trigger plans, but also anyone currently holding an auto-granted copy
+  // of THIS plan who might no longer qualify.
+  const affectedUserIds = db
+    .prepare(`SELECT DISTINCT user_id FROM subscriptions WHERE status = 'active'`)
+    .all()
+    .map((r) => r.user_id);
+  affectedUserIds.forEach((userId) => syncIncludedPlansForUser(userId));
 
   res.redirect('/admin/plans');
 });
@@ -364,6 +389,7 @@ router.post('/admin/users/invite', async (req, res) => {
         db.prepare(
           `INSERT INTO subscriptions (user_id, plan_id, service, plan_name, status, renewal_mode, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)`
         ).run(info.lastInsertRowid, plan.id, plan.service, plan.name, status, renewalMode, expiresAt);
+        syncIncludedPlansForUser(info.lastInsertRowid);
       }
     }
 
@@ -400,12 +426,23 @@ router.post('/admin/users/:id/subscription', (req, res) => {
   const plan = db.prepare('SELECT * FROM plans WHERE id = ?').get(plan_id);
   if (!plan) return res.status(400).render('error', { message: 'Missing required fields - please fill in everything marked required and try again.' });
 
+  const existing = db.prepare('SELECT * FROM subscriptions WHERE user_id = ? AND plan_id = ?').get(req.params.id, plan.id);
+
+  // This plan is already being granted automatically because of another
+  // plan this person has - managing it here would fight with that, so
+  // this is blocked with an explanation rather than silently creating a
+  // second, conflicting record. To change their access to it, adjust
+  // which plans grant it from the plan's own settings instead.
+  if (existing && existing.auto_granted_via_plan_id) {
+    return res.status(400).render('error', {
+      message: `${plan.name} is already automatically included for this user through one of their other active plans, so it can't be assigned separately here. To change this, edit which plans include ${plan.name} from Admin → Plans instead.`,
+    });
+  }
+
   const mode = ['auto', 'manual', 'expired'].includes(renewal_mode) ? renewal_mode : 'manual';
   // Choosing "Mark as Expired" as the renewal mode is a direct instruction
   // to expire the subscription now, regardless of what status was picked.
   const finalStatus = mode === 'expired' ? 'expired' : status;
-
-  const existing = db.prepare('SELECT id FROM subscriptions WHERE user_id = ? AND plan_id = ?').get(req.params.id, plan.id);
 
   if (existing) {
     db.prepare(
@@ -417,11 +454,14 @@ router.post('/admin/users/:id/subscription', (req, res) => {
     ).run(req.params.id, plan.id, plan.service, plan.name, finalStatus, mode, expires_at || null, notes || null);
   }
 
+  syncIncludedPlansForUser(req.params.id);
+
   res.redirect('/admin/users');
 });
 
 router.post('/admin/users/:id/subscription/:subId/delete', (req, res) => {
   db.prepare('DELETE FROM subscriptions WHERE id = ? AND user_id = ?').run(req.params.subId, req.params.id);
+  syncIncludedPlansForUser(req.params.id);
   res.redirect('/admin/users');
 });
 
