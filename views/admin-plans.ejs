@@ -30,8 +30,9 @@
                                 <% if (plan.pricing_mode === 'free') { %>
                                     <span class="badge badge-active">Free</span>
                                 <% } else if (plan.pricing_mode === 'included_with') { %>
-                                    <% const includedWithPlan = plans.find(function(p) { return p.id === plan.included_with_plan_id; }); %>
-                                    <span class="badge badge-active"><i class="fas fa-gift mr-1"></i>Included with <%= includedWithPlan ? includedWithPlan.name : 'another plan' %></span>
+                                    <% const triggerIds = String(plan.included_with_plan_ids || '').split(',').map(function(id) { return Number(id.trim()); }).filter(Boolean); %>
+                                    <% const triggerNames = plans.filter(function(p) { return triggerIds.indexOf(p.id) !== -1; }).map(function(p) { return p.name; }); %>
+                                    <span class="badge badge-active"><i class="fas fa-gift mr-1"></i>Included with <%= triggerNames.length > 0 ? triggerNames.join(' or ') : 'another plan' %></span>
                                 <% } else if (plan.price !== null && plan.price !== undefined) { %>
                                     <span class="badge badge-active"><%= formatMoney(plan.price, plan.currency) %>/mo</span>
                                 <% } %>
@@ -68,14 +69,21 @@
                             <select name="pricing_mode" class="input" onchange="document.getElementById('included-with-<%= plan.id %>').classList.toggle('hidden', this.value !== 'included_with')">
                                 <option value="paid" <%= plan.pricing_mode === 'paid' ? 'selected' : '' %>>Paid</option>
                                 <option value="free" <%= plan.pricing_mode === 'free' ? 'selected' : '' %>>Free</option>
-                                <option value="included_with" <%= plan.pricing_mode === 'included_with' ? 'selected' : '' %>>Included with another plan</option>
+                                <option value="included_with" <%= plan.pricing_mode === 'included_with' ? 'selected' : '' %>>Included with other plan(s)</option>
                             </select>
-                            <select id="included-with-<%= plan.id %>" name="included_with_plan_id" class="input <%= plan.pricing_mode === 'included_with' ? '' : 'hidden' %>">
-                                <option value="">Choose which plan…</option>
-                                <% plans.filter(function(p) { return p.id !== plan.id; }).forEach(function(p) { %>
-                                    <option value="<%= p.id %>" <%= plan.included_with_plan_id === p.id ? 'selected' : '' %>><%= p.name %></option>
-                                <% }); %>
-                            </select>
+                            <div></div>
+                            <div id="included-with-<%= plan.id %>" class="sm:col-span-2 <%= plan.pricing_mode === 'included_with' ? '' : 'hidden' %>">
+                                <p class="text-slate-500 text-xs mb-2">Anyone with an active subscription to <strong>any</strong> plan checked below automatically gets this plan added too, at no extra cost, for as long as they keep one of those plans.</p>
+                                <% const triggerIds = String(plan.included_with_plan_ids || '').split(',').map(function(id) { return Number(id.trim()); }).filter(Boolean); %>
+                                <div class="grid sm:grid-cols-2 gap-2">
+                                    <% plans.filter(function(p) { return p.id !== plan.id; }).forEach(function(p) { %>
+                                        <label class="flex items-center gap-2 bg-slate-900/40 rounded-lg px-3 py-2 text-xs text-slate-300 cursor-pointer">
+                                            <input type="checkbox" name="included_with_plan_ids" value="<%= p.id %>" <%= triggerIds.indexOf(p.id) !== -1 ? 'checked' : '' %> class="accent-sky-500">
+                                            <%= p.name %>
+                                        </label>
+                                    <% }); %>
+                                </div>
+                            </div>
                             <input type="number" step="0.01" min="0" name="price" class="input" value="<%= plan.price !== null && plan.price !== undefined ? plan.price : '' %>" placeholder="Price (used if Paid)">
                             <select name="currency" class="input">
                                 <option value="GBP" <%= plan.currency === 'GBP' ? 'selected' : '' %>>GBP (£)</option>
@@ -232,14 +240,20 @@
                     <select name="pricing_mode" class="input" onchange="document.getElementById('included-with-new').classList.toggle('hidden', this.value !== 'included_with')">
                         <option value="paid">Paid</option>
                         <option value="free">Free</option>
-                        <option value="included_with">Included with another plan</option>
+                        <option value="included_with">Included with other plan(s)</option>
                     </select>
-                    <select id="included-with-new" name="included_with_plan_id" class="input hidden">
-                        <option value="">Choose which plan…</option>
-                        <% plans.forEach(function(p) { %>
-                            <option value="<%= p.id %>"><%= p.name %></option>
-                        <% }); %>
-                    </select>
+                    <div></div>
+                    <div id="included-with-new" class="sm:col-span-2 hidden">
+                        <p class="text-slate-500 text-xs mb-2">Anyone with an active subscription to <strong>any</strong> plan checked below automatically gets this plan added too, at no extra cost, for as long as they keep one of those plans.</p>
+                        <div class="grid sm:grid-cols-2 gap-2">
+                            <% plans.forEach(function(p) { %>
+                                <label class="flex items-center gap-2 bg-slate-900/40 rounded-lg px-3 py-2 text-xs text-slate-300 cursor-pointer">
+                                    <input type="checkbox" name="included_with_plan_ids" value="<%= p.id %>" class="accent-sky-500">
+                                    <%= p.name %>
+                                </label>
+                            <% }); %>
+                        </div>
+                    </div>
                     <input type="number" step="0.01" min="0" name="price" class="input" placeholder="Price (used if Paid)">
                     <select name="currency" class="input">
                         <option value="GBP">GBP (£)</option>
