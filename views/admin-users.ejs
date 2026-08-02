@@ -118,10 +118,18 @@
                                                 <% if (s.expires_at) { %> — <%= s.renewal_mode === 'auto' ? 'auto-renews' : 'renews' %> <%= formatUKDate(s.expires_at) %><% } %>
                                                 <% if (s.renewal_mode) { %> <span class="text-slate-600">[<%= s.renewal_mode %>]</span><% } %>
                                             </span>
-                                            <form method="POST" action="/admin/users/<%= u.id %>/subscription/<%= s.id %>/delete" data-ajax-form data-confirm="Remove this plan from <%= u.name %>? If it's their only Plex access, it will be revoked." class="flex-shrink-0">
-                                                <button type="submit" class="text-red-400 hover:text-red-300"><i class="fas fa-trash"></i></button>
-                                            </form>
+                                            <% if (!s.auto_granted_via_plan_id) { %>
+                                                <form method="POST" action="/admin/users/<%= u.id %>/subscription/<%= s.id %>/delete" data-ajax-form data-confirm="Remove this plan from <%= u.name %>? If it's their only Plex access, it will be revoked." class="flex-shrink-0">
+                                                    <button type="submit" class="text-red-400 hover:text-red-300"><i class="fas fa-trash"></i></button>
+                                                </form>
+                                            <% } %>
                                         </div>
+                                        <% if (s.auto_granted_via_plan_id) { %>
+                                            <% const triggerPlan = plans.find(function(p) { return p.id === s.auto_granted_via_plan_id; }); %>
+                                            <p class="text-slate-500 text-[11px] mt-2">
+                                                <i class="fas fa-link mr-1"></i>Included automatically via <strong class="text-slate-400"><%= triggerPlan ? triggerPlan.name : 'another plan' %></strong> — no separate management needed here. Remove or expire that plan and this goes with it.
+                                            </p>
+                                        <% } else { %>
                                         <div class="flex flex-wrap gap-1.5 mt-2">
                                             <% if (s.status !== 'active') { %>
                                                 <form method="POST" action="/admin/users/<%= u.id %>/subscription" data-ajax-form>
@@ -166,6 +174,7 @@
                                             </select>
                                             <button type="submit" class="btn-primary text-xs py-1.5 rounded-lg sm:col-span-3">Save Changes</button>
                                         </form>
+                                        <% } %>
                                     </div>
                                 <% }); %>
                             </div>
@@ -191,7 +200,7 @@
                         <p class="text-slate-500 text-xs mt-3">This fills in on its own once they accept their Plex invite — no need to set it by hand. The field below is only for manual overrides in edge cases.</p>
                         <form method="POST" action="/admin/users/<%= u.id %>/plex-username" data-ajax-form class="flex flex-col sm:flex-row gap-3 mt-2">
                             <input type="text" name="plex_username" class="input" value="<%= u.plex_username || '' %>" placeholder="Their exact Plex username">
-                            <button type="submit" class="btn-primary py-3 rounded-xl text-sm whitespace-nowrap">Save</button>
+                            <button type="submit" class="btn-primary px-6 py-3 rounded-xl text-sm whitespace-nowrap">Save</button>
                         </form>
                         <p class="text-slate-500 text-xs mt-2">Must match their Plex account exactly - this is how their watch history gets looked up in Tautulli. Configure Tautulli itself from <a href="/admin/settings" class="text-sky-400 hover:text-sky-300">Settings</a>.</p>
                     </details>

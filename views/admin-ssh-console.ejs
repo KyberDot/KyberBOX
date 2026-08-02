@@ -36,10 +36,10 @@
             <div id="consoleOutput" class="console-output mb-4"><span class="console-prompt">$</span> Ready. Type a command below and press Run.</div>
             <form id="consoleForm" class="flex flex-col sm:flex-row gap-3">
                 <input type="text" id="commandInput" name="command" autocomplete="off" spellcheck="false" class="input font-mono text-sm flex-1" placeholder="e.g. docker ps" <%= sshConfigured ? '' : 'disabled' %>>
-                <button type="button" onclick="clearConsole()" title="Clear console" class="w-11 h-11 flex-shrink-0 flex items-center justify-center rounded-xl btn-outline self-stretch sm:self-auto">
+                <button type="button" onclick="clearConsole()" title="Clear console" class="flex-shrink-0 flex items-center justify-center rounded-xl btn-outline px-4 py-[0.85rem]">
                     <i class="fas fa-broom"></i>
                 </button>
-                <button type="submit" class="btn-primary px-6 py-3 rounded-xl text-sm whitespace-nowrap" <%= sshConfigured ? '' : 'disabled' %>>
+                <button type="submit" class="btn-primary px-6 py-[0.85rem] rounded-xl text-sm whitespace-nowrap" <%= sshConfigured ? '' : 'disabled' %>>
                     <i class="fas fa-play mr-2"></i>Run
                 </button>
             </form>

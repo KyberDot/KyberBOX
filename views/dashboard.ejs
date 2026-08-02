@@ -114,7 +114,7 @@
 
                     <% if (pv.plan.service === 'minecraft') { %>
                         <div class="mb-6">
-                            <button type="button" onclick="requestSeedReset(<%= pv.plan.id %>, <%= pv.hasPendingSeedReset %>)" class="btn-outline px-5 py-3 rounded-xl text-sm">
+                            <button type="button" onclick="requestSeedReset(<%= pv.plan.id %>, <%= pv.hasPendingSeedReset %>)" class="px-5 py-3 rounded-xl text-sm font-bold bg-gradient-to-r from-violet-500/20 to-fuchsia-500/20 border border-violet-500/40 text-violet-300 hover:from-violet-500/30 hover:to-fuchsia-500/30 hover:border-violet-400/60 hover:text-violet-200 transition-colors">
                                 <i class="fas fa-dice mr-2"></i>Request World Seed Reset
                                 <% if (pv.hasPendingSeedReset) { %>
                                     <span class="badge badge-suspended ml-2"><i class="fas fa-hourglass-half"></i> Pending</span>
@@ -218,12 +218,32 @@
                                 <% } %>
 
                                 <% if (extra.plan.service === 'minecraft') { %>
-                                    <button type="button" onclick="requestSeedReset(<%= extra.plan.id %>, <%= extra.hasPendingSeedReset %>)" class="btn-outline px-5 py-3 rounded-xl text-sm">
+                                    <button type="button" onclick="requestSeedReset(<%= extra.plan.id %>, <%= extra.hasPendingSeedReset %>)" class="px-5 py-3 rounded-xl text-sm font-bold bg-gradient-to-r from-violet-500/20 to-fuchsia-500/20 border border-violet-500/40 text-violet-300 hover:from-violet-500/30 hover:to-fuchsia-500/30 hover:border-violet-400/60 hover:text-violet-200 transition-colors">
                                         <i class="fas fa-dice mr-2"></i>Request World Seed Reset
                                         <% if (extra.hasPendingSeedReset) { %>
                                             <span class="badge badge-suspended ml-2"><i class="fas fa-hourglass-half"></i> Pending</span>
                                         <% } %>
                                     </button>
+                                <% } %>
+
+                                <!-- Container health - this was missing before, so containers assigned to a bundled/included plan (like Minecraft) never showed at all -->
+                                <% if (extra.containers.length > 0) { %>
+                                    <div class="mt-5" data-plan-id="<%= extra.plan.id %>" data-health-container>
+                                        <div class="flex items-center justify-between mb-3">
+                                            <p class="text-xs uppercase tracking-widest text-slate-500 font-semibold">Server Status</p>
+                                            <button type="button" class="w-6 h-6 flex items-center justify-center rounded-lg text-slate-500 hover:text-white hover:bg-white/5 text-xs" title="Refresh status" data-plan-refresh-btn data-plan-id="<%= extra.plan.id %>">
+                                                <i class="fas fa-arrows-rotate"></i>
+                                            </button>
+                                        </div>
+                                        <div class="grid sm:grid-cols-2 gap-2">
+                                            <% extra.containers.forEach(function(c) { %>
+                                                <div class="flex items-center justify-between bg-slate-900/40 rounded-xl px-4 py-3" data-container-name="<%= c.container_name %>">
+                                                    <span class="text-sm text-slate-300"><%= c.label %></span>
+                                                    <span class="badge badge-suspended" data-status-pill><i class="fas fa-circle-notch fa-spin"></i> checking</span>
+                                                </div>
+                                            <% }); %>
+                                        </div>
+                                    </div>
                                 <% } %>
                             </div>
                         <% }); %>
