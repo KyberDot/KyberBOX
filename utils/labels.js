@@ -4,6 +4,7 @@ const LABELS = {
   stream: 'Stream Addons',
   indexers: 'Indexers',
   hosting: 'Web Hosting',
+  minecraft: 'Minecraft Server',
   multiple: 'Your Services',
 };
 

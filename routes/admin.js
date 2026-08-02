@@ -6,9 +6,8 @@ const { encrypt } = require('../utils/crypto');
 const { getAllSettings, setSetting, getSiteBaseUrl } = require('../utils/settings');
 const { sendMail, isConfigured, notifyResetStarted } = require('../utils/mailer');
 const { testConnection: testTautulliConnection, getWatchHistory, getNowWatching, getAllActivity, getGeoLookup, fetchPosterImage } = require('../utils/tautulli');
-const { getSharedUsers, getServerIdentity, verifyServerWithPlexTv, getLibrarySections } = require('../utils/plex');
-const wizarr = require('../utils/wizarr');
-const { syncPlexAccessForUser, attemptAutoLinkPlexUsername, attemptAutoLinkAllPending } = require('../utils/plexAccess');
+const { getSharedUsers } = require('../utils/plex');
+const { attemptAutoLinkPlexUsername, attemptAutoLinkAllPending } = require('../utils/plexAccess');
 const { londonInputToUtcIso, formatUK } = require('../utils/time');
 const { serviceLabel } = require('../utils/labels');
 const { runCommand, getContainerStatuses } = require('../utils/ssh');
@@ -44,20 +43,6 @@ function loadPlans() {
   return { plans, sshByPlan, actionsByPlan, containersByPlan };
 }
 
-// Turns a syncPlexAccessForUser(...) result into a message worth showing
-// an admin - the previous version of these routes fired this in the
-// background and never surfaced the outcome at all, so a misconfigured
-// Plex connection (or Plex itself rejecting the change) looked identical
-// to success: the page just redirected either way.
-function describeSyncResult(result) {
-  if (!result) return null;
-  if (result.skipped) return { ok: false, message: `Saved here, but not applied on Plex: ${result.message}` };
-  if (!result.ok) return { ok: false, message: `Saved here, but Plex rejected the change: ${result.message || 'unknown error'}` };
-  if (result.action === 'none') return { ok: true, message: 'Saved - no change in Plex access was needed.' };
-  if (result.action === 'revoked') return { ok: true, message: 'Saved and access revoked on Plex.' };
-  return { ok: true, message: 'Saved and synced to Plex successfully.' };
-}
-
 function loadUsersPageData() {
   const users = db.prepare("SELECT * FROM users WHERE role = 'subscriber' ORDER BY created_at DESC").all();
 
@@ -65,7 +50,7 @@ function loadUsersPageData() {
 
   const subsByUser = {};
   db.prepare(
-    `SELECT s.*, p.name AS plan_display_name, p.plex_library_section_ids AS plan_plex_sections FROM subscriptions s
+    `SELECT s.*, p.name AS plan_display_name FROM subscriptions s
      LEFT JOIN plans p ON p.id = s.plan_id`
   ).all().forEach((s) => {
     // Precomputed here (rather than in the view) so the same "3 days"
@@ -86,35 +71,15 @@ function loadUsersPageData() {
   const plans = db.prepare('SELECT * FROM plans ORDER BY name ASC').all();
   const paymentMethods = db.prepare('SELECT * FROM payment_methods ORDER BY name ASC').all();
 
-  // "Approved" (shown as PLEX SYNCED) once Wizarr confirms they've
-  // actually accepted their invitation (wizarr_user_id set) - this is
-  // separate from plex_username, which is only used for matching their
-  // watch history via Tautulli and says nothing about whether they
-  // actually have Plex access. "Pending" (NOT SYNCED) covers everyone
-  // else on a Plex-granting plan; null means Plex isn't relevant to them
-  // at all.
+  // "Approved" once we've matched their Plex account (used to show/lookup
+  // their watch history via Tautulli); "Pending" if they're on a Plex
+  // plan but haven't been matched yet; null if Plex isn't relevant to
+  // them at all.
   users.forEach((u) => {
-    const plexSubs = (subsByUser[u.id] || []).filter(
+    const onPlexPlan = (subsByUser[u.id] || []).some(
       (s) => s.status === 'active' && (s.service === 'plex' || s.service === 'multiple')
     );
-    if (plexSubs.length === 0) {
-      u.plexStatus = null;
-    } else if (u.wizarr_user_id) {
-      u.plexStatus = 'approved';
-    } else {
-      u.plexStatus = 'pending';
-    }
-
-    // What the library picker should show as checked - the actual
-    // override if one's set (even an empty one), otherwise the plan's own
-    // default sections. Without this, the picker looked "empty" for
-    // everyone using their plan's default access, which wasn't a bug in
-    // what was saved, just in what the checkboxes were being compared
-    // against (the raw override column instead of the real effective set).
-    const hasOverride = u.plex_library_override !== null && u.plex_library_override !== undefined;
-    u.effectivePlexSections = hasOverride
-      ? u.plex_library_override
-      : [...new Set(plexSubs.flatMap((s) => String(s.plan_plex_sections || '').split(',')).map((id) => id.trim()).filter(Boolean))].join(',');
+    u.plexStatus = u.plex_username ? 'approved' : (onPlexPlan ? 'pending' : null);
   });
 
   return { users, subsByUser, plans, paymentMethods };
@@ -159,12 +124,15 @@ router.post('/admin/plans', (req, res) => {
   const features = String(req.body.features || '').trim();
   const price = req.body.price ? Number(req.body.price) : null;
   const currency = String(req.body.currency || 'GBP').trim();
+  const pricingMode = ['paid', 'free', 'included_with'].includes(req.body.pricing_mode) ? req.body.pricing_mode : 'paid';
+  const includedWithPlanId = pricingMode === 'included_with' && req.body.included_with_plan_id ? Number(req.body.included_with_plan_id) : null;
+  const serverConnectionInfo = String(req.body.server_connection_info || '').trim() || null;
 
   if (!name) return res.status(400).render('error', { message: 'Missing required fields - please fill in everything marked required and try again.' });
 
   const info = db
-    .prepare('INSERT INTO plans (name, service, description, features, price, currency) VALUES (?, ?, ?, ?, ?, ?)')
-    .run(name, service, description, features, price, currency);
+    .prepare('INSERT INTO plans (name, service, description, features, price, currency, pricing_mode, included_with_plan_id, server_connection_info) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(name, service, description, features, price, currency, pricingMode, includedWithPlanId, serverConnectionInfo);
 
   res.render('admin-plans', { ...loadPlans(), newPlanId: info.lastInsertRowid });
 });
@@ -176,55 +144,19 @@ router.post('/admin/plans/:id/update', (req, res) => {
   const features = String(req.body.features || '').trim();
   const price = req.body.price ? Number(req.body.price) : null;
   const currency = String(req.body.currency || 'GBP').trim();
+  const pricingMode = ['paid', 'free', 'included_with'].includes(req.body.pricing_mode) ? req.body.pricing_mode : 'paid';
+  // Guard against a plan being set to include itself - meaningless and
+  // would make the "included with" label loop back on itself in the UI.
+  const includedWithPlanId = pricingMode === 'included_with' && req.body.included_with_plan_id && Number(req.body.included_with_plan_id) !== Number(req.params.id)
+    ? Number(req.body.included_with_plan_id)
+    : null;
+  const serverConnectionInfo = String(req.body.server_connection_info || '').trim() || null;
 
   db.prepare(
-    `UPDATE plans SET name = ?, service = ?, description = ?, features = ?, price = ?, currency = ?, updated_at = datetime('now') WHERE id = ?`
-  ).run(name, service, description, features, price, currency, req.params.id);
+    `UPDATE plans SET name = ?, service = ?, description = ?, features = ?, price = ?, currency = ?, pricing_mode = ?, included_with_plan_id = ?, server_connection_info = ?, updated_at = datetime('now') WHERE id = ?`
+  ).run(name, service, description, features, price, currency, pricingMode, includedWithPlanId, serverConnectionInfo, req.params.id);
 
   res.redirect('/admin/plans');
-});
-
-// Live library list for the checkbox pickers (Plans page, and each
-// user's individual override) - fetched via JS so a slow/unreachable
-// Wizarr instance never blocks the page itself.
-router.get('/admin/plex/library-sections', async (req, res) => {
-  const settings = getAllSettings();
-  const result = await wizarr.getLibraries(settings.wizarr_url, settings.wizarr_api_key);
-  if (!result.ok) return res.json(result);
-
-  // Mapped into the same {key, title, type} shape the existing picker UI
-  // already expects, so nothing on the frontend needed to change.
-  const sections = result.libraries.map((lib) => ({ key: String(lib.id), title: lib.name, type: lib.type || '' }));
-  res.json({ ok: true, sections });
-});
-
-router.post('/admin/plans/:id/plex-libraries', async (req, res) => {
-  const sectionIds = Array.isArray(req.body.section_ids) ? req.body.section_ids : [req.body.section_ids].filter(Boolean);
-  db.prepare('UPDATE plans SET plex_library_section_ids = ? WHERE id = ?').run(sectionIds.join(','), req.params.id);
-
-  // Anyone currently active on this plan may need their access updated to
-  // match the new library selection (added, removed, or unchanged) -
-  // awaited (not fire-and-forget) so a failure here is actually visible
-  // instead of the page just redirecting as if it worked.
-  const activeUserIds = db
-    .prepare(`SELECT DISTINCT user_id FROM subscriptions WHERE plan_id = ? AND status = 'active'`)
-    .all(req.params.id)
-    .map((r) => r.user_id);
-
-  const results = await Promise.all(activeUserIds.map((userId) => syncPlexAccessForUser(userId)));
-  const failed = results.filter((r) => !r.ok && !r.skipped);
-  const skipped = results.filter((r) => r.skipped);
-
-  let plexSyncResult = null;
-  if (skipped.length > 0) {
-    plexSyncResult = { ok: false, message: skipped[0].message }; // "Plex is not fully configured yet" etc.
-  } else if (failed.length > 0) {
-    plexSyncResult = { ok: false, message: `Saved, but Plex rejected the update for ${failed.length} of ${results.length} affected user(s): ${failed[0].message}` };
-  } else if (results.length > 0) {
-    plexSyncResult = { ok: true, message: `Library access saved and synced to Plex for ${results.length} affected user(s).` };
-  }
-
-  res.render('admin-plans', { ...loadPlans(), newPlanId: null, plexSyncResult });
 });
 
 router.post('/admin/plans/:id/maintenance', async (req, res) => {
@@ -442,9 +374,6 @@ router.post('/admin/users/invite', async (req, res) => {
         db.prepare(
           `INSERT INTO subscriptions (user_id, plan_id, service, plan_name, status, renewal_mode, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)`
         ).run(info.lastInsertRowid, plan.id, plan.service, plan.name, status, renewalMode, expiresAt);
-        // Fire-and-forget: sends the actual Plex share invite email if this
-        // plan grants library access, without making the admin wait on it.
-        syncPlexAccessForUser(info.lastInsertRowid).catch(() => {});
       }
     }
 
@@ -498,16 +427,11 @@ router.post('/admin/users/:id/subscription', (req, res) => {
     ).run(req.params.id, plan.id, plan.service, plan.name, finalStatus, mode, expires_at || null, notes || null);
   }
 
-  // Fire-and-forget: could mean granting, updating, or revoking Plex access
-  // depending on what changed - syncPlexAccessForUser figures out which.
-  syncPlexAccessForUser(req.params.id).catch(() => {});
-
   res.redirect('/admin/users');
 });
 
 router.post('/admin/users/:id/subscription/:subId/delete', (req, res) => {
   db.prepare('DELETE FROM subscriptions WHERE id = ? AND user_id = ?').run(req.params.subId, req.params.id);
-  syncPlexAccessForUser(req.params.id).catch(() => {});
   res.redirect('/admin/users');
 });
 
@@ -578,23 +502,6 @@ router.post('/admin/users/:id/plex-username', (req, res) => {
   res.redirect('/admin/users');
 });
 
-router.post('/admin/users/:id/plex-libraries', async (req, res) => {
-  const sectionIds = Array.isArray(req.body.section_ids) ? req.body.section_ids : [req.body.section_ids].filter(Boolean);
-  // Stored even if empty - an explicit "" override (no libraries picked)
-  // is meaningfully different from no override at all (NULL), which
-  // syncPlexAccessForUser relies on to distinguish "block everything for
-  // just this person" from "use whatever their plan grants".
-  db.prepare('UPDATE users SET plex_library_override = ? WHERE id = ?').run(sectionIds.join(','), req.params.id);
-  const result = await syncPlexAccessForUser(req.params.id);
-  res.render('admin-users', { ...loadUsersPageData(), newUser: null, plexSyncResult: describeSyncResult(result) });
-});
-
-router.post('/admin/users/:id/plex-libraries/clear', async (req, res) => {
-  db.prepare('UPDATE users SET plex_library_override = NULL WHERE id = ?').run(req.params.id);
-  const result = await syncPlexAccessForUser(req.params.id);
-  res.render('admin-users', { ...loadUsersPageData(), newUser: null, plexSyncResult: describeSyncResult(result) });
-});
-
 // Pulls everyone your Plex server is shared with and matches them to portal
 // accounts by email - no manual typing of Plex usernames needed once this
 // is set up. Safe to re-run any time (e.g. after inviting someone new).
@@ -623,36 +530,13 @@ router.post('/admin/users/sync-plex', async (req, res) => {
 
   const unmatchedCount = subscribers.length - matched.length;
 
-  // Matching a username doesn't grant any actual library access on its
-  // own - it just identifies who someone is. This button's name implies
-  // it does the whole job though, so it now also pushes real access to
-  // everyone it just matched (and anyone matched previously but never
-  // actually confirmed synced), instead of leaving that as a separate,
-  // easy-to-miss step.
-  const plexSubscriberIds = db
-    .prepare(
-      `SELECT DISTINCT u.id FROM users u
-       JOIN subscriptions s ON s.user_id = u.id
-       JOIN plans p ON p.id = s.plan_id
-       WHERE u.role = 'subscriber' AND u.plex_username IS NOT NULL
-         AND s.status = 'active' AND p.service IN ('plex', 'multiple')`
-    )
-    .all()
-    .map((r) => r.id);
-  const syncResults = await Promise.all(plexSubscriberIds.map((id) => syncPlexAccessForUser(id)));
-  const syncFailures = syncResults.filter((r) => !r.ok && !r.skipped);
-
-  let message = `Checked ${result.users.length} Plex share(s) against ${subscribers.length} client(s): ${matched.length} matched and linked${unmatchedCount > 0 ? `, ${unmatchedCount} client(s) still unmatched (no Plex account with the same email was found)` : ''}.`;
-  if (plexSubscriberIds.length > 0) {
-    message += syncFailures.length > 0
-      ? ` Library access sync: ${plexSubscriberIds.length - syncFailures.length} of ${plexSubscriberIds.length} confirmed - ${syncFailures.length} failed (${syncFailures[0].message}).`
-      : ` Library access confirmed synced for all ${plexSubscriberIds.length} Plex-plan client(s).`;
-  }
-
   res.render('admin-users', {
     ...loadUsersPageData(),
     newUser: null,
-    plexSyncResult: { ok: syncFailures.length === 0, message },
+    plexSyncResult: {
+      ok: true,
+      message: `Checked ${result.users.length} Plex share(s) against ${subscribers.length} client(s): ${matched.length} matched and linked${unmatchedCount > 0 ? `, ${unmatchedCount} client(s) still unmatched (no Plex account with the same email was found)` : ''}.`,
+    },
   });
 });
 
@@ -912,59 +796,13 @@ router.post('/admin/settings/payment-methods/:id/delete', (req, res) => {
   res.render('admin-settings', { ...loadSettingsPageData(), saved: null, testResult: null, brandingError: null });
 });
 
-router.post('/admin/settings/wizarr', (req, res) => {
-  const { wizarr_url, wizarr_api_key } = req.body;
-  setSetting('wizarr_url', String(wizarr_url || '').trim());
-  // Only overwrite the stored key if a new one was actually typed in -
-  // the settings form always shows this field blank for security.
-  if (wizarr_api_key) setSetting('wizarr_api_key', wizarr_api_key);
-
-  res.render('admin-settings', { ...loadSettingsPageData(), saved: 'wizarr', testResult: null, brandingError: null });
-});
-
-router.post('/admin/settings/wizarr/test', async (req, res) => {
-  const settings = getAllSettings();
-  const result = await wizarr.testConnection(settings.wizarr_url, settings.wizarr_api_key);
-  res.render('admin-settings', { ...loadSettingsPageData(), saved: null, testResult: null, brandingError: null, wizarrTestResult: result });
-});
-
 router.post('/admin/settings/plex', (req, res) => {
-  const { plex_token, plex_server_url } = req.body;
+  const { plex_token } = req.body;
   // Only overwrite the stored token if a new one was actually typed in -
   // the settings form always shows this field blank for security.
   if (plex_token) setSetting('plex_token', plex_token);
-  setSetting('plex_server_url', String(plex_server_url || '').trim());
 
   res.render('admin-settings', { ...loadSettingsPageData(), saved: 'plex', testResult: null, brandingError: null });
-});
-
-router.post('/admin/settings/plex/detect-server', async (req, res) => {
-  const settings = getAllSettings();
-  const result = await getServerIdentity(settings.plex_server_url);
-
-  let finalResult;
-  if (!result.ok) {
-    finalResult = { ok: false, message: result.message };
-  } else {
-    // Detecting locally isn't enough on its own - sharing calls happen
-    // entirely on plex.tv's side, so what matters is whether plex.tv
-    // itself recognizes this exact server under this token's account.
-    const verified = await verifyServerWithPlexTv(result.machineIdentifier, settings.plex_token);
-    if (!verified.ok) {
-      finalResult = { ok: false, message: `Found this server locally, but Plex.tv rejected it: ${verified.message}` };
-    } else {
-      setSetting('plex_machine_identifier', result.machineIdentifier);
-      finalResult = { ok: true, message: `Linked to your Plex server successfully${verified.serverName ? ` ("${verified.serverName}")` : ''} - confirmed by Plex.tv.` };
-    }
-  }
-
-  res.render('admin-settings', {
-    ...loadSettingsPageData(),
-    saved: null,
-    testResult: null,
-    brandingError: null,
-    plexDetectResult: finalResult,
-  });
 });
 
 router.post('/admin/settings/tautulli', (req, res) => {

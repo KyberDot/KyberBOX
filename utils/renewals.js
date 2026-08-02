@@ -1,5 +1,4 @@
 const db = require('../db');
-const { syncPlexAccessForUser } = require('./plexAccess');
 const { sendMail } = require('./mailer');
 const { getAllSettings } = require('./settings');
 
@@ -39,10 +38,9 @@ function applyAutoRenewals() {
 /**
  * The other half of "expiry revokes access unless renewed": a subscription
  * on manual renewal that nobody has renewed by its expiry date flips to
- * "expired" here, and whoever it belongs to gets their Plex access synced
- * (revoked, unless they have another active Plex plan) as a result.
- * Auto-renew subscriptions are excluded by the WHERE clause - they're
- * handled entirely by applyAutoRenewals() above and never expire this way.
+ * "expired" here. Auto-renew subscriptions are excluded by the WHERE
+ * clause - they're handled entirely by applyAutoRenewals() above and
+ * never expire this way.
  */
 function applyManualExpirations() {
   const due = db
@@ -55,17 +53,9 @@ function applyManualExpirations() {
   if (due.length === 0) return;
 
   const update = db.prepare(`UPDATE subscriptions SET status = 'expired', updated_at = datetime('now') WHERE id = ?`);
-  const affectedUserIds = new Set();
 
   due.forEach((sub) => {
     update.run(sub.id);
-    affectedUserIds.add(sub.user_id);
-  });
-
-  // Fire-and-forget: Plex API calls shouldn't block whatever request
-  // triggered this check (this runs on every authenticated page load).
-  affectedUserIds.forEach((userId) => {
-    syncPlexAccessForUser(userId).catch(() => {});
   });
 }
 
@@ -110,7 +100,7 @@ async function applyExpiryWarnings() {
         bodyHtml: `
           <p>Hi ${sub.name},</p>
           <p>Your <strong>${sub.plan_name}</strong> subscription is due to expire in <strong>${daysLeft} ${dayWord}</strong>.</p>
-          <p>If it isn't renewed by then, access will be automatically revoked (including Plex library access, if applicable).</p>
+          <p>If it isn't renewed by then, access will be automatically revoked.</p>
           <p>To keep things running, please renew before it expires. If you've already arranged this with us, you can ignore this message.</p>
         `,
       }).catch(() => {}); // best-effort - never let a mail hiccup block marking this as handled

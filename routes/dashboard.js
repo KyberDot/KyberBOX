@@ -2,9 +2,9 @@ const express = require('express');
 const db = require('../db');
 const { runCommand, getContainerStatuses } = require('../utils/ssh');
 const { startReset, endReset, getResetState } = require('../utils/resetLock');
-const { notifyResetStarted } = require('../utils/mailer');
+const { notifyResetStarted, sendMail } = require('../utils/mailer');
 const { getWatchHistory, getNowWatching, getGeoLookup, fetchPosterImage } = require('../utils/tautulli');
-const { getAllSettings } = require('../utils/settings');
+const { getAllSettings, getSiteBaseUrl } = require('../utils/settings');
 const { formatUK } = require('../utils/time');
 
 const router = express.Router();
@@ -18,6 +18,17 @@ const dangerActionState = {};
 function buildPlanView(subscription, userId) {
   const plan = db.prepare('SELECT * FROM plans WHERE id = ?').get(subscription.plan_id);
   if (!plan) return null;
+
+  if (plan.pricing_mode === 'included_with' && plan.included_with_plan_id) {
+    const includedWithPlan = db.prepare('SELECT name FROM plans WHERE id = ?').get(plan.included_with_plan_id);
+    plan.includedWithPlanName = includedWithPlan ? includedWithPlan.name : null;
+  }
+
+  const hasPendingSeedReset = plan.service === 'minecraft'
+    ? !!db.prepare(
+        `SELECT 1 FROM tickets WHERE user_id = ? AND plan_id = ? AND category = 'minecraft_seed_reset' AND status != 'closed' LIMIT 1`
+      ).get(userId, plan.id)
+    : false;
 
   const ssh = db.prepare('SELECT id FROM plan_ssh WHERE plan_id = ?').get(plan.id);
   const actions = db
@@ -48,6 +59,7 @@ function buildPlanView(subscription, userId) {
     hasSsh: !!ssh,
     actions: actionsWithCooldown,
     containers,
+    hasPendingSeedReset,
   };
 }
 
@@ -331,6 +343,62 @@ router.get('/dashboard/plex/poster', async (req, res) => {
   res.setHeader('Content-Type', image.contentType);
   res.setHeader('Cache-Control', 'private, max-age=300'); // posters don't change minute to minute
   res.send(image.buffer);
+});
+
+function adminEmails() {
+  return db.prepare("SELECT email FROM users WHERE role = 'admin'").all().map((r) => r.email);
+}
+
+// Lets a Minecraft subscriber request a world seed reset without needing
+// to write out a support ticket by hand - opens one automatically, tagged
+// so it can be found again, and blocks a second request for the same
+// plan while one's still open (avoids duplicate/conflicting resets being
+// actioned at once).
+router.post('/dashboard/plans/:planId/request-seed-reset', async (req, res) => {
+  const subscription = db
+    .prepare(`SELECT s.* FROM subscriptions s WHERE s.user_id = ? AND s.plan_id = ? AND s.status = 'active'`)
+    .get(req.user.id, req.params.planId);
+  if (!subscription) return res.status(403).json({ ok: false, message: 'No active subscription found for this plan.' });
+
+  const plan = db.prepare('SELECT * FROM plans WHERE id = ?').get(req.params.planId);
+  if (!plan || plan.service !== 'minecraft') return res.status(400).json({ ok: false, message: 'This is only available on a Minecraft plan.' });
+
+  const existing = db
+    .prepare(
+      `SELECT id FROM tickets WHERE user_id = ? AND plan_id = ? AND category = 'minecraft_seed_reset' AND status != 'closed' LIMIT 1`
+    )
+    .get(req.user.id, plan.id);
+  if (existing) {
+    return res.status(409).json({ ok: false, message: "You already have a world seed reset request pending for this plan - it hasn't been actioned yet, so a new one can't be opened until that's resolved." });
+  }
+
+  const subject = `World Seed Reset Request - ${plan.name}`;
+  const message = `${req.user.name} requested a world seed reset for their "${plan.name}" plan via the dashboard.`;
+
+  const info = db
+    .prepare('INSERT INTO tickets (user_id, subject, category, status, plan_id) VALUES (?, ?, ?, ?, ?)')
+    .run(req.user.id, subject, 'minecraft_seed_reset', 'open', plan.id);
+
+  db.prepare(
+    'INSERT INTO ticket_messages (ticket_id, sender_role, sender_name, message) VALUES (?, ?, ?, ?)'
+  ).run(info.lastInsertRowid, 'subscriber', req.user.name, message);
+
+  const recipients = adminEmails();
+  if (recipients.length > 0) {
+    const siteName = getAllSettings().site_name;
+    const ticketUrl = `${getSiteBaseUrl(req)}/admin/tickets/${info.lastInsertRowid}`;
+    await sendMail({
+      to: recipients.join(','),
+      subject: `New ticket: ${subject}`,
+      bodyHtml: `
+        <p>${req.user.name} (${req.user.email}) requested a world seed reset on ${siteName}:</p>
+        <p style="background:#0b1220;border-radius:10px;padding:16px;white-space:pre-wrap;">${message}</p>
+        <p><a href="${ticketUrl}" style="display:inline-block;background:#0ea5e9;color:#0b0f1a;font-weight:700;padding:12px 20px;border-radius:10px;text-decoration:none;">View Ticket</a></p>
+      `,
+    }).catch(() => {});
+  }
+
+  res.json({ ok: true, message: "World seed reset requested - you'll get an email once it's actioned.", ticketId: info.lastInsertRowid });
 });
 
 module.exports = router;

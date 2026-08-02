@@ -60,7 +60,7 @@
                 <div class="glass rounded-3xl p-5 sm:p-8 mb-8">
                     <div class="flex flex-wrap items-start justify-between gap-3 mb-2">
                         <div>
-                            <p class="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-1"><%= pv.plan.service %></p>
+                            <p class="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-1"><%= serviceLabel(pv.plan.service) %></p>
                             <h2 class="text-lg sm:text-xl font-bold text-white"><%= pv.plan.name %></h2>
                             <% if (pv.plan.description) { %>
                                 <p class="text-slate-400 text-sm mt-1"><%= pv.plan.description %></p>
@@ -68,7 +68,11 @@
                         </div>
                         <div class="text-right flex-shrink-0">
                             <span class="badge badge-<%= pv.subscription.status %>"><%= pv.subscription.status %></span>
-                            <% if (pv.plan.price !== null && pv.plan.price !== undefined) { %>
+                            <% if (pv.plan.pricing_mode === 'free') { %>
+                                <p class="text-emerald-400 font-bold mt-2 text-sm">Free</p>
+                            <% } else if (pv.plan.pricing_mode === 'included_with' && pv.plan.includedWithPlanName) { %>
+                                <p class="text-emerald-400 font-bold mt-2 text-sm"><i class="fas fa-gift mr-1"></i>Included with <%= pv.plan.includedWithPlanName %></p>
+                            <% } else if (pv.plan.price !== null && pv.plan.price !== undefined) { %>
                                 <p class="text-white font-bold mt-2"><%= formatMoney(pv.plan.price, pv.plan.currency) %><span class="text-slate-500 text-xs font-normal">/mo</span></p>
                             <% } %>
                         </div>
@@ -83,6 +87,25 @@
                                 <i class="fas fa-calendar mr-1"></i>Renews on <%= formatUKDate(pv.subscription.expires_at) %> (manual renewal)
                             <% } %>
                         </p>
+                    <% } %>
+
+                    <!-- Server connection info (e.g. Minecraft server address) -->
+                    <% if (pv.plan.server_connection_info) { %>
+                        <div class="mb-6 rounded-2xl p-4 sm:p-5 bg-gradient-to-r from-emerald-500/15 via-emerald-500/5 to-transparent border border-emerald-500/30">
+                            <p class="text-xs uppercase tracking-widest text-emerald-400 font-semibold mb-1.5"><i class="fas fa-server mr-1.5"></i>Server Address</p>
+                            <p class="text-white font-mono text-base sm:text-lg break-all"><%= pv.plan.server_connection_info %></p>
+                        </div>
+                    <% } %>
+
+                    <% if (pv.plan.service === 'minecraft') { %>
+                        <div class="mb-6">
+                            <button type="button" onclick="requestSeedReset(<%= pv.plan.id %>, <%= pv.hasPendingSeedReset %>)" class="btn-outline px-5 py-3 rounded-xl text-sm">
+                                <i class="fas fa-dice mr-2"></i>Request World Seed Reset
+                                <% if (pv.hasPendingSeedReset) { %>
+                                    <span class="badge badge-suspended ml-2"><i class="fas fa-hourglass-half"></i> Pending</span>
+                                <% } %>
+                            </button>
+                        </div>
                     <% } %>
 
                     <!-- Features -->
@@ -177,6 +200,26 @@
     </div>
 
     <script>
+        // ---------- Minecraft World Seed Reset request ----------
+        async function requestSeedReset(planId, alreadyPending) {
+            if (alreadyPending) {
+                showToast("You already have a seed reset request pending - it hasn't been actioned yet, so please wait for that one first.", 'error');
+                return;
+            }
+            if (!confirm('Request a world seed reset? This opens a support ticket for admin to action, and you\'ll get an email once it\'s done.')) return;
+
+            try {
+                const res = await fetch('/dashboard/plans/' + planId + '/request-seed-reset', { method: 'POST' });
+                const data = await res.json();
+                showToast(data.message, data.ok ? 'success' : 'error');
+                if (data.ok) {
+                    setTimeout(function () { window.location.reload(); }, 1200); // refresh so the button shows "Pending"
+                }
+            } catch (e) {
+                showToast('Something went wrong - please try again.', 'error');
+            }
+        }
+
         let pendingActionBtn = null;
 
         document.querySelectorAll('[data-action-btn]').forEach(function(btn) {
