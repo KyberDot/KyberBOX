@@ -223,8 +223,10 @@ ensureColumn('plans', 'maintenance_mode', 'maintenance_mode INTEGER NOT NULL DEF
 ensureColumn('plans', 'maintenance_resume_at', 'maintenance_resume_at TEXT');
 ensureColumn('plans', 'maintenance_message', 'maintenance_message TEXT');
 ensureColumn('plans', 'pricing_mode', "pricing_mode TEXT NOT NULL DEFAULT 'paid'"); // paid | free | included_with
-ensureColumn('plans', 'included_with_plan_id', 'included_with_plan_id INTEGER REFERENCES plans(id)');
+ensureColumn('plans', 'included_with_plan_id', 'included_with_plan_id INTEGER REFERENCES plans(id)'); // deprecated, superseded by included_with_plan_ids below
+ensureColumn('plans', 'included_with_plan_ids', 'included_with_plan_ids TEXT'); // comma-separated plan ids - having an active sub to ANY of these auto-grants this plan
 ensureColumn('plans', 'server_connection_info', 'server_connection_info TEXT'); // e.g. a Minecraft server address, shown to subscribers
+ensureColumn('subscriptions', 'auto_granted_via_plan_id', 'auto_granted_via_plan_id INTEGER REFERENCES plans(id)'); // set when this subscription was auto-added because of another plan's inclusion, not manually assigned - lets it be safely auto-removed later
 ensureColumn('users', 'payment_method_id', 'payment_method_id INTEGER REFERENCES payment_methods(id)');
 ensureColumn('users', 'plex_username', 'plex_username TEXT');
 ensureColumn('users', 'plex_user_id', 'plex_user_id TEXT'); // Plex.tv account id, matched by email - used for Tautulli watch history/now-watching only
