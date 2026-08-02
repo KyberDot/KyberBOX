@@ -222,20 +222,16 @@ ensureColumn('plans', 'currency', "currency TEXT NOT NULL DEFAULT 'GBP'");
 ensureColumn('plans', 'maintenance_mode', 'maintenance_mode INTEGER NOT NULL DEFAULT 0');
 ensureColumn('plans', 'maintenance_resume_at', 'maintenance_resume_at TEXT');
 ensureColumn('plans', 'maintenance_message', 'maintenance_message TEXT');
-ensureColumn('plans', 'plex_library_section_ids', 'plex_library_section_ids TEXT'); // comma-separated Wizarr library ids this plan grants
-ensureColumn('users', 'plex_shared_server_id', 'plex_shared_server_id TEXT'); // Plex's id for this user's active library share, if any
+ensureColumn('plans', 'pricing_mode', "pricing_mode TEXT NOT NULL DEFAULT 'paid'"); // paid | free | included_with
+ensureColumn('plans', 'included_with_plan_id', 'included_with_plan_id INTEGER REFERENCES plans(id)');
+ensureColumn('plans', 'server_connection_info', 'server_connection_info TEXT'); // e.g. a Minecraft server address, shown to subscribers
 ensureColumn('users', 'payment_method_id', 'payment_method_id INTEGER REFERENCES payment_methods(id)');
 ensureColumn('users', 'plex_username', 'plex_username TEXT');
-ensureColumn('users', 'plex_user_id', 'plex_user_id TEXT'); // Plex.tv account id, from syncing shared users
+ensureColumn('users', 'plex_user_id', 'plex_user_id TEXT'); // Plex.tv account id, matched by email - used for Tautulli watch history/now-watching only
 ensureColumn('users', 'plex_link_attempted_at', 'plex_link_attempted_at TEXT');
-ensureColumn('users', 'plex_library_override', 'plex_library_override TEXT'); // NULL = use plan default; comma-separated Wizarr library ids = explicit per-user override
-ensureColumn('users', 'plex_library_synced_sections', 'plex_library_synced_sections TEXT'); // what was last CONFIRMED live via Wizarr, not just configured/intended
-ensureColumn('users', 'plex_sync_attempted_at', 'plex_sync_attempted_at TEXT');
-ensureColumn('users', 'wizarr_user_id', 'wizarr_user_id TEXT'); // Wizarr's internal user id, once they've accepted an invite
-ensureColumn('users', 'wizarr_invite_code', 'wizarr_invite_code TEXT'); // pending invite code, if invited but not yet accepted
-ensureColumn('users', 'wizarr_invite_sent_at', 'wizarr_invite_sent_at TEXT');
 ensureColumn('subscriptions', 'renewal_mode', "renewal_mode TEXT NOT NULL DEFAULT 'manual'"); // auto | manual | expired
 ensureColumn('subscriptions', 'expiry_warning_sent_at', 'expiry_warning_sent_at TEXT');
+ensureColumn('tickets', 'plan_id', 'plan_id INTEGER REFERENCES plans(id)'); // set for plan-specific tickets, e.g. a Minecraft world seed reset request
 ensureColumn('admin_health_containers', 'logo_path', 'logo_path TEXT');
 ensureColumn('admin_health_containers', 'link_url', 'link_url TEXT');
 ensureColumn('admin_health_containers', 'logo_bg', "logo_bg TEXT NOT NULL DEFAULT 'default'"); // default | white | none

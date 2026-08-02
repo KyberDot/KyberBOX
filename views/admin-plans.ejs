@@ -32,8 +32,13 @@
                         <div>
                             <p class="font-bold text-white text-lg"><%= plan.name %></p>
                             <div class="flex flex-wrap items-center gap-2 mt-1">
-                                <span class="badge badge-answered"><%= plan.service %></span>
-                                <% if (plan.price !== null && plan.price !== undefined) { %>
+                                <span class="badge badge-answered"><%= serviceLabel(plan.service) %></span>
+                                <% if (plan.pricing_mode === 'free') { %>
+                                    <span class="badge badge-active">Free</span>
+                                <% } else if (plan.pricing_mode === 'included_with') { %>
+                                    <% const includedWithPlan = plans.find(function(p) { return p.id === plan.included_with_plan_id; }); %>
+                                    <span class="badge badge-active"><i class="fas fa-gift mr-1"></i>Included with <%= includedWithPlan ? includedWithPlan.name : 'another plan' %></span>
+                                <% } else if (plan.price !== null && plan.price !== undefined) { %>
                                     <span class="badge badge-active"><%= formatMoney(plan.price, plan.currency) %>/mo</span>
                                 <% } %>
                                 <% if (plan.maintenance_mode) { %>
@@ -62,28 +67,30 @@
                                 <option value="stream" <%= plan.service === 'stream' ? 'selected' : '' %>>Stream Addons</option>
                                 <option value="indexers" <%= plan.service === 'indexers' ? 'selected' : '' %>>Indexers</option>
                                 <option value="hosting" <%= plan.service === 'hosting' ? 'selected' : '' %>>Web Hosting</option>
+                                <option value="minecraft" <%= plan.service === 'minecraft' ? 'selected' : '' %>>Minecraft Server</option>
                                 <option value="multiple" <%= plan.service === 'multiple' ? 'selected' : '' %>>Multiple Services</option>
                             </select>
                             <input type="text" name="description" class="input sm:col-span-2" value="<%= plan.description || '' %>" placeholder="Short description">
-                            <input type="number" step="0.01" min="0" name="price" class="input" value="<%= plan.price !== null && plan.price !== undefined ? plan.price : '' %>" placeholder="Price (optional)">
+                            <select name="pricing_mode" class="input" onchange="document.getElementById('included-with-<%= plan.id %>').classList.toggle('hidden', this.value !== 'included_with')">
+                                <option value="paid" <%= plan.pricing_mode === 'paid' ? 'selected' : '' %>>Paid</option>
+                                <option value="free" <%= plan.pricing_mode === 'free' ? 'selected' : '' %>>Free</option>
+                                <option value="included_with" <%= plan.pricing_mode === 'included_with' ? 'selected' : '' %>>Included with another plan</option>
+                            </select>
+                            <select id="included-with-<%= plan.id %>" name="included_with_plan_id" class="input <%= plan.pricing_mode === 'included_with' ? '' : 'hidden' %>">
+                                <option value="">Choose which plan…</option>
+                                <% plans.filter(function(p) { return p.id !== plan.id; }).forEach(function(p) { %>
+                                    <option value="<%= p.id %>" <%= plan.included_with_plan_id === p.id ? 'selected' : '' %>><%= p.name %></option>
+                                <% }); %>
+                            </select>
+                            <input type="number" step="0.01" min="0" name="price" class="input" value="<%= plan.price !== null && plan.price !== undefined ? plan.price : '' %>" placeholder="Price (used if Paid)">
                             <select name="currency" class="input">
                                 <option value="GBP" <%= plan.currency === 'GBP' ? 'selected' : '' %>>GBP (£)</option>
                                 <option value="USD" <%= plan.currency === 'USD' ? 'selected' : '' %>>USD ($)</option>
                                 <option value="CAD" <%= plan.currency === 'CAD' ? 'selected' : '' %>>CAD ($)</option>
                             </select>
+                            <input type="text" name="server_connection_info" class="input sm:col-span-2" value="<%= plan.server_connection_info || '' %>" placeholder="Server address to show subscribers (e.g. play.example.com:25565) - optional">
                             <textarea name="features" rows="4" class="input sm:col-span-2" placeholder="One feature per line"><%= plan.features || '' %></textarea>
                             <button type="submit" class="btn-primary py-3 rounded-xl text-sm sm:col-span-2">Save Details</button>
-                        </form>
-                    </details>
-
-                    <details class="mb-3" data-ajax-key="plan-<%= plan.id %>-plex-libraries">
-                        <summary class="cursor-pointer text-sky-400 text-xs font-semibold uppercase tracking-wide">Plex Library Access</summary>
-                        <p class="text-slate-500 text-xs mt-3 mb-2">Which libraries subscribers on this plan get automatically invited to. Only meaningful for a Plex/Multiple Services plan — configure the Plex account itself from <a href="/admin/settings" class="text-sky-400 hover:text-sky-300">Settings</a> first.</p>
-                        <form method="POST" action="/admin/plans/<%= plan.id %>/plex-libraries" data-ajax-form class="mt-2">
-                            <div class="grid sm:grid-cols-2 gap-2 mb-3" data-plex-library-picker data-selected="<%= plan.plex_library_section_ids || '' %>">
-                                <p class="text-slate-500 text-sm col-span-2"><i class="fas fa-circle-notch fa-spin mr-2"></i>Loading libraries…</p>
-                            </div>
-                            <button type="submit" class="btn-primary px-6 py-3 rounded-xl text-sm">Save Access</button>
                         </form>
                     </details>
 
@@ -224,15 +231,28 @@
                         <option value="stream">Stream Addons</option>
                         <option value="indexers">Indexers</option>
                         <option value="hosting">Web Hosting</option>
+                        <option value="minecraft">Minecraft Server</option>
                         <option value="multiple">Multiple Services</option>
                     </select>
                     <input type="text" name="description" class="input sm:col-span-2" placeholder="Short description (optional)">
-                    <input type="number" step="0.01" min="0" name="price" class="input" placeholder="Price (e.g. 9.99, optional)">
+                    <select name="pricing_mode" class="input" onchange="document.getElementById('included-with-new').classList.toggle('hidden', this.value !== 'included_with')">
+                        <option value="paid">Paid</option>
+                        <option value="free">Free</option>
+                        <option value="included_with">Included with another plan</option>
+                    </select>
+                    <select id="included-with-new" name="included_with_plan_id" class="input hidden">
+                        <option value="">Choose which plan…</option>
+                        <% plans.forEach(function(p) { %>
+                            <option value="<%= p.id %>"><%= p.name %></option>
+                        <% }); %>
+                    </select>
+                    <input type="number" step="0.01" min="0" name="price" class="input" placeholder="Price (used if Paid)">
                     <select name="currency" class="input">
                         <option value="GBP">GBP (£)</option>
                         <option value="USD">USD ($)</option>
                         <option value="CAD">CAD ($)</option>
                     </select>
+                    <input type="text" name="server_connection_info" class="input sm:col-span-2" placeholder="Server address to show subscribers (e.g. play.example.com:25565) - optional">
                     <textarea name="features" rows="3" class="input sm:col-span-2" placeholder="One feature per line, e.g.&#10;4K Transcoding&#10;5 simultaneous streams&#10;Priority support"></textarea>
                     <button type="submit" class="btn-primary py-3 rounded-xl text-sm sm:col-span-2 mt-2">
                         <i class="fas fa-plus mr-2"></i>Create Plan
@@ -241,56 +261,5 @@
             </div>
         </div>
     </main>
-
-    <script>
-        // Same Plex server for every plan, so fetch the library list once
-        // per load and fill in every picker on the page from that single
-        // response. Also re-runs after an ajax form swap (e.g. editing plan
-        // details replaces <main>, including these pickers) so they don't
-        // get stuck showing "Loading..." forever.
-        async function loadPlexLibraryPickers() {
-            const pickers = document.querySelectorAll('[data-plex-library-picker]');
-            if (pickers.length === 0) return;
-
-            let sections = null;
-            let errorMessage = null;
-            try {
-                const res = await fetch('/admin/plex/library-sections');
-                const data = await res.json();
-                if (data.ok) {
-                    sections = data.sections;
-                } else {
-                    errorMessage = data.message || 'Could not load Plex libraries.';
-                }
-            } catch (e) {
-                errorMessage = 'Could not reach the server to load Plex libraries.';
-            }
-
-            pickers.forEach(function (picker) {
-                const selected = (picker.getAttribute('data-selected') || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
-
-                if (errorMessage) {
-                    picker.innerHTML = '<p class="text-slate-500 text-sm col-span-2">' + errorMessage + '</p>';
-                    return;
-                }
-                if (!sections || sections.length === 0) {
-                    picker.innerHTML = '<p class="text-slate-500 text-sm col-span-2">No libraries found on your Plex server.</p>';
-                    return;
-                }
-
-                picker.innerHTML = sections.map(function (section) {
-                    const checked = selected.indexOf(section.key) !== -1 ? 'checked' : '';
-                    const id = 'section-' + picker.closest('details').getAttribute('data-ajax-key') + '-' + section.key;
-                    return '<label for="' + id + '" class="flex items-center gap-2 bg-slate-900/40 rounded-lg px-3 py-2.5 text-sm text-slate-300 cursor-pointer">' +
-                        '<input type="checkbox" id="' + id + '" name="section_ids" value="' + section.key + '" ' + checked + ' class="accent-sky-500">' +
-                        section.title + ' <span class="text-slate-600 text-xs">(' + section.type + ')</span>' +
-                        '</label>';
-                }).join('');
-            });
-        }
-
-        loadPlexLibraryPickers();
-        document.addEventListener('main:updated', loadPlexLibraryPickers);
-    </script>
 </body>
 </html>
