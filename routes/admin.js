@@ -39,7 +39,12 @@ function loadPlans() {
     (containersByPlan[c.plan_id] = containersByPlan[c.plan_id] || []).push(c);
   });
 
-  return { plans, sshByPlan, actionsByPlan, containersByPlan };
+  const subscriberCountByPlan = {};
+  db.prepare(`SELECT plan_id, COUNT(*) AS count FROM subscriptions WHERE status = 'active' GROUP BY plan_id`).all().forEach((row) => {
+    subscriberCountByPlan[row.plan_id] = row.count;
+  });
+
+  return { plans, sshByPlan, actionsByPlan, containersByPlan, subscriberCountByPlan };
 }
 
 function loadUsersPageData() {

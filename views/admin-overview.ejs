@@ -112,7 +112,7 @@
                 <p class="text-slate-500 text-xs uppercase tracking-widest font-semibold mb-2">TV Shows</p>
                 <p class="text-2xl sm:text-3xl font-extrabold text-sky-400" id="streamCountTv">0</p>
             </button>
-            <button type="button" onclick="openNowWatchingModal('all')" class="glass rounded-2xl p-5 sm:p-6 text-left hover:bg-white/5 transition">
+            <button type="button" onclick="openNowWatchingModal('device')" class="glass rounded-2xl p-5 sm:p-6 text-left hover:bg-white/5 transition">
                 <p class="text-slate-500 text-xs uppercase tracking-widest font-semibold mb-2">Devices</p>
                 <p class="text-2xl sm:text-3xl font-extrabold text-sky-400" id="streamCountDevices">0</p>
             </button>
@@ -248,16 +248,97 @@
         const modalTitleFor = function (filter) {
             if (filter === 'movie') return 'Movies Streaming';
             if (filter === 'episode') return 'TV Shows Streaming';
+            if (filter === 'device') return 'Active Devices';
             return 'Now Watching';
         };
 
         let nowWatchingFilter = 'all';
+        let latestStreamItems = []; // cached from the last successful poll, so opening/switching filters renders instantly instead of waiting on a fresh fetch
+
+        function renderStreamItems(items, filter) {
+            const content = document.getElementById('nowWatchingModalContent');
+            if (!content) return;
+
+            if (filter === 'movie' || filter === 'episode') {
+                const filtered = items.filter(function (i) { return i.mediaType === filter; });
+                if (filtered.length === 0) {
+                    content.innerHTML = '<p class="text-slate-500 text-sm">Nothing in this category right now.</p>';
+                    return;
+                }
+                content.innerHTML = filtered.map(function (item) {
+                    return '<div class="flex items-center justify-between gap-3 bg-slate-900/40 rounded-xl px-4 py-3">' +
+                        '<span class="text-slate-200 text-sm truncate">' + item.title + '</span>' +
+                        '<span class="text-sky-400 font-bold text-sm flex-shrink-0">' + Math.round(item.progressPercent) + '%</span>' +
+                        '</div>';
+                }).join('');
+                return;
+            }
+
+            if (filter === 'device') {
+                const countByDevice = {};
+                items.forEach(function (i) {
+                    if (!i.device) return;
+                    countByDevice[i.device] = (countByDevice[i.device] || 0) + 1;
+                });
+                const deviceNames = Object.keys(countByDevice);
+                if (deviceNames.length === 0) {
+                    content.innerHTML = '<p class="text-slate-500 text-sm">Nothing in this category right now.</p>';
+                    return;
+                }
+                content.innerHTML = deviceNames.map(function (name) {
+                    const streamCount = countByDevice[name];
+                    return '<div class="flex items-center justify-between gap-3 bg-slate-900/40 rounded-xl px-4 py-3">' +
+                        '<span class="text-slate-200 text-sm truncate"><i class="fas fa-tablet-screen-button mr-2 text-slate-500"></i>' + name + '</span>' +
+                        '<span class="text-sky-400 font-bold text-sm flex-shrink-0">' + streamCount + ' stream' + (streamCount === 1 ? '' : 's') + '</span>' +
+                        '</div>';
+                }).join('');
+                return;
+            }
+
+            // Default ("all" / Streams) - the full detail card.
+            if (items.length === 0) {
+                content.innerHTML = '<p class="text-slate-500 text-sm">Nobody is watching anything right now.</p>';
+                return;
+            }
+
+            content.innerHTML = items.map(function (item) {
+                const badge = stateBadgeFor(item.state);
+                const icon = mediaIconFor(item.mediaType);
+                const poster = item.posterUrl
+                    ? '<img src="' + item.posterUrl + '" alt="" class="w-14 h-20 rounded-lg object-cover flex-shrink-0 bg-slate-800" onerror="this.style.display=\'none\'">'
+                    : '<div class="w-14 h-20 rounded-lg bg-slate-800 flex items-center justify-center flex-shrink-0"><i class="fas ' + icon + ' text-slate-600"></i></div>';
+                const meta = [item.device, item.client].filter(Boolean).join(' — ');
+                return '<div class="flex items-center gap-4 bg-slate-900/40 rounded-2xl p-4">' +
+                    poster +
+                    '<div class="flex-1 min-w-0">' +
+                    '<div class="flex items-center gap-2 flex-wrap mb-1">' +
+                    '<span class="text-white font-bold text-sm">' + item.subscriberName + '</span>' +
+                    '<span class="badge ' + badge[0] + '"><i class="fas ' + badge[1] + '"></i> ' + badge[2] + '</span>' +
+                    '</div>' +
+                    '<p class="text-slate-300 text-sm truncate">' + item.title + '</p>' +
+                    (meta ? '<p class="text-slate-500 text-xs mt-1"><i class="fas fa-tablet-screen-button mr-1"></i>' + meta + '</p>' : '') +
+                    (item.location ? '<p class="text-slate-500 text-xs mt-1"><i class="fas fa-location-dot mr-1"></i>' + item.location + '</p>' : '') +
+                    '<div class="w-full bg-slate-800 rounded-full h-1.5 mt-2">' +
+                    '<div class="bg-sky-500 h-1.5 rounded-full" style="width:' + Math.max(0, Math.min(100, item.progressPercent)) + '%"></div>' +
+                    '</div>' +
+                    '<p class="text-slate-500 text-xs mt-1">' + Math.round(item.progressPercent) + '% watched</p>' +
+                    '</div></div>';
+            }).join('');
+        }
 
         function openNowWatchingModal(filter) {
             nowWatchingFilter = filter || 'all';
             const titleEl = document.getElementById('nowWatchingModalTitle');
             if (titleEl) titleEl.textContent = modalTitleFor(nowWatchingFilter);
+
+            // Render immediately from whatever was last polled (at most 15s
+            // stale) before the modal even becomes visible - avoids the
+            // flash of a loading state or a previous filter's content that
+            // happened whenever this waited on a fresh fetch first.
+            renderStreamItems(latestStreamItems, nowWatchingFilter);
             openModal('nowWatchingModal');
+
+            // Then quietly bring it fully up to date in the background.
             refreshNowWatching();
         }
 
@@ -269,7 +350,6 @@
             const countBadge = document.getElementById('nowWatchingCountBadge');
             const modal = document.getElementById('nowWatchingModal');
             const modalOpen = modal && !modal.classList.contains('hidden');
-            const content = document.getElementById('nowWatchingModalContent');
 
             try {
                 const res = await fetch('/admin/plex/now-watching-all');
@@ -277,11 +357,11 @@
 
                 if (!data.ok) {
                     countBadge.classList.add('hidden');
-                    if (modalOpen) content.innerHTML = '<p class="text-slate-500 text-sm">' + (data.message || 'Could not load current activity.') + '</p>';
                     return;
                 }
 
                 const items = data.items || [];
+                latestStreamItems = items;
                 const count = items.length;
                 if (count > 0) {
                     countBadge.textContent = count;
@@ -305,39 +385,9 @@
                 if (deviceEl) deviceEl.textContent = deviceCount;
 
                 if (!modalOpen) return; // counts are all that need updating while it's closed
-
-                const filtered = nowWatchingFilter === 'all' ? items : items.filter(function (i) { return i.mediaType === nowWatchingFilter; });
-
-                if (filtered.length === 0) {
-                    content.innerHTML = '<p class="text-slate-500 text-sm">' + (nowWatchingFilter === 'all' ? 'Nobody is watching anything right now.' : 'Nothing in this category right now.') + '</p>';
-                    return;
-                }
-
-                content.innerHTML = filtered.map(function (item) {
-                    const badge = stateBadgeFor(item.state);
-                    const icon = mediaIconFor(item.mediaType);
-                    const poster = item.posterUrl
-                        ? '<img src="' + item.posterUrl + '" alt="" class="w-14 h-20 rounded-lg object-cover flex-shrink-0 bg-slate-800" onerror="this.style.display=\'none\'">'
-                        : '<div class="w-14 h-20 rounded-lg bg-slate-800 flex items-center justify-center flex-shrink-0"><i class="fas ' + icon + ' text-slate-600"></i></div>';
-                    const meta = [item.device, item.client].filter(Boolean).join(' — ');
-                    return '<div class="flex items-center gap-4 bg-slate-900/40 rounded-2xl p-4">' +
-                        poster +
-                        '<div class="flex-1 min-w-0">' +
-                        '<div class="flex items-center gap-2 flex-wrap mb-1">' +
-                        '<span class="text-white font-bold text-sm">' + item.subscriberName + '</span>' +
-                        '<span class="badge ' + badge[0] + '"><i class="fas ' + badge[1] + '"></i> ' + badge[2] + '</span>' +
-                        '</div>' +
-                        '<p class="text-slate-300 text-sm truncate">' + item.title + '</p>' +
-                        (meta ? '<p class="text-slate-500 text-xs mt-1"><i class="fas fa-tablet-screen-button mr-1"></i>' + meta + '</p>' : '') +
-                        (item.location ? '<p class="text-slate-500 text-xs mt-1"><i class="fas fa-location-dot mr-1"></i>' + item.location + '</p>' : '') +
-                        '<div class="w-full bg-slate-800 rounded-full h-1.5 mt-2">' +
-                        '<div class="bg-sky-500 h-1.5 rounded-full" style="width:' + Math.max(0, Math.min(100, item.progressPercent)) + '%"></div>' +
-                        '</div>' +
-                        '<p class="text-slate-500 text-xs mt-1">' + Math.round(item.progressPercent) + '% watched</p>' +
-                        '</div></div>';
-                }).join('');
+                renderStreamItems(items, nowWatchingFilter);
             } catch (e) {
-                if (modalOpen) content.innerHTML = '<p class="text-slate-500 text-sm">Could not load current activity.</p>';
+                // transient network hiccup - leave whatever was last rendered as-is rather than blanking it out
             }
         }
 
