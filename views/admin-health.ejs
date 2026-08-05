@@ -280,14 +280,21 @@
         // ---------- Bulk mode ----------
         function toggleBulkMode() {
             const list = document.getElementById('healthContainerList');
-            const bar = document.getElementById('bulkActionBar');
             const on = list.getAttribute('data-bulk-mode') === 'on';
-            list.setAttribute('data-bulk-mode', on ? 'off' : 'on');
-            bar.classList.toggle('hidden', on);
             if (on) {
-                document.querySelectorAll('[data-bulk-checkbox]').forEach(function (cb) { cb.checked = false; });
-                updateBulkCount();
+                exitBulkMode();
+            } else {
+                list.setAttribute('data-bulk-mode', 'on');
+                document.getElementById('bulkActionBar').classList.remove('hidden');
             }
+        }
+
+        function exitBulkMode() {
+            const list = document.getElementById('healthContainerList');
+            list.setAttribute('data-bulk-mode', 'off');
+            document.getElementById('bulkActionBar').classList.add('hidden');
+            document.querySelectorAll('[data-bulk-checkbox]').forEach(function (cb) { cb.checked = false; });
+            updateBulkCount();
         }
 
         function updateBulkCount() {
@@ -335,12 +342,14 @@
                     : 'bg-red-500/10 border border-red-500/30 text-red-400');
                 resultBox.textContent = data.message;
                 showToast(data.message, data.ok ? 'success' : 'error');
+                exitBulkMode();
                 refreshHealth();
             } catch (e) {
                 resultBox.classList.remove('hidden');
                 resultBox.className = 'text-sm rounded-xl p-4 mb-6 bg-red-500/10 border border-red-500/30 text-red-400';
                 resultBox.textContent = 'Something went wrong sending the bulk request.';
                 showToast('Something went wrong sending the bulk request.', 'error');
+                exitBulkMode();
                 refreshHealth(); // pull real state back in either way - don't leave pills stuck showing "in progress"
             }
         }

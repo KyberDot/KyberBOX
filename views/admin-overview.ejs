@@ -95,6 +95,29 @@
             </a>
         </div>
 
+        <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
+            <h2 class="text-sm uppercase tracking-widest text-slate-500 font-bold">Stream Data</h2>
+            <a href="https://plex.kyberbox.app" target="_blank" rel="noopener noreferrer" class="text-sky-400 hover:text-sky-300 text-xs">View Plex <i class="fas fa-arrow-right ml-1"></i></a>
+        </div>
+        <div class="grid sm:grid-cols-2 md:grid-cols-4 gap-4 sm:gap-5 mb-10 sm:mb-12">
+            <button type="button" onclick="openNowWatchingModal('all')" class="glass rounded-2xl p-5 sm:p-6 text-left hover:bg-white/5 transition">
+                <p class="text-slate-500 text-xs uppercase tracking-widest font-semibold mb-2">Streams</p>
+                <p class="text-2xl sm:text-3xl font-extrabold text-sky-400" id="streamCountAll">0</p>
+            </button>
+            <button type="button" onclick="openNowWatchingModal('movie')" class="glass rounded-2xl p-5 sm:p-6 text-left hover:bg-white/5 transition">
+                <p class="text-slate-500 text-xs uppercase tracking-widest font-semibold mb-2">Movies</p>
+                <p class="text-2xl sm:text-3xl font-extrabold text-sky-400" id="streamCountMovies">0</p>
+            </button>
+            <button type="button" onclick="openNowWatchingModal('episode')" class="glass rounded-2xl p-5 sm:p-6 text-left hover:bg-white/5 transition">
+                <p class="text-slate-500 text-xs uppercase tracking-widest font-semibold mb-2">TV Shows</p>
+                <p class="text-2xl sm:text-3xl font-extrabold text-sky-400" id="streamCountTv">0</p>
+            </button>
+            <button type="button" onclick="openNowWatchingModal('all')" class="glass rounded-2xl p-5 sm:p-6 text-left hover:bg-white/5 transition">
+                <p class="text-slate-500 text-xs uppercase tracking-widest font-semibold mb-2">Devices</p>
+                <p class="text-2xl sm:text-3xl font-extrabold text-sky-400" id="streamCountDevices">0</p>
+            </button>
+        </div>
+
         <div class="flex flex-wrap gap-3 sm:gap-4 mb-10 sm:mb-12">
             <a href="/admin/users" class="btn-primary px-5 sm:px-6 py-3 rounded-2xl text-sm"><i class="fas fa-users mr-2"></i>Manage Users</a>
             <button type="button" onclick="openNowWatchingModal()" class="btn-outline px-5 sm:px-6 py-3 rounded-2xl text-sm relative">
@@ -137,7 +160,7 @@
     <div id="nowWatchingModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden items-center justify-center z-50 px-4 py-8 overflow-y-auto">
         <div class="glass rounded-3xl p-6 sm:p-8 max-w-2xl w-full my-auto">
             <div class="flex items-center justify-between mb-5">
-                <h3 class="text-lg font-bold text-white"><i class="fas fa-tv mr-2 text-sky-400"></i>Now Watching</h3>
+                <h3 class="text-lg font-bold text-white"><i class="fas fa-tv mr-2 text-sky-400"></i><span id="nowWatchingModalTitle">Now Watching</span></h3>
                 <button type="button" onclick="closeNowWatchingModal()" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5">
                     <i class="fas fa-xmark"></i>
                 </button>
@@ -206,11 +229,11 @@
         })();
 
         // ---------- Now Watching (system-wide) ----------
-        // One continuous poll drives both the button's count badge (always
-        // running, so the number stays current even with the modal
-        // closed) and the modal's full detail list (only rendered when
-        // it's actually open) - avoids two separate timers hitting the
-        // same endpoint at once when both happen to be active together.
+        // One continuous poll drives the button's count badge, the Stream
+        // Data boxes' live counts, and the modal's full detail list (only
+        // rendered when it's actually open) - avoids separate timers
+        // hitting the same endpoint at once when several are active
+        // together.
         const mediaIconFor = function (type) {
             if (type === 'movie') return 'fa-film';
             if (type === 'episode') return 'fa-tv';
@@ -222,8 +245,18 @@
             if (state === 'buffering') return ['badge-suspended', 'fa-circle-notch fa-spin', 'Buffering'];
             return ['badge-closed', 'fa-circle-pause', 'Paused'];
         };
+        const modalTitleFor = function (filter) {
+            if (filter === 'movie') return 'Movies Streaming';
+            if (filter === 'episode') return 'TV Shows Streaming';
+            return 'Now Watching';
+        };
 
-        function openNowWatchingModal() {
+        let nowWatchingFilter = 'all';
+
+        function openNowWatchingModal(filter) {
+            nowWatchingFilter = filter || 'all';
+            const titleEl = document.getElementById('nowWatchingModalTitle');
+            if (titleEl) titleEl.textContent = modalTitleFor(nowWatchingFilter);
             openModal('nowWatchingModal');
             refreshNowWatching();
         }
@@ -248,7 +281,8 @@
                     return;
                 }
 
-                const count = data.items ? data.items.length : 0;
+                const items = data.items || [];
+                const count = items.length;
                 if (count > 0) {
                     countBadge.textContent = count;
                     countBadge.classList.remove('hidden');
@@ -256,14 +290,30 @@
                     countBadge.classList.add('hidden');
                 }
 
-                if (!modalOpen) return; // count is all that needs updating while it's closed
+                // Stream Data boxes - always kept current regardless of
+                // whether the modal is open, same as the button badge.
+                const movieCount = items.filter(function (i) { return i.mediaType === 'movie'; }).length;
+                const tvCount = items.filter(function (i) { return i.mediaType === 'episode'; }).length;
+                const deviceCount = new Set(items.map(function (i) { return i.device; }).filter(Boolean)).size;
+                const allEl = document.getElementById('streamCountAll');
+                const movieEl = document.getElementById('streamCountMovies');
+                const tvEl = document.getElementById('streamCountTv');
+                const deviceEl = document.getElementById('streamCountDevices');
+                if (allEl) allEl.textContent = count;
+                if (movieEl) movieEl.textContent = movieCount;
+                if (tvEl) tvEl.textContent = tvCount;
+                if (deviceEl) deviceEl.textContent = deviceCount;
 
-                if (count === 0) {
-                    content.innerHTML = '<p class="text-slate-500 text-sm">Nobody is watching anything right now.</p>';
+                if (!modalOpen) return; // counts are all that need updating while it's closed
+
+                const filtered = nowWatchingFilter === 'all' ? items : items.filter(function (i) { return i.mediaType === nowWatchingFilter; });
+
+                if (filtered.length === 0) {
+                    content.innerHTML = '<p class="text-slate-500 text-sm">' + (nowWatchingFilter === 'all' ? 'Nobody is watching anything right now.' : 'Nothing in this category right now.') + '</p>';
                     return;
                 }
 
-                content.innerHTML = data.items.map(function (item) {
+                content.innerHTML = filtered.map(function (item) {
                     const badge = stateBadgeFor(item.state);
                     const icon = mediaIconFor(item.mediaType);
                     const poster = item.posterUrl
