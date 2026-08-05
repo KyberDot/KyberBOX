@@ -42,12 +42,12 @@
                             </div>
                         </div>
                         <div class="flex flex-wrap gap-2">
-                            <span class="badge badge-answered"><i class="fas fa-users"></i> <%= subscriberCountByPlan[plan.id] || 0 %> subscriber<%= (subscriberCountByPlan[plan.id] || 0) === 1 ? '' : 's' %></span>
                             <% if (sshByPlan[plan.id]) { %>
                                 <span class="badge badge-active"><i class="fas fa-terminal"></i> SSH configured</span>
                             <% } else { %>
                                 <span class="badge badge-suspended"><i class="fas fa-triangle-exclamation"></i> No SSH</span>
                             <% } %>
+                            <span class="badge badge-answered"><i class="fas fa-users"></i> <%= subscriberCountByPlan[plan.id] || 0 %> subscriber<%= (subscriberCountByPlan[plan.id] || 0) === 1 ? '' : 's' %></span>
                             <span class="badge badge-answered"><i class="fas fa-bolt"></i> <%= (actionsByPlan[plan.id] || []).length %> action(s)</span>
                             <span class="badge badge-answered"><i class="fas fa-heart-pulse"></i> <%= (containersByPlan[plan.id] || []).length %> container(s)</span>
                         </div>

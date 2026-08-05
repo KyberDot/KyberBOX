@@ -305,7 +305,7 @@
                 const badge = stateBadgeFor(item.state);
                 const icon = mediaIconFor(item.mediaType);
                 const poster = item.posterUrl
-                    ? '<img src="' + item.posterUrl + '" alt="" class="w-14 h-20 rounded-lg object-cover flex-shrink-0 bg-slate-800" onerror="this.style.display=\'none\'">'
+                    ? '<img src="' + item.posterUrl + '" alt="" class="w-14 h-20 rounded-lg object-cover flex-shrink-0 bg-slate-800" style="opacity:0;transition:opacity 0.25s;" onload="this.style.opacity=1" onerror="this.style.display=\'none\'">'
                     : '<div class="w-14 h-20 rounded-lg bg-slate-800 flex items-center justify-center flex-shrink-0"><i class="fas ' + icon + ' text-slate-600"></i></div>';
                 const meta = [item.device, item.client].filter(Boolean).join(' — ');
                 return '<div class="flex items-center gap-4 bg-slate-900/40 rounded-2xl p-4">' +
@@ -361,6 +361,7 @@
                 }
 
                 const items = data.items || [];
+                const dataChanged = JSON.stringify(items) !== JSON.stringify(latestStreamItems);
                 latestStreamItems = items;
                 const count = items.length;
                 if (count > 0) {
@@ -384,7 +385,7 @@
                 if (tvEl) tvEl.textContent = tvCount;
                 if (deviceEl) deviceEl.textContent = deviceCount;
 
-                if (!modalOpen) return; // counts are all that need updating while it's closed
+                if (!modalOpen || !dataChanged) return; // nothing to re-render - avoids needlessly rebuilding (and re-loading poster images for) content that hasn't actually changed
                 renderStreamItems(items, nowWatchingFilter);
             } catch (e) {
                 // transient network hiccup - leave whatever was last rendered as-is rather than blanking it out

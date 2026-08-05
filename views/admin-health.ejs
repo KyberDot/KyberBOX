@@ -323,6 +323,7 @@
                 if (pill) {
                     pill.className = 'badge badge-suspended text-[10px] px-2 py-0.5';
                     pill.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> ' + inProgressLabel;
+                    pill.removeAttribute('data-current-status');
                 }
             });
 
@@ -537,6 +538,7 @@
             if (pill) {
                 pill.className = 'badge badge-suspended text-[10px] px-2 py-0.5';
                 pill.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Updating…';
+                pill.removeAttribute('data-current-status');
             }
 
             try {
@@ -577,9 +579,19 @@
             list.forEach(function (c) {
                 const row = document.querySelector('[data-container-id="' + c.id + '"] [data-status-pill]');
                 if (!row) return;
+                // Skip entirely if this is exactly what's already showing -
+                // nothing to update, and nothing for the person to notice
+                // flicker on. The one exception is right after an action
+                // (Stop/Restart/Update/Bulk), which explicitly clears this
+                // attribute so the real status is guaranteed to land at
+                // least once even if it happens to match what was last
+                // confirmed before the action started.
+                if (row.getAttribute('data-current-status') === c.status) return;
+
                 const chosen = STATUS_MAP[c.status] || STATUS_MAP.unknown;
                 row.className = 'badge ' + chosen[0] + ' text-[10px] px-2 py-0.5';
                 row.innerHTML = '<i class="fas ' + chosen[1] + '"></i> ' + chosen[2];
+                row.setAttribute('data-current-status', c.status);
             });
         }
 
@@ -596,6 +608,17 @@
         refreshHealth();
         document.addEventListener('main:updated', refreshHealth);
 
+        // A single refresh right after an action completes can still catch
+        // a container mid-restart (the SSH command returning doesn't mean
+        // it's fully back up yet) - without anything polling afterward,
+        // that transient status was the last thing ever shown, stuck until
+        // someone manually refreshed. This keeps checking in the
+        // background - quietly, since applyStatuses() above only touches
+        // the DOM when something's actually different - so it self-
+        // corrects within a few seconds either way, without flickering
+        // pills that haven't changed.
+        setInterval(refreshHealth, 4000);
+
         // ---------- Refresh all statuses ----------
         async function refreshAllStatuses() {
             const btn = document.getElementById('refreshAllBtn');
@@ -608,6 +631,7 @@
             document.querySelectorAll('[data-status-pill]').forEach(function (pill) {
                 pill.className = 'badge badge-suspended text-[10px] px-2 py-0.5';
                 pill.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> checking';
+                pill.removeAttribute('data-current-status');
             });
 
             try {
@@ -634,6 +658,7 @@
             if (pill) {
                 pill.className = 'badge badge-suspended text-[10px] px-2 py-0.5';
                 pill.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> checking';
+                pill.removeAttribute('data-current-status');
             }
 
             try {
@@ -663,6 +688,7 @@
             if (pill) {
                 pill.className = 'badge badge-suspended text-[10px] px-2 py-0.5';
                 pill.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> ' + (action === 'stop' ? 'Stopping…' : 'Restarting…');
+                pill.removeAttribute('data-current-status');
             }
 
             try {
