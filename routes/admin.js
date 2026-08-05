@@ -1013,7 +1013,7 @@ router.post('/admin/health/containers/:id/restart', (req, res) => handleHealthAc
 // (not "docker stop/restart") so the container actually gets recreated with
 // the new image rather than just restarted on the old one. Scoped to this
 // one container/service only.
-router.post('/admin/health/containers/:id/update', async (req, res) => {
+router.post('/admin/health/containers/:id/docker-update', async (req, res) => {
   const globalState = getResetState();
   if (globalState.active) {
     return res.status(409).json({

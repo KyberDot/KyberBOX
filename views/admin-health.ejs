@@ -59,6 +59,7 @@
         </div>
 
         <div id="fullResetResult" class="hidden text-sm rounded-xl p-4 mb-6"></div>
+        <div id="healthActionResult" class="hidden text-sm rounded-xl p-4 mb-6"></div>
 
         <!-- Containers -->
         <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4 mb-6" id="healthContainerList" data-bulk-mode="off">
@@ -162,7 +163,6 @@
             <% } %>
         </div>
         <p id="containerSearchEmpty" class="hidden text-slate-500 text-sm mb-6">No containers match your search.</p>
-        <div id="healthActionResult" class="hidden text-sm rounded-xl p-4 mb-10"></div>
 
         <!-- Recent actions -->
         <h2 class="text-sm uppercase tracking-widest text-slate-500 font-bold mb-4">Recent Stop/Restart Requests</h2>
@@ -306,6 +306,19 @@
             if (!confirm((action === 'stop' ? 'Stop' : 'Restart') + ' ' + ids.length + ' container(s) now? This runs one combined command.')) return;
 
             const resultBox = document.getElementById('healthActionResult');
+            const inProgressLabel = action === 'stop' ? 'Stopping…' : 'Restarting…';
+
+            // Immediate per-item feedback so it's obvious which containers are
+            // actually part of this run, rather than a single generic message
+            // with no visibility into individual items until it's all done.
+            ids.forEach(function (id) {
+                const pill = document.querySelector('[data-container-id="' + id + '"] [data-status-pill]');
+                if (pill) {
+                    pill.className = 'badge badge-suspended text-[10px] px-2 py-0.5';
+                    pill.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> ' + inProgressLabel;
+                }
+            });
+
             try {
                 const formData = new URLSearchParams();
                 ids.forEach(function (id) { formData.append('ids', id); });
@@ -317,15 +330,18 @@
                 });
                 const data = await res.json();
                 resultBox.classList.remove('hidden');
-                resultBox.className = 'text-sm rounded-xl p-4 mb-10 ' + (data.ok
+                resultBox.className = 'text-sm rounded-xl p-4 mb-6 ' + (data.ok
                     ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400'
                     : 'bg-red-500/10 border border-red-500/30 text-red-400');
                 resultBox.textContent = data.message;
+                showToast(data.message, data.ok ? 'success' : 'error');
                 refreshHealth();
             } catch (e) {
                 resultBox.classList.remove('hidden');
-                resultBox.className = 'text-sm rounded-xl p-4 mb-10 bg-red-500/10 border border-red-500/30 text-red-400';
+                resultBox.className = 'text-sm rounded-xl p-4 mb-6 bg-red-500/10 border border-red-500/30 text-red-400';
                 resultBox.textContent = 'Something went wrong sending the bulk request.';
+                showToast('Something went wrong sending the bulk request.', 'error');
+                refreshHealth(); // pull real state back in either way - don't leave pills stuck showing "in progress"
             }
         }
 
@@ -348,6 +364,7 @@
                 if (!res.ok || (!data.ok && !data.started)) {
                     resultBox.className = 'text-sm rounded-xl p-4 mb-6 bg-red-500/10 border border-red-500/30 text-red-400';
                     resultBox.textContent = data.message || 'Could not start the full reset.';
+                    showToast(data.message || 'Could not start the full reset.', 'error');
                     return;
                 }
 
@@ -356,6 +373,7 @@
             } catch (e) {
                 resultBox.className = 'text-sm rounded-xl p-4 mb-6 bg-red-500/10 border border-red-500/30 text-red-400';
                 resultBox.textContent = 'Could not reach the server to start the reset. Check your connection and try again.';
+                showToast('Could not reach the server to start the reset.', 'error');
             }
         }
 
@@ -380,6 +398,7 @@
                             ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400'
                             : 'bg-red-500/10 border border-red-500/30 text-red-400');
                         resultBox.textContent = data.lastResult.message;
+                        showToast(data.lastResult.message, data.lastResult.ok ? 'success' : 'error');
                     }
                     refreshHealth();
                 } catch (e) {
@@ -505,23 +524,31 @@
             btn.disabled = true;
             btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
 
+            const pill = document.querySelector('[data-container-id="' + id + '"] [data-status-pill]');
+            if (pill) {
+                pill.className = 'badge badge-suspended text-[10px] px-2 py-0.5';
+                pill.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Updating…';
+            }
+
             try {
-                const res = await fetch('/admin/health/containers/' + id + '/update', { method: 'POST' });
+                const res = await fetch('/admin/health/containers/' + id + '/docker-update', { method: 'POST' });
                 const data = await res.json();
                 if (resultBox) {
                     resultBox.classList.remove('hidden');
-                    resultBox.className = 'text-sm rounded-xl p-4 mb-10 ' + (data.ok
+                    resultBox.className = 'text-sm rounded-xl p-4 mb-6 ' + (data.ok
                         ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400'
                         : 'bg-red-500/10 border border-red-500/30 text-red-400');
                     resultBox.textContent = data.message;
                 }
+                showToast(data.message, data.ok ? 'success' : 'error');
                 refreshHealth();
             } catch (err) {
                 if (resultBox) {
                     resultBox.classList.remove('hidden');
-                    resultBox.className = 'text-sm rounded-xl p-4 mb-10 bg-red-500/10 border border-red-500/30 text-red-400';
+                    resultBox.className = 'text-sm rounded-xl p-4 mb-6 bg-red-500/10 border border-red-500/30 text-red-400';
                     resultBox.textContent = 'Something went wrong sending that request.';
                 }
+                showToast('Something went wrong sending that request.', 'error');
             } finally {
                 btn.disabled = false;
                 btn.innerHTML = originalHtml;
@@ -623,23 +650,31 @@
             btn.disabled = true;
             btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
 
+            const pill = document.querySelector('[data-container-id="' + id + '"] [data-status-pill]');
+            if (pill) {
+                pill.className = 'badge badge-suspended text-[10px] px-2 py-0.5';
+                pill.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> ' + (action === 'stop' ? 'Stopping…' : 'Restarting…');
+            }
+
             try {
                 const res = await fetch('/admin/health/containers/' + id + '/' + action, { method: 'POST' });
                 const data = await res.json();
                 if (resultBox) {
                     resultBox.classList.remove('hidden');
-                    resultBox.className = 'text-sm rounded-xl p-4 mb-10 ' + (data.ok
+                    resultBox.className = 'text-sm rounded-xl p-4 mb-6 ' + (data.ok
                         ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400'
                         : 'bg-red-500/10 border border-red-500/30 text-red-400');
                     resultBox.textContent = data.message;
                 }
+                showToast(data.message, data.ok ? 'success' : 'error');
                 refreshHealth();
             } catch (err) {
                 if (resultBox) {
                     resultBox.classList.remove('hidden');
-                    resultBox.className = 'text-sm rounded-xl p-4 mb-10 bg-red-500/10 border border-red-500/30 text-red-400';
+                    resultBox.className = 'text-sm rounded-xl p-4 mb-6 bg-red-500/10 border border-red-500/30 text-red-400';
                     resultBox.textContent = 'Something went wrong sending that request.';
                 }
+                showToast('Something went wrong sending that request.', 'error');
             } finally {
                 btn.disabled = false;
                 btn.innerHTML = originalHtml;
