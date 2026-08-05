@@ -305,7 +305,10 @@
                 const badge = stateBadgeFor(item.state);
                 const icon = mediaIconFor(item.mediaType);
                 const poster = item.posterUrl
-                    ? '<img src="' + item.posterUrl + '" alt="" class="w-14 h-20 rounded-lg object-cover flex-shrink-0 bg-slate-800" style="opacity:0;transition:opacity 0.25s;" onload="this.style.opacity=1" onerror="this.style.display=\'none\'">'
+                    ? '<div class="relative w-14 h-20 rounded-lg bg-slate-800 flex-shrink-0">' +
+                      '<img src="' + item.posterUrl + '" alt="" class="absolute inset-0 w-full h-full rounded-lg object-cover" style="opacity:0;transition:opacity 0.25s;" onload="this.style.opacity=1" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\';">' +
+                      '<div class="absolute inset-0 rounded-lg bg-slate-800 items-center justify-center" style="display:none;"><i class="fas ' + icon + ' text-slate-600"></i></div>' +
+                      '</div>'
                     : '<div class="w-14 h-20 rounded-lg bg-slate-800 flex items-center justify-center flex-shrink-0"><i class="fas ' + icon + ' text-slate-600"></i></div>';
                 const meta = [item.device, item.client].filter(Boolean).join(' — ');
                 return '<div class="flex items-center gap-4 bg-slate-900/40 rounded-2xl p-4">' +

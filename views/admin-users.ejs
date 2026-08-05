@@ -312,12 +312,10 @@
                     strip.innerHTML = data.items.map(function (item) {
                         const badge = stateBadgeFor(item.state);
                         const icon = mediaIconFor(item.mediaType);
-                        const poster = item.posterUrl
-                            ? '<img src="' + item.posterUrl + '" alt="" class="w-9 h-9 rounded-lg object-cover flex-shrink-0 bg-slate-800" onerror="this.style.display=\'none\'">'
-                            : '<div class="w-9 h-9 rounded-lg bg-slate-800 flex items-center justify-center flex-shrink-0"><i class="fas ' + icon + ' text-slate-600 text-xs"></i></div>';
+                        const iconBox = '<div class="w-9 h-9 rounded-lg bg-slate-800 flex items-center justify-center flex-shrink-0"><i class="fas ' + icon + ' text-slate-500 text-xs"></i></div>';
                         const meta = [item.device, item.location].filter(Boolean).join(' — ');
                         return '<div class="flex items-center gap-2.5 bg-slate-900/40 rounded-xl px-3 py-2">' +
-                            poster +
+                            iconBox +
                             '<div class="min-w-0 flex-1">' +
                             '<div class="flex items-center gap-2">' +
                             '<span class="badge ' + badge[0] + ' text-[10px] px-1.5 py-0.5"><i class="fas ' + badge[1] + '"></i> ' + badge[2] + '</span>' +
