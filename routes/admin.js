@@ -1059,8 +1059,9 @@ router.get('/admin/server-data/status', async (req, res) => {
   const marker = '::';
   const command = [
     `echo "UPTIME${marker}$(uptime -p 2>/dev/null || uptime)"`,
-    `echo "LOAD${marker}$(cut -d' ' -f1-3 /proc/loadavg 2>/dev/null)"`,
+    `echo "CPU${marker}$(top -bn1 | grep -i 'Cpu(s)' | awk '{printf "%.1f%%", 100-$8}')"`,
     `echo "MEM${marker}$(free -m 2>/dev/null | awk '/^Mem:/ {printf "%s MB / %s MB", $3, $2}')"`,
+    `echo "MEMPERCENT${marker}$(free -m 2>/dev/null | awk '/^Mem:/ {printf "%.0f%%", ($3/$2)*100}')"`,
     `echo "DISK${marker}$(df -h / 2>/dev/null | awk 'NR==2 {printf "%s / %s (%s used)", $3, $2, $5}')"`,
   ].join(' ; ');
 
@@ -1079,8 +1080,9 @@ router.get('/admin/server-data/status', async (req, res) => {
   res.json({
     ok: true,
     uptime: parsed.UPTIME || '—',
-    load: parsed.LOAD || '—',
+    cpu: parsed.CPU || '—',
     memory: parsed.MEM || '—',
+    memPercent: parsed.MEMPERCENT || '—',
     disk: parsed.DISK || '—',
   });
 });
@@ -1200,7 +1202,7 @@ router.get('/admin/health/live-stats', async (req, res) => {
 
   const marker = '::';
   const sectionMarker = '###CONTAINERS###';
-  const command = `free -m | awk '/Mem:/{print $2"${marker}"$3}' && uptime | awk -F'load average: ' '{print $2}' && df -h / | awk 'NR==2{print $2"${marker}"$3"${marker}"$5}' && echo '${sectionMarker}' && docker stats --no-stream --format '{{.Name}}${marker}{{.CPUPerc}}${marker}{{.MemUsage}}${marker}{{.MemPerc}}'`;
+  const command = `free -m | awk '/Mem:/{print $2"${marker}"$3}' && uptime | awk -F'load average: ' '{print $2}' && df -h / | awk 'NR==2{print $2"${marker}"$3"${marker}"$5}' && top -bn1 | grep -i 'Cpu(s)' | awk '{print 100-$8}' && echo '${sectionMarker}' && docker stats --no-stream --format '{{.Name}}${marker}{{.CPUPerc}}${marker}{{.MemUsage}}${marker}{{.MemPerc}}'`;
   const result = await runCommand(target, command);
 
   if (result.connectionFailed) {
@@ -1214,6 +1216,7 @@ router.get('/admin/health/live-stats', async (req, res) => {
   const [memTotal, memUsed] = (lines[0] || '').split(marker);
   const loadLine = (lines[1] || '').trim();
   const [diskTotal, diskUsed, diskPercent] = (lines[2] || '').split(marker);
+  const cpuPercent = (lines[3] || '').trim();
   const sectionIdx = lines.indexOf(sectionMarker);
   const containerLines = sectionIdx !== -1 ? lines.slice(sectionIdx + 1) : [];
 
@@ -1230,6 +1233,7 @@ router.get('/admin/health/live-stats', async (req, res) => {
     diskTotal: diskTotal || null,
     diskUsed: diskUsed || null,
     diskPercent: diskPercent || null,
+    cpuPercent: cpuPercent || null,
     containers,
   });
 });

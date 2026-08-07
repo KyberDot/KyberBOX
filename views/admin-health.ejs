@@ -277,12 +277,22 @@
                     </div>
                 </div>
 
-                <div id="liveStatsServer" class="grid grid-cols-3 gap-3 mb-5">
-                    <p class="text-slate-500 text-sm col-span-3"><i class="fas fa-circle-notch fa-spin mr-2"></i>Loading…</p>
+                <div id="liveStatsServer" class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+                    <p class="text-slate-500 text-sm col-span-4"><i class="fas fa-circle-notch fa-spin mr-2"></i>Loading…</p>
                 </div>
 
-                <p class="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-2">Containers</p>
-                <div id="liveStatsContainers" class="space-y-2 max-h-80 overflow-y-auto"></div>
+                <div class="flex items-center justify-between mb-2">
+                    <p class="text-xs uppercase tracking-widest text-slate-500 font-semibold">Containers</p>
+                    <div class="flex items-center gap-1">
+                        <button type="button" id="sortByCpuBtn" onclick="setLiveStatsSort('cpu')" class="text-slate-500 hover:text-white text-[11px] px-2 py-1 rounded-lg hover:bg-white/5 flex items-center gap-1">
+                            CPU <i class="fas fa-sort"></i>
+                        </button>
+                        <button type="button" id="sortByMemBtn" onclick="setLiveStatsSort('mem')" class="text-slate-500 hover:text-white text-[11px] px-2 py-1 rounded-lg hover:bg-white/5 flex items-center gap-1">
+                            RAM <i class="fas fa-sort"></i>
+                        </button>
+                    </div>
+                </div>
+                <div id="liveStatsContainers" class="custom-scroll space-y-2 max-h-80 overflow-y-auto pr-2 pb-1"></div>
             </div>
         </div>
 
@@ -560,6 +570,9 @@
 
         // ---------- Live Server & Container Stats ----------
         let liveStatsPollTimer = null;
+        let liveStatsData = []; // last fetched container list, kept so re-sorting doesn't need a fresh fetch
+        let liveStatsSortBy = null; // null | 'cpu' | 'mem'
+        let liveStatsSortDir = 'desc'; // 'asc' | 'desc'
 
         function openLiveStats() {
             openModal('liveStatsModal');
@@ -575,6 +588,61 @@
             }
         }
 
+        function setLiveStatsSort(field) {
+            if (liveStatsSortBy === field) {
+                liveStatsSortDir = liveStatsSortDir === 'desc' ? 'asc' : 'desc';
+            } else {
+                liveStatsSortBy = field;
+                liveStatsSortDir = 'desc'; // busiest first by default when switching fields
+            }
+            renderLiveStatsContainers();
+        }
+
+        function updateSortButtonVisuals() {
+            const cpuBtn = document.getElementById('sortByCpuBtn');
+            const memBtn = document.getElementById('sortByMemBtn');
+            const arrowFor = function (field) {
+                if (liveStatsSortBy !== field) return '<i class="fas fa-sort"></i>';
+                return liveStatsSortDir === 'desc' ? '<i class="fas fa-sort-down"></i>' : '<i class="fas fa-sort-up"></i>';
+            };
+            cpuBtn.innerHTML = 'CPU ' + arrowFor('cpu');
+            memBtn.innerHTML = 'RAM ' + arrowFor('mem');
+            cpuBtn.classList.toggle('text-sky-400', liveStatsSortBy === 'cpu');
+            memBtn.classList.toggle('text-sky-400', liveStatsSortBy === 'mem');
+        }
+
+        function parsePercentValue(str) {
+            const n = parseFloat(str);
+            return isNaN(n) ? -1 : n; // unparseable values sort to the bottom either way
+        }
+
+        function renderLiveStatsContainers() {
+            const containersBox = document.getElementById('liveStatsContainers');
+            updateSortButtonVisuals();
+
+            if (!liveStatsData || liveStatsData.length === 0) {
+                containersBox.innerHTML = '<p class="text-slate-500 text-sm">No containers currently running.</p>';
+                return;
+            }
+
+            let sorted = liveStatsData;
+            if (liveStatsSortBy) {
+                const key = liveStatsSortBy === 'cpu' ? 'cpu' : 'memPercent';
+                sorted = liveStatsData.slice().sort(function (a, b) {
+                    const diff = parsePercentValue(a[key]) - parsePercentValue(b[key]);
+                    return liveStatsSortDir === 'desc' ? -diff : diff;
+                });
+            }
+
+            containersBox.innerHTML = sorted.map(function (c) {
+                return '<div class="flex items-center gap-3 bg-slate-900/40 rounded-xl px-3 py-2.5 text-xs">' +
+                    '<span class="text-slate-200 font-semibold flex-1 truncate">' + c.name + '</span>' +
+                    '<span class="text-slate-500 w-16 flex-shrink-0"><i class="fas fa-microchip mr-1"></i>' + c.cpu + '</span>' +
+                    '<span class="text-slate-500 flex-shrink-0"><i class="fas fa-memory mr-1"></i>' + c.memUsage + ' (' + c.memPercent + ')</span>' +
+                    '</div>';
+            }).join('');
+        }
+
         async function refreshLiveStats() {
             const serverBox = document.getElementById('liveStatsServer');
             const containersBox = document.getElementById('liveStatsContainers');
@@ -585,7 +653,7 @@
                 const data = await res.json();
 
                 if (!data.ok) {
-                    serverBox.innerHTML = '<p class="text-slate-500 text-sm col-span-3">' + (data.message || 'Could not load live stats.') + '</p>';
+                    serverBox.innerHTML = '<p class="text-slate-500 text-sm col-span-4">' + (data.message || 'Could not load live stats.') + '</p>';
                     containersBox.innerHTML = '';
                     return;
                 }
@@ -600,21 +668,13 @@
                 const memLabel = (data.memUsed || '—') + ' / ' + (data.memTotal || '—') + ' MB';
                 const diskLabel = (data.diskUsed || '—') + ' / ' + (data.diskTotal || '—') + ' (' + (data.diskPercent || '—') + ')';
                 serverBox.innerHTML =
+                    stat('fa-microchip', 'CPU', (data.cpuPercent || '—') + '%') +
                     stat('fa-memory', 'Memory', memLabel) +
                     stat('fa-hard-drive', 'Disk', diskLabel) +
-                    stat('fa-microchip', 'Load Avg', data.load || '—');
+                    stat('fa-gauge', 'Load Avg', data.load || '—');
 
-                if (!data.containers || data.containers.length === 0) {
-                    containersBox.innerHTML = '<p class="text-slate-500 text-sm">No containers currently running.</p>';
-                    return;
-                }
-                containersBox.innerHTML = data.containers.map(function (c) {
-                    return '<div class="flex items-center gap-3 bg-slate-900/40 rounded-xl px-3 py-2.5 text-xs">' +
-                        '<span class="text-slate-200 font-semibold flex-1 truncate">' + c.name + '</span>' +
-                        '<span class="text-slate-500 w-16 flex-shrink-0"><i class="fas fa-microchip mr-1"></i>' + c.cpu + '</span>' +
-                        '<span class="text-slate-500 flex-shrink-0"><i class="fas fa-memory mr-1"></i>' + c.memUsage + ' (' + c.memPercent + ')</span>' +
-                        '</div>';
-                }).join('');
+                liveStatsData = data.containers || [];
+                renderLiveStatsContainers();
             } catch (e) {
                 indicator.innerHTML = '<i class="fas fa-triangle-exclamation text-red-400"></i> stalled';
             }

@@ -8,7 +8,13 @@
     <%- include('partials/nav') %>
 
     <main class="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
-        <h1 class="text-2xl sm:text-3xl font-extrabold mb-8">Admin Overview</h1>
+        <h1 class="text-2xl sm:text-3xl font-extrabold mb-8 flex items-center gap-3">
+            Admin Overview
+            <span class="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-1 rounded-full align-middle">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                Live
+            </span>
+        </h1>
 
         <% if (!mailConfigured) { %>
             <div class="mb-8 px-4 sm:px-5 py-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400 text-sm flex items-center justify-between flex-wrap gap-3">
@@ -28,12 +34,19 @@
                 <p class="text-base sm:text-lg font-bold text-white" data-server-stat="uptime">—</p>
             </div>
             <div class="glass rounded-2xl p-5 sm:p-6">
-                <p class="text-slate-500 text-xs uppercase tracking-widest font-semibold mb-2"><i class="fas fa-gauge-high mr-1"></i>Load Average</p>
-                <p class="text-base sm:text-lg font-bold text-white" data-server-stat="load">—</p>
+                <p class="text-slate-500 text-xs uppercase tracking-widest font-semibold mb-2"><i class="fas fa-microchip mr-1"></i>CPU</p>
+                <p class="text-base sm:text-lg font-bold text-white" data-server-stat="cpu">—</p>
+                <div class="w-full bg-slate-800 rounded-full h-1.5 mt-2.5">
+                    <div class="h-1.5 rounded-full bg-sky-500 transition-all duration-500" data-server-bar="cpu" style="width:0%"></div>
+                </div>
             </div>
             <div class="glass rounded-2xl p-5 sm:p-6">
                 <p class="text-slate-500 text-xs uppercase tracking-widest font-semibold mb-2"><i class="fas fa-memory mr-1"></i>Memory</p>
                 <p class="text-base sm:text-lg font-bold text-white" data-server-stat="memory">—</p>
+                <p class="text-slate-500 text-xs font-semibold mt-1" data-server-stat="memPercent">—</p>
+                <div class="w-full bg-slate-800 rounded-full h-1.5 mt-2">
+                    <div class="h-1.5 rounded-full bg-sky-500 transition-all duration-500" data-server-bar="memory" style="width:0%"></div>
+                </div>
             </div>
             <div class="glass rounded-2xl p-5 sm:p-6">
                 <p class="text-slate-500 text-xs uppercase tracking-widest font-semibold mb-2"><i class="fas fa-hard-drive mr-1"></i>Disk</p>
@@ -172,7 +185,7 @@
     </div>
 
     <script>
-        (async function loadServerData() {
+        async function loadServerData() {
             const grid = document.getElementById('serverDataGrid');
             const messageEl = document.getElementById('serverDataMessage');
             if (!grid) return;
@@ -190,10 +203,30 @@
                     return;
                 }
 
-                ['uptime', 'load', 'memory', 'disk'].forEach(function (key) {
+                grid.classList.remove('hidden');
+                if (messageEl) messageEl.classList.add('hidden');
+                ['uptime', 'cpu', 'memory', 'memPercent', 'disk'].forEach(function (key) {
                     const el = grid.querySelector('[data-server-stat="' + key + '"]');
                     if (el) el.textContent = data[key];
                 });
+
+                // Green under 60%, amber up to 85%, red above that - same
+                // thresholds for both, so the two bars stay easy to compare
+                // against each other at a glance.
+                const barColor = function (percent) {
+                    if (percent >= 85) return 'bg-red-500';
+                    if (percent >= 60) return 'bg-amber-500';
+                    return 'bg-sky-500';
+                };
+                const setBar = function (key, rawValue) {
+                    const bar = grid.querySelector('[data-server-bar="' + key + '"]');
+                    if (!bar) return;
+                    const percent = Math.max(0, Math.min(100, parseFloat(rawValue) || 0));
+                    bar.style.width = percent + '%';
+                    bar.className = 'h-1.5 rounded-full transition-all duration-500 ' + barColor(percent);
+                };
+                setBar('cpu', data.cpu);
+                setBar('memory', data.memPercent);
             } catch (e) {
                 grid.classList.add('hidden');
                 if (messageEl) {
@@ -201,9 +234,11 @@
                     messageEl.textContent = 'Could not load server data.';
                 }
             }
-        })();
+        }
+        loadServerData();
+        setInterval(loadServerData, 8000);
 
-        (async function loadHealthSummary() {
+        async function loadHealthSummary() {
             const grid = document.getElementById('healthSummaryGrid');
             if (!grid) return; // no containers configured - nothing to summarize
 
@@ -224,9 +259,11 @@
                     if (el) el.textContent = tally[key];
                 });
             } catch (e) {
-                // leave placeholders as "—" on failure
+                // leave last-known values as-is on a transient failure
             }
-        })();
+        }
+        loadHealthSummary();
+        setInterval(loadHealthSummary, 8000);
 
         // ---------- Now Watching (system-wide) ----------
         // One continuous poll drives the button's count badge, the Stream
