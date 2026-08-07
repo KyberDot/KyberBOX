@@ -711,7 +711,9 @@
             }
         }
 
-
+        // ---------- Update (stop, pull, up) ----------
+        document.addEventListener('click', async function (e) {
+            const btn = e.target.closest('[data-update-btn]');
             if (!btn) return;
 
             const label = btn.getAttribute('data-update-label');
