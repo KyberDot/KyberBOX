@@ -1188,6 +1188,52 @@ router.post('/admin/health/containers/:id/docker-update', async (req, res) => {
 // Live resource usage for one container (CPU/memory/network/disk I/O) -
 // only meaningful while it's running, so a stopped/missing container just
 // reports that plainly instead of erroring oddly.
+// Whole-server + every running container's stats in one shot - one SSH
+// round trip covers everything, rather than looping the per-container
+// usage call once per card (which would mean N separate connections for
+// N containers every time this refreshes).
+router.get('/admin/health/live-stats', async (req, res) => {
+  const target = db.prepare('SELECT * FROM admin_ssh LIMIT 1').get();
+  if (!target) {
+    return res.json({ ok: false, message: 'No admin SSH access configured yet. Set it up in Settings first.' });
+  }
+
+  const marker = '::';
+  const sectionMarker = '###CONTAINERS###';
+  const command = `free -m | awk '/Mem:/{print $2"${marker}"$3}' && uptime | awk -F'load average: ' '{print $2}' && df -h / | awk 'NR==2{print $2"${marker}"$3"${marker}"$5}' && echo '${sectionMarker}' && docker stats --no-stream --format '{{.Name}}${marker}{{.CPUPerc}}${marker}{{.MemUsage}}${marker}{{.MemPerc}}'`;
+  const result = await runCommand(target, command);
+
+  if (result.connectionFailed) {
+    return res.json({ ok: false, message: 'Could not reach the server.' });
+  }
+  if (!result.success) {
+    return res.json({ ok: false, message: 'Could not get live stats.' });
+  }
+
+  const lines = result.output.trim().split('\n');
+  const [memTotal, memUsed] = (lines[0] || '').split(marker);
+  const loadLine = (lines[1] || '').trim();
+  const [diskTotal, diskUsed, diskPercent] = (lines[2] || '').split(marker);
+  const sectionIdx = lines.indexOf(sectionMarker);
+  const containerLines = sectionIdx !== -1 ? lines.slice(sectionIdx + 1) : [];
+
+  const containers = containerLines.filter(Boolean).map((line) => {
+    const [name, cpu, memUsage, memPercent] = line.split(marker);
+    return { name, cpu, memUsage, memPercent };
+  });
+
+  res.json({
+    ok: true,
+    memTotal: memTotal || null,
+    memUsed: memUsed || null,
+    load: loadLine || null,
+    diskTotal: diskTotal || null,
+    diskUsed: diskUsed || null,
+    diskPercent: diskPercent || null,
+    containers,
+  });
+});
+
 router.get('/admin/health/containers/:id/usage', async (req, res) => {
   const container = db.prepare('SELECT * FROM admin_health_containers WHERE id = ?').get(req.params.id);
   if (!container) return res.status(404).json({ ok: false, message: 'Container not found.' });
@@ -1250,6 +1296,22 @@ router.post('/admin/health/containers/:id/actions', (req, res) => {
 router.post('/admin/health/containers/:id/actions/:actionId/delete', (req, res) => {
   db.prepare('DELETE FROM admin_container_actions WHERE id = ? AND container_id = ?').run(req.params.actionId, req.params.id);
   res.json({ ok: true });
+});
+
+router.post('/admin/health/containers/:id/actions/:actionId/update', (req, res) => {
+  const existing = db.prepare('SELECT * FROM admin_container_actions WHERE id = ? AND container_id = ?').get(req.params.actionId, req.params.id);
+  if (!existing) return res.status(404).json({ ok: false, message: 'Action not found.' });
+
+  const label = String(req.body.label || '').trim();
+  const icon = CONTAINER_ACTION_ICONS.includes(req.body.icon) ? req.body.icon : existing.icon;
+  const command = String(req.body.command || '').trim();
+
+  if (!label || !command) {
+    return res.status(400).json({ ok: false, message: 'Both a label and a command are required.' });
+  }
+
+  db.prepare('UPDATE admin_container_actions SET label = ?, icon = ?, command = ? WHERE id = ?').run(label, icon, command, existing.id);
+  res.json({ ok: true, action: { id: existing.id, label, icon, command } });
 });
 
 router.post('/admin/health/containers/:id/actions/:actionId/run', async (req, res) => {
