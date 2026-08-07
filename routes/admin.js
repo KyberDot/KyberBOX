@@ -1042,7 +1042,13 @@ router.post('/admin/health/containers/:id/docker-update', async (req, res) => {
 
   const safePath = composePath.replace(/'/g, `'"'"'`);
   const name = container.container_name;
-  const command = `cd '${safePath}' && docker compose stop '${name}' && docker compose pull '${name}' && docker compose up -d '${name}'`;
+  // --no-deps on the "up" step matters here: without it, docker compose
+  // also starts (or even recreates) anything this container lists under
+  // depends_on in the compose file - a shared VPN container, a database,
+  // another *arr app, whatever it happens to be linked to - even though
+  // only this one container was actually selected. stop/pull don't have
+  // this cascading behavior, only up does.
+  const command = `cd '${safePath}' && docker compose stop '${name}' && docker compose pull '${name}' && docker compose up -d --no-deps '${name}'`;
   const result = await runCommand(target, command, 5 * 60 * 1000); // up to 5 minutes for a single image pull
 
   db.prepare(
@@ -1178,7 +1184,12 @@ router.post('/admin/health/full-reset', (req, res) => {
     .prepare(
       `SELECT DISTINCT u.id, u.email, u.name FROM subscriptions s
        JOIN users u ON u.id = s.user_id
-       WHERE s.status = 'active'`
+       WHERE s.status = 'active'
+         AND u.id NOT IN (
+           SELECT s2.user_id FROM subscriptions s2
+           JOIN plans p2 ON p2.id = s2.plan_id
+           WHERE s2.status = 'active' AND p2.maintenance_mode = 1
+         )`
     )
     .all();
   notifyResetStarted(allActiveSubscribers);
