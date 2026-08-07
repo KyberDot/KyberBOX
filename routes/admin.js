@@ -375,10 +375,12 @@ router.post('/admin/plans/:id/containers', (req, res) => {
     return res.status(400).render('error', { message: 'Container name can only contain letters, numbers, dots, dashes, and underscores.' });
   }
 
-  db.prepare('INSERT INTO plan_containers (plan_id, container_name, label) VALUES (?, ?, ?)').run(
+  const maxOrder = db.prepare('SELECT MAX(sort_order) AS m FROM plan_containers WHERE plan_id = ?').get(req.params.id).m || 0;
+  db.prepare('INSERT INTO plan_containers (plan_id, container_name, label, sort_order) VALUES (?, ?, ?, ?)').run(
     req.params.id,
     containerName,
-    label
+    label,
+    maxOrder + 1
   );
 
   res.redirect('/admin/plans');
@@ -386,6 +388,24 @@ router.post('/admin/plans/:id/containers', (req, res) => {
 
 router.post('/admin/plans/:id/containers/:containerId/delete', (req, res) => {
   db.prepare('DELETE FROM plan_containers WHERE id = ? AND plan_id = ?').run(req.params.containerId, req.params.id);
+  res.redirect('/admin/plans');
+});
+
+router.post('/admin/plans/:id/containers/:containerId/move', (req, res) => {
+  const direction = req.body.direction === 'up' ? 'up' : 'down';
+  const containers = db.prepare('SELECT * FROM plan_containers WHERE plan_id = ? ORDER BY sort_order ASC, id ASC').all(req.params.id);
+  const index = containers.findIndex((c) => c.id === Number(req.params.containerId));
+  if (index === -1) return res.redirect('/admin/plans');
+
+  const swapIndex = direction === 'up' ? index - 1 : index + 1;
+  if (swapIndex < 0 || swapIndex >= containers.length) return res.redirect('/admin/plans');
+
+  const current = containers[index];
+  const swap = containers[swapIndex];
+  const update = db.prepare('UPDATE plan_containers SET sort_order = ? WHERE id = ?');
+  update.run(swap.sort_order, current.id);
+  update.run(current.sort_order, swap.id);
+
   res.redirect('/admin/plans');
 });
 

@@ -278,6 +278,7 @@ function backfillActionOrder(table, groupColumn) {
 }
 backfillActionOrder('plan_actions', 'plan_id');
 backfillActionOrder('admin_container_actions', 'container_id');
+backfillActionOrder('plan_containers', 'plan_id');
 ensureColumn('subscriptions', 'renewal_mode', "renewal_mode TEXT NOT NULL DEFAULT 'manual'"); // auto | manual | expired
 ensureColumn('subscriptions', 'expiry_warning_sent_at', 'expiry_warning_sent_at TEXT');
 ensureColumn('tickets', 'plan_id', 'plan_id INTEGER REFERENCES plans(id)'); // set for plan-specific tickets, e.g. a Minecraft world seed reset request

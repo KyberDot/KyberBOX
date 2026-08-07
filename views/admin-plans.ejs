@@ -207,11 +207,27 @@
                     <details data-ajax-key="plan-<%= plan.id %>-containers">
                         <summary class="cursor-pointer text-sky-400 text-xs font-semibold uppercase tracking-wide">Container Health (shown to subscribers)</summary>
                         <div class="mt-3 space-y-2 mb-3">
-                            <% (containersByPlan[plan.id] || []).forEach(function(c) { %>
-                                <form method="POST" action="/admin/plans/<%= plan.id %>/containers/<%= c.id %>/delete" data-ajax-form class="flex items-center justify-between text-xs text-slate-400 bg-slate-900/40 rounded-lg px-3 py-2 gap-2">
-                                    <span><strong class="text-white"><%= c.label %></strong> — container: <span class="font-mono"><%= c.container_name %></span></span>
-                                    <button type="submit" class="text-red-400 hover:text-red-300"><i class="fas fa-trash"></i></button>
-                                </form>
+                            <% (containersByPlan[plan.id] || []).forEach(function(c, containerIndex) { %>
+                                <div class="flex items-center justify-between text-xs text-slate-400 bg-slate-900/40 rounded-lg px-3 py-2 gap-2">
+                                    <span class="truncate"><strong class="text-white"><%= c.label %></strong> — container: <span class="font-mono"><%= c.container_name %></span></span>
+                                    <div class="flex items-center gap-0.5 flex-shrink-0">
+                                        <form method="POST" action="/admin/plans/<%= plan.id %>/containers/<%= c.id %>/move" data-ajax-form>
+                                            <input type="hidden" name="direction" value="up">
+                                            <button type="submit" class="w-6 h-6 rounded-lg text-slate-400 hover:text-white hover:bg-white/5" title="Move earlier" <%= containerIndex === 0 ? 'disabled style=opacity:0.3' : '' %>>
+                                                <i class="fas fa-arrow-up"></i>
+                                            </button>
+                                        </form>
+                                        <form method="POST" action="/admin/plans/<%= plan.id %>/containers/<%= c.id %>/move" data-ajax-form>
+                                            <input type="hidden" name="direction" value="down">
+                                            <button type="submit" class="w-6 h-6 rounded-lg text-slate-400 hover:text-white hover:bg-white/5" title="Move later" <%= containerIndex === (containersByPlan[plan.id] || []).length - 1 ? 'disabled style=opacity:0.3' : '' %>>
+                                                <i class="fas fa-arrow-down"></i>
+                                            </button>
+                                        </form>
+                                        <form method="POST" action="/admin/plans/<%= plan.id %>/containers/<%= c.id %>/delete" data-ajax-form>
+                                            <button type="submit" class="text-red-400 hover:text-red-300 px-1"><i class="fas fa-trash"></i></button>
+                                        </form>
+                                    </div>
+                                </div>
                             <% }); %>
                         </div>
                         <form method="POST" action="/admin/plans/<%= plan.id %>/containers" data-ajax-form class="grid sm:grid-cols-3 gap-3">
