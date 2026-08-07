@@ -316,9 +316,10 @@ router.post('/admin/plans/:id/actions', (req, res) => {
     return res.status(400).render('error', { message: `"${command}" looks like an icon name, not a command - check the Command and Icon fields weren't swapped.` });
   }
 
+  const maxOrder = db.prepare('SELECT MAX(sort_order) AS m FROM plan_actions WHERE plan_id = ?').get(req.params.id).m || 0;
   db.prepare(
-    'INSERT INTO plan_actions (plan_id, label, command, icon, style, cooldown_hours) VALUES (?, ?, ?, ?, ?, ?)'
-  ).run(req.params.id, label, command, icon, style, cooldownHours);
+    'INSERT INTO plan_actions (plan_id, label, command, icon, style, cooldown_hours, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)'
+  ).run(req.params.id, label, command, icon, style, cooldownHours, maxOrder + 1);
 
   res.redirect('/admin/plans');
 });
@@ -344,6 +345,24 @@ router.post('/admin/plans/:id/actions/:actionId/update', (req, res) => {
 
 router.post('/admin/plans/:id/actions/:actionId/delete', (req, res) => {
   db.prepare('DELETE FROM plan_actions WHERE id = ? AND plan_id = ?').run(req.params.actionId, req.params.id);
+  res.redirect('/admin/plans');
+});
+
+router.post('/admin/plans/:id/actions/:actionId/move', (req, res) => {
+  const direction = req.body.direction === 'up' ? 'up' : 'down';
+  const actions = db.prepare('SELECT * FROM plan_actions WHERE plan_id = ? ORDER BY sort_order ASC, id ASC').all(req.params.id);
+  const index = actions.findIndex((a) => a.id === Number(req.params.actionId));
+  if (index === -1) return res.redirect('/admin/plans');
+
+  const swapIndex = direction === 'up' ? index - 1 : index + 1;
+  if (swapIndex < 0 || swapIndex >= actions.length) return res.redirect('/admin/plans');
+
+  const current = actions[index];
+  const swap = actions[swapIndex];
+  const update = db.prepare('UPDATE plan_actions SET sort_order = ? WHERE id = ?');
+  update.run(swap.sort_order, current.id);
+  update.run(current.sort_order, swap.id);
+
   res.redirect('/admin/plans');
 });
 
@@ -1292,9 +1311,10 @@ router.post('/admin/health/containers/:id/actions', (req, res) => {
     return res.status(400).json({ ok: false, message: 'Both a label and a command are required.' });
   }
 
+  const maxOrder = db.prepare('SELECT MAX(sort_order) AS m FROM admin_container_actions WHERE container_id = ?').get(container.id).m || 0;
   const info = db
-    .prepare('INSERT INTO admin_container_actions (container_id, label, icon, command) VALUES (?, ?, ?, ?)')
-    .run(container.id, label, icon, command);
+    .prepare('INSERT INTO admin_container_actions (container_id, label, icon, command, sort_order) VALUES (?, ?, ?, ?, ?)')
+    .run(container.id, label, icon, command, maxOrder + 1);
 
   res.json({ ok: true, action: { id: info.lastInsertRowid, label, icon, command } });
 });
@@ -1302,6 +1322,25 @@ router.post('/admin/health/containers/:id/actions', (req, res) => {
 router.post('/admin/health/containers/:id/actions/:actionId/delete', (req, res) => {
   db.prepare('DELETE FROM admin_container_actions WHERE id = ? AND container_id = ?').run(req.params.actionId, req.params.id);
   res.json({ ok: true });
+});
+
+router.post('/admin/health/containers/:id/actions/:actionId/move', (req, res) => {
+  const direction = req.body.direction === 'up' ? 'up' : 'down';
+  const actions = db.prepare('SELECT * FROM admin_container_actions WHERE container_id = ? ORDER BY sort_order ASC, id ASC').all(req.params.id);
+  const index = actions.findIndex((a) => a.id === Number(req.params.actionId));
+  if (index === -1) return res.status(404).json({ ok: false, message: 'Action not found.' });
+
+  const swapIndex = direction === 'up' ? index - 1 : index + 1;
+  if (swapIndex < 0 || swapIndex >= actions.length) return res.json({ ok: true, actions }); // already at the end - nothing to do, not an error
+
+  const current = actions[index];
+  const swap = actions[swapIndex];
+  const update = db.prepare('UPDATE admin_container_actions SET sort_order = ? WHERE id = ?');
+  update.run(swap.sort_order, current.id);
+  update.run(current.sort_order, swap.id);
+
+  const reordered = db.prepare('SELECT * FROM admin_container_actions WHERE container_id = ? ORDER BY sort_order ASC, id ASC').all(req.params.id);
+  res.json({ ok: true, actions: reordered });
 });
 
 router.post('/admin/health/containers/:id/actions/:actionId/update', (req, res) => {

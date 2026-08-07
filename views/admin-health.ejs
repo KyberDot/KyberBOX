@@ -313,11 +313,11 @@
 
                 <div id="containerActionsResult" class="hidden text-sm rounded-xl p-3 mb-4"></div>
 
-                <div id="containerActionsList" class="space-y-2 mb-5">
+                <div id="containerActionsList" class="space-y-2">
                     <p class="text-slate-500 text-sm">No custom actions yet - add one below.</p>
                 </div>
 
-                <div id="newActionFormWrapper" class="hidden pt-4 border-t border-white/5">
+                <div id="newActionFormWrapper" class="hidden mt-5 pt-4 border-t border-white/5">
                     <p class="text-sky-400 text-xs font-semibold uppercase tracking-wide mb-3" id="newActionFormHeading">Add New Action</p>
                     <form id="newActionForm" class="space-y-3" onsubmit="submitNewAction(event)">
                         <input type="hidden" name="action_id" id="newActionId" value="">
@@ -799,14 +799,37 @@
             toggleNewActionForm(true);
         }
 
-        function actionRowHtml(a) {
+        function actionRowHtml(a, index, total) {
             return '<div class="flex items-center gap-3 bg-slate-900/40 rounded-xl px-3 py-2.5" data-action-row="' + a.id + '">' +
                 '<div class="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center flex-shrink-0"><i class="fas ' + a.icon + ' text-sky-400 text-sm"></i></div>' +
                 '<span class="text-slate-200 text-sm flex-1 truncate">' + a.label + '</span>' +
+                '<div class="flex items-center gap-0.5 flex-shrink-0">' +
+                '<button type="button" onclick="moveCustomAction(' + a.id + ', \'up\')" title="Move earlier" class="w-6 h-6 flex items-center justify-center rounded-lg text-slate-500 hover:text-white hover:bg-white/5"' + (index === 0 ? ' disabled style="opacity:0.3"' : '') + '><i class="fas fa-arrow-up text-xs"></i></button>' +
+                '<button type="button" onclick="moveCustomAction(' + a.id + ', \'down\')" title="Move later" class="w-6 h-6 flex items-center justify-center rounded-lg text-slate-500 hover:text-white hover:bg-white/5"' + (index === total - 1 ? ' disabled style="opacity:0.3"' : '') + '><i class="fas fa-arrow-down text-xs"></i></button>' +
+                '</div>' +
                 '<button type="button" onclick="runCustomAction(' + a.id + ', this)" class="btn-outline py-1.5 px-3 rounded-lg text-xs flex-shrink-0">Run</button>' +
                 '<button type="button" onclick="editCustomAction(' + a.id + ')" title="Edit" class="text-slate-500 hover:text-white w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/5 flex-shrink-0"><i class="fas fa-pen text-xs"></i></button>' +
                 '<button type="button" onclick="deleteCustomAction(' + a.id + ')" title="Delete" class="text-slate-500 hover:text-red-400 w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/5 flex-shrink-0"><i class="fas fa-trash text-xs"></i></button>' +
                 '</div>';
+        }
+
+        async function moveCustomAction(actionId, direction) {
+            try {
+                const res = await fetch('/admin/health/containers/' + containerActionsId + '/actions/' + actionId + '/move', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: 'direction=' + direction,
+                });
+                const data = await res.json();
+                if (!data.ok) return showContainerActionsResult(false, data.message || 'Could not reorder that action.');
+
+                currentContainerActions = data.actions;
+                renderContainerActions(currentContainerActions);
+                const btn = document.querySelector('[data-container-id="' + containerActionsId + '"] .container-actions-btn');
+                if (btn) btn.setAttribute('data-custom-actions', JSON.stringify(currentContainerActions));
+            } catch (e) {
+                showContainerActionsResult(false, 'Something went wrong sending that request.');
+            }
         }
 
         function renderContainerActions(actions) {
@@ -815,7 +838,7 @@
                 list.innerHTML = '<p class="text-slate-500 text-sm">No custom actions yet - add one below.</p>';
                 return;
             }
-            list.innerHTML = actions.map(actionRowHtml).join('');
+            list.innerHTML = actions.map(function (a, i) { return actionRowHtml(a, i, actions.length); }).join('');
         }
 
         function showContainerActionsResult(ok, message) {
@@ -851,16 +874,8 @@
                 const data = await res.json();
                 if (!data.ok) return showContainerActionsResult(false, data.message || 'Could not delete that action.');
 
-                // Update the live list, the tracked in-memory array, and the
-                // cached data on the triggering button, so reopening later
-                // (without a full page reload) reflects the deletion too.
-                const row = document.querySelector('[data-action-row="' + actionId + '"]');
-                if (row) row.remove();
-                const list = document.getElementById('containerActionsList');
-                if (!list.querySelector('[data-action-row]')) {
-                    list.innerHTML = '<p class="text-slate-500 text-sm">No custom actions yet - add one below.</p>';
-                }
                 currentContainerActions = currentContainerActions.filter(function (a) { return a.id !== actionId; });
+                renderContainerActions(currentContainerActions);
                 const btn = document.querySelector('[data-container-id="' + containerActionsId + '"] .container-actions-btn');
                 if (btn) btn.setAttribute('data-custom-actions', JSON.stringify(currentContainerActions));
 
@@ -901,14 +916,12 @@
                 // cached data on the triggering button.
                 if (isEdit) {
                     currentContainerActions = currentContainerActions.map(function (a) { return a.id === data.action.id ? data.action : a; });
+                    const editedIndex = currentContainerActions.findIndex(function (a) { return a.id === data.action.id; });
                     const row = document.querySelector('[data-action-row="' + data.action.id + '"]');
-                    if (row) row.outerHTML = actionRowHtml(data.action);
+                    if (row) row.outerHTML = actionRowHtml(data.action, editedIndex, currentContainerActions.length);
                 } else {
                     currentContainerActions.push(data.action);
-                    const list = document.getElementById('containerActionsList');
-                    const emptyMsg = list.querySelector('p');
-                    if (emptyMsg) list.innerHTML = '';
-                    list.insertAdjacentHTML('beforeend', actionRowHtml(data.action));
+                    renderContainerActions(currentContainerActions);
                 }
                 const btn = document.querySelector('[data-container-id="' + containerActionsId + '"] .container-actions-btn');
                 if (btn) btn.setAttribute('data-custom-actions', JSON.stringify(currentContainerActions));

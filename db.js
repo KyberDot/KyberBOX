@@ -257,6 +257,27 @@ ensureColumn('users', 'plex_username', 'plex_username TEXT');
 ensureColumn('users', 'plex_user_id', 'plex_user_id TEXT'); // Plex.tv account id, matched by email - used for Tautulli watch history/now-watching only
 ensureColumn('users', 'plex_link_attempted_at', 'plex_link_attempted_at TEXT');
 ensureColumn('users', 'admin_access_mode', "admin_access_mode TEXT NOT NULL DEFAULT 'full'"); // full | limited - only meaningful when role = 'admin'; limited admins are gated per-page via admin_page_access
+
+// Backfill: rows inserted before per-action ordering was tracked all share
+// sort_order=0 within their group. Swapping two equal values during a
+// reorder is a no-op, so without this, "move up/down" would silently do
+// nothing for any action that existed before this fix - only ever working
+// for brand new ones. Assigns sequential values based on current id order
+// (i.e. creation order) within each affected group. Runs on every boot but
+// is a no-op after the first, since HAVING only matches groups that still
+// have duplicate sort_order values.
+function backfillActionOrder(table, groupColumn) {
+  const groups = db
+    .prepare(`SELECT ${groupColumn} AS g FROM ${table} GROUP BY ${groupColumn} HAVING COUNT(*) > COUNT(DISTINCT sort_order)`)
+    .all();
+  const update = db.prepare(`UPDATE ${table} SET sort_order = ? WHERE id = ?`);
+  groups.forEach(({ g }) => {
+    const rows = db.prepare(`SELECT id FROM ${table} WHERE ${groupColumn} = ? ORDER BY id ASC`).all(g);
+    rows.forEach((row, i) => update.run(i, row.id));
+  });
+}
+backfillActionOrder('plan_actions', 'plan_id');
+backfillActionOrder('admin_container_actions', 'container_id');
 ensureColumn('subscriptions', 'renewal_mode', "renewal_mode TEXT NOT NULL DEFAULT 'manual'"); // auto | manual | expired
 ensureColumn('subscriptions', 'expiry_warning_sent_at', 'expiry_warning_sent_at TEXT');
 ensureColumn('tickets', 'plan_id', 'plan_id INTEGER REFERENCES plans(id)'); // set for plan-specific tickets, e.g. a Minecraft world seed reset request

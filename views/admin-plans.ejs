@@ -138,7 +138,7 @@
                     <details class="mb-3" data-ajax-key="plan-<%= plan.id %>-actions">
                         <summary class="cursor-pointer text-sky-400 text-xs font-semibold uppercase tracking-wide">Action Buttons (e.g. Restart Plex)</summary>
                         <div class="mt-3 space-y-2 mb-3">
-                            <% (actionsByPlan[plan.id] || []).forEach(function(action) { %>
+                            <% (actionsByPlan[plan.id] || []).forEach(function(action, actionIndex) { %>
                                 <div class="bg-slate-900/40 rounded-lg px-3 py-2">
                                     <div class="flex items-center justify-between gap-2 text-xs text-slate-400">
                                         <span class="truncate">
@@ -146,9 +146,23 @@
                                             <% if (action.style === 'danger') { %><span class="badge badge-expired ml-1">danger</span><% } %>
                                             — <span class="font-mono"><%= action.command %></span> (every <%= action.cooldown_hours %>h)
                                         </span>
-                                        <button type="button" class="text-sky-400 hover:text-sky-300 flex-shrink-0 text-xs" data-toggle-target="action-<%= action.id %>-edit">
-                                            <i class="fas fa-pen mr-1"></i>Edit
-                                        </button>
+                                        <div class="flex items-center gap-0.5 flex-shrink-0">
+                                            <form method="POST" action="/admin/plans/<%= plan.id %>/actions/<%= action.id %>/move" data-ajax-form>
+                                                <input type="hidden" name="direction" value="up">
+                                                <button type="submit" class="w-6 h-6 rounded-lg text-slate-400 hover:text-white hover:bg-white/5" title="Move earlier" <%= actionIndex === 0 ? 'disabled style=opacity:0.3' : '' %>>
+                                                    <i class="fas fa-arrow-up"></i>
+                                                </button>
+                                            </form>
+                                            <form method="POST" action="/admin/plans/<%= plan.id %>/actions/<%= action.id %>/move" data-ajax-form>
+                                                <input type="hidden" name="direction" value="down">
+                                                <button type="submit" class="w-6 h-6 rounded-lg text-slate-400 hover:text-white hover:bg-white/5" title="Move later" <%= actionIndex === (actionsByPlan[plan.id] || []).length - 1 ? 'disabled style=opacity:0.3' : '' %>>
+                                                    <i class="fas fa-arrow-down"></i>
+                                                </button>
+                                            </form>
+                                            <button type="button" class="text-sky-400 hover:text-sky-300 text-xs px-1" data-toggle-target="action-<%= action.id %>-edit">
+                                                <i class="fas fa-pen mr-1"></i>Edit
+                                            </button>
+                                        </div>
                                     </div>
                                     <div class="hidden mt-3 pt-3 border-t border-white/5" data-toggle-key="action-<%= action.id %>-edit">
                                         <form method="POST" action="/admin/plans/<%= plan.id %>/actions/<%= action.id %>/update" data-ajax-form class="grid sm:grid-cols-4 gap-3">
