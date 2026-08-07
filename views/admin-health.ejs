@@ -141,7 +141,7 @@
                         </button>
                     </div>
 
-                    <div class="hidden w-full flex flex-col gap-3 mt-1 pt-2 border-t border-white/5" data-toggle-key="container-<%= c.id %>-edit">
+                    <div class="hidden w-full flex flex-col gap-3 mt-1 pt-2 border-t border-white/5" data-toggle-key="container-<%= c.id %>-edit" data-no-preserve>
                         <form method="POST" action="/admin/health/containers/<%= c.id %>/update" enctype="multipart/form-data" data-ajax-form class="w-full flex flex-col gap-2 text-left">
                             <input type="text" name="label" required value="<%= c.label %>" class="input text-[11px] px-2 py-1.5" placeholder="Label">
                             <input type="url" name="link_url" value="<%= c.link_url || '' %>" class="input text-[11px] px-2 py-1.5" placeholder="Link (optional, e.g. https://plex.example.com)">

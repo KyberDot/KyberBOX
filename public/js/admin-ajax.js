@@ -69,6 +69,7 @@
       if (d.open) state.details.push(d.getAttribute('data-ajax-key'));
     });
     document.querySelectorAll('main [data-toggle-key]').forEach(function (el) {
+      if (el.hasAttribute('data-no-preserve')) return; // this one should close after a save, not stay open
       if (!el.classList.contains('hidden')) state.panels.push(el.getAttribute('data-toggle-key'));
     });
     return state;
