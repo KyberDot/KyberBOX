@@ -28,6 +28,79 @@
             </div>
         <% } %>
 
+        <% if (typeof adminActionResult !== 'undefined' && adminActionResult) { %>
+            <div class="mb-6 px-4 py-3 rounded-xl <%= adminActionResult.ok ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400' : 'bg-red-500/10 border border-red-500/30 text-red-400' %> text-sm">
+                <i class="fas <%= adminActionResult.ok ? 'fa-circle-check' : 'fa-triangle-exclamation' %> mr-2"></i><%= adminActionResult.message %>
+            </div>
+        <% } %>
+
+        <!-- Admins -->
+        <div class="glass rounded-2xl sm:rounded-3xl p-5 sm:p-8 mb-8">
+            <h2 class="text-lg font-bold text-white mb-1"><i class="fas fa-user-shield mr-2 text-sky-400"></i>Admins</h2>
+            <p class="text-slate-400 text-sm mb-5">Full access admins can do anything, including manage other admins. Limited access admins can only see the specific pages granted below.</p>
+
+            <div class="space-y-3 mb-6">
+                <% admins.forEach(function(admin) { %>
+                    <details class="bg-slate-900/40 rounded-xl px-4 py-3" data-ajax-key="admin-<%= admin.id %>">
+                        <summary class="cursor-pointer flex items-center justify-between gap-3 flex-wrap">
+                            <span class="text-sm">
+                                <span class="text-white font-semibold"><%= admin.name %></span>
+                                <span class="text-slate-500 ml-2"><%= admin.email %></span>
+                            </span>
+                            <% if (admin.admin_access_mode === 'full') { %>
+                                <span class="badge badge-active"><i class="fas fa-crown"></i> Full Access</span>
+                            <% } else { %>
+                                <span class="badge badge-suspended"><i class="fas fa-lock"></i> Limited: <%= admin.pages.length > 0 ? admin.pages.join(', ') : 'nothing yet' %></span>
+                            <% } %>
+                        </summary>
+
+                        <form method="POST" action="/admin/admins/<%= admin.id %>/access" data-ajax-form class="mt-4 pt-4 border-t border-white/5">
+                            <label class="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-2 block">Access Level</label>
+                            <select name="access_mode" class="input mb-3" onchange="document.getElementById('admin-pages-<%= admin.id %>').classList.toggle('hidden', this.value !== 'limited')">
+                                <option value="full" <%= admin.admin_access_mode === 'full' ? 'selected' : '' %>>Full Access (everything, including managing other admins)</option>
+                                <option value="limited" <%= admin.admin_access_mode === 'limited' ? 'selected' : '' %>>Limited (only selected pages below)</option>
+                            </select>
+                            <div id="admin-pages-<%= admin.id %>" class="grid sm:grid-cols-3 gap-2 mb-4 <%= admin.admin_access_mode === 'limited' ? '' : 'hidden' %>">
+                                <% ['overview', 'users', 'plans', 'health', 'settings', 'tickets'].forEach(function(page) { %>
+                                    <label class="flex items-center gap-2 bg-slate-900/60 rounded-lg px-3 py-2 text-xs text-slate-300 cursor-pointer">
+                                        <input type="checkbox" name="pages" value="<%= page %>" <%= admin.pages.indexOf(page) !== -1 ? 'checked' : '' %> class="accent-sky-500">
+                                        <%= page.charAt(0).toUpperCase() + page.slice(1) %>
+                                    </label>
+                                <% }); %>
+                            </div>
+                            <div class="flex flex-wrap gap-2">
+                                <button type="submit" class="btn-primary py-2 px-4 rounded-lg text-xs">Save Access</button>
+                                <% if (admin.id !== currentUser.id) { %>
+                                    <button type="submit" formaction="/admin/admins/<%= admin.id %>/delete" data-confirm="Remove <%= admin.name %> as an admin? This can't be undone." class="text-red-400 hover:text-red-300 text-xs bg-red-500/10 px-4 py-2 rounded-lg">Remove Admin</button>
+                                <% } %>
+                            </div>
+                        </form>
+                    </details>
+                <% }); %>
+            </div>
+
+            <details data-ajax-key="invite-admin">
+                <summary class="cursor-pointer text-sky-400 text-xs font-semibold uppercase tracking-wide">Invite a New Admin</summary>
+                <form method="POST" action="/admin/admins/invite" data-ajax-form class="grid sm:grid-cols-2 gap-3 mt-3">
+                    <input type="text" name="name" required class="input" placeholder="Name">
+                    <input type="email" name="email" required class="input" placeholder="Email address">
+                    <select name="access_mode" class="input sm:col-span-2" onchange="document.getElementById('invite-admin-pages').classList.toggle('hidden', this.value !== 'limited')">
+                        <option value="full">Full Access (everything, including managing other admins)</option>
+                        <option value="limited" selected>Limited (only selected pages below)</option>
+                    </select>
+                    <div id="invite-admin-pages" class="grid sm:grid-cols-3 gap-2 sm:col-span-2">
+                        <% ['overview', 'users', 'plans', 'health', 'settings', 'tickets'].forEach(function(page) { %>
+                            <label class="flex items-center gap-2 bg-slate-900/40 rounded-lg px-3 py-2 text-xs text-slate-300 cursor-pointer">
+                                <input type="checkbox" name="pages" value="<%= page %>" class="accent-sky-500">
+                                <%= page.charAt(0).toUpperCase() + page.slice(1) %>
+                            </label>
+                        <% }); %>
+                    </div>
+                    <button type="submit" class="btn-primary py-3 rounded-xl text-sm sm:col-span-2">Send Invite</button>
+                </form>
+            </details>
+        </div>
+
         <!-- General -->
         <div class="glass rounded-2xl sm:rounded-3xl p-5 sm:p-8 mb-8">
             <h2 class="text-lg font-bold text-white mb-4"><i class="fas fa-sliders mr-2 text-sky-400"></i>General</h2>

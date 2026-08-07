@@ -12,6 +12,7 @@ const { serviceLabel } = require('../utils/labels');
 const { runCommand, getContainerStatuses } = require('../utils/ssh');
 const { upload } = require('../utils/uploads');
 const { startReset, endReset, getResetState } = require('../utils/resetLock');
+const { requireFullAdmin } = require('../middleware/auth');
 
 const router = express.Router();
 const brandingUpload = upload.fields([{ name: 'favicon', maxCount: 1 }, { name: 'apple_icon', maxCount: 1 }]);
@@ -93,7 +94,15 @@ function loadSettingsPageData() {
   const settings = getAllSettings();
   const healthSsh = db.prepare('SELECT id, host, port, username, auth_type FROM admin_ssh LIMIT 1').get();
   const paymentMethods = db.prepare('SELECT * FROM payment_methods ORDER BY name ASC').all();
-  return { settings, healthSsh, paymentMethods };
+
+  const admins = db.prepare("SELECT id, name, email, admin_access_mode, created_at FROM users WHERE role = 'admin' ORDER BY created_at ASC").all();
+  const accessByAdmin = {};
+  db.prepare('SELECT user_id, page_key FROM admin_page_access').all().forEach((row) => {
+    (accessByAdmin[row.user_id] = accessByAdmin[row.user_id] || []).push(row.page_key);
+  });
+  admins.forEach((a) => { a.pages = accessByAdmin[a.id] || []; });
+
+  return { settings, healthSsh, paymentMethods, admins };
 }
 
 router.get('/admin', (req, res) => {
@@ -699,7 +708,114 @@ router.post('/admin/tickets/:id/delete', (req, res) => {
 // ---------- Settings (General, Branding, Mail, Health SSH, Payment Methods) ----------
 
 router.get('/admin/settings', (req, res) => {
-  res.render('admin-settings', { ...loadSettingsPageData(), saved: null, testResult: null, brandingError: null });
+  res.render('admin-settings', { ...loadSettingsPageData(), saved: null, testResult: null, brandingError: null, adminActionResult: null });
+});
+
+const ADMIN_PAGE_KEYS = ['overview', 'users', 'plans', 'health', 'settings', 'tickets'];
+
+router.post('/admin/admins/invite', requireFullAdmin, async (req, res) => {
+  const name = String(req.body.name || '').trim();
+  const email = String(req.body.email || '').toLowerCase().trim();
+  const accessMode = req.body.access_mode === 'limited' ? 'limited' : 'full';
+  const pages = (Array.isArray(req.body.pages) ? req.body.pages : [req.body.pages].filter(Boolean)).filter((p) => ADMIN_PAGE_KEYS.includes(p));
+
+  if (!name || !email) {
+    return res.status(400).render('admin-settings', { ...loadSettingsPageData(), saved: null, testResult: null, brandingError: null, adminActionResult: { ok: false, message: 'Name and email are required.' } });
+  }
+
+  const tempPassword = generateTempPassword();
+  const hash = bcrypt.hashSync(tempPassword, 12);
+
+  try {
+    const info = db
+      .prepare(`INSERT INTO users (name, email, password_hash, role, must_change_password, admin_access_mode) VALUES (?, ?, ?, 'admin', 1, ?)`)
+      .run(name, email, hash, accessMode);
+
+    if (accessMode === 'limited' && pages.length > 0) {
+      const insertAccess = db.prepare('INSERT INTO admin_page_access (user_id, page_key) VALUES (?, ?)');
+      pages.forEach((p) => insertAccess.run(info.lastInsertRowid, p));
+    }
+
+    const siteName = getAllSettings().site_name;
+    const loginUrl = `${getSiteBaseUrl(req)}/login`;
+    const emailResult = await sendMail({
+      to: email,
+      subject: `You've been added as an admin on ${siteName}`,
+      bodyHtml: `
+        <p>Hi ${name},</p>
+        <p>You've been given admin access on ${siteName}${accessMode === 'limited' ? ` (limited to: ${pages.map((p) => p.charAt(0).toUpperCase() + p.slice(1)).join(', ') || 'nothing yet - ask for access to be granted'})` : ''}. Here are your sign-in details:</p>
+        <p style="background:#0b1220;border-radius:10px;padding:16px;">
+          <strong>Email:</strong> ${email}<br>
+          <strong>Temporary password:</strong> ${tempPassword}
+        </p>
+        <p>You'll be asked to set your own password the first time you sign in.</p>
+        <p><a href="${loginUrl}" style="display:inline-block;background:#0ea5e9;color:#0b0f1a;font-weight:700;padding:12px 20px;border-radius:10px;text-decoration:none;">Sign In</a></p>
+      `,
+    });
+
+    res.render('admin-settings', {
+      ...loadSettingsPageData(),
+      saved: null,
+      testResult: null,
+      brandingError: null,
+      adminActionResult: {
+        ok: true,
+        message: emailResult.sent
+          ? `${name} invited as an admin - sign-in details emailed to ${email}.`
+          : `${name} invited as an admin, but the email couldn't be sent (${emailResult.reason}). Temporary password: ${tempPassword}`,
+      },
+    });
+  } catch (err) {
+    const message = err.message.includes('UNIQUE') ? 'A user with that email already exists.' : 'Could not create admin.';
+    res.status(400).render('admin-settings', { ...loadSettingsPageData(), saved: null, testResult: null, brandingError: null, adminActionResult: { ok: false, message } });
+  }
+});
+
+router.post('/admin/admins/:id/access', requireFullAdmin, (req, res) => {
+  const targetId = Number(req.params.id);
+  const accessMode = req.body.access_mode === 'limited' ? 'limited' : 'full';
+  const pages = (Array.isArray(req.body.pages) ? req.body.pages : [req.body.pages].filter(Boolean)).filter((p) => ADMIN_PAGE_KEYS.includes(p));
+
+  const target = db.prepare("SELECT * FROM users WHERE id = ? AND role = 'admin'").get(targetId);
+  if (!target) return res.status(404).render('error', { message: 'Admin not found.' });
+
+  // Guard against ending up with nobody able to manage other admins at all.
+  if (accessMode === 'limited') {
+    const otherFullAdmins = db.prepare("SELECT COUNT(*) c FROM users WHERE role = 'admin' AND admin_access_mode = 'full' AND id != ?").get(targetId).c;
+    if (otherFullAdmins === 0) {
+      return res.status(400).render('admin-settings', { ...loadSettingsPageData(), saved: null, testResult: null, brandingError: null, adminActionResult: { ok: false, message: "Can't remove full access from the last full-access admin - there'd be nobody left who could manage admin access at all." } });
+    }
+  }
+
+  db.prepare('UPDATE users SET admin_access_mode = ? WHERE id = ?').run(accessMode, targetId);
+  db.prepare('DELETE FROM admin_page_access WHERE user_id = ?').run(targetId);
+  if (accessMode === 'limited' && pages.length > 0) {
+    const insertAccess = db.prepare('INSERT INTO admin_page_access (user_id, page_key) VALUES (?, ?)');
+    pages.forEach((p) => insertAccess.run(targetId, p));
+  }
+
+  res.render('admin-settings', { ...loadSettingsPageData(), saved: null, testResult: null, brandingError: null, adminActionResult: { ok: true, message: `Access updated for ${target.name}.` } });
+});
+
+router.post('/admin/admins/:id/delete', requireFullAdmin, (req, res) => {
+  const targetId = Number(req.params.id);
+
+  if (targetId === req.user.id) {
+    return res.status(400).render('admin-settings', { ...loadSettingsPageData(), saved: null, testResult: null, brandingError: null, adminActionResult: { ok: false, message: "You can't remove your own admin account." } });
+  }
+
+  const target = db.prepare("SELECT * FROM users WHERE id = ? AND role = 'admin'").get(targetId);
+  if (!target) return res.status(404).render('error', { message: 'Admin not found.' });
+
+  if (target.admin_access_mode === 'full') {
+    const otherFullAdmins = db.prepare("SELECT COUNT(*) c FROM users WHERE role = 'admin' AND admin_access_mode = 'full' AND id != ?").get(targetId).c;
+    if (otherFullAdmins === 0) {
+      return res.status(400).render('admin-settings', { ...loadSettingsPageData(), saved: null, testResult: null, brandingError: null, adminActionResult: { ok: false, message: "Can't remove the last full-access admin - there'd be nobody left who could manage anything." } });
+    }
+  }
+
+  db.prepare('DELETE FROM users WHERE id = ?').run(targetId); // admin_page_access rows cascade via ON DELETE CASCADE
+  res.render('admin-settings', { ...loadSettingsPageData(), saved: null, testResult: null, brandingError: null, adminActionResult: { ok: true, message: `${target.name} removed as an admin.` } });
 });
 
 router.post('/admin/settings/general', (req, res) => {
@@ -819,6 +935,12 @@ router.get('/admin/health', (req, res) => {
        ORDER BY l.requested_at DESC LIMIT 10`
     )
     .all();
+
+  const customActionsByContainer = {};
+  db.prepare('SELECT * FROM admin_container_actions ORDER BY sort_order ASC, id ASC').all().forEach((a) => {
+    (customActionsByContainer[a.container_id] = customActionsByContainer[a.container_id] || []).push(a);
+  });
+  containers.forEach((c) => { c.customActions = customActionsByContainer[c.id] || []; });
 
   res.render('admin-health', { sshConfigured, containers, recentLog });
 });
@@ -1095,6 +1217,70 @@ router.get('/admin/health/containers/:id/usage', async (req, res) => {
     memPercent: parts[2] || '—',
     netIO: parts[3] || '—',
     blockIO: parts[4] || '—',
+  });
+});
+
+// Icon choices offered in the "Add New Action" picker - kept to a fixed
+// set rather than free text, so admins can't accidentally paste something
+// that isn't a real Font Awesome class and get a blank icon on the button.
+const CONTAINER_ACTION_ICONS = [
+  'fa-bolt', 'fa-dice', 'fa-rotate', 'fa-terminal', 'fa-database', 'fa-broom',
+  'fa-download', 'fa-upload', 'fa-trash', 'fa-wrench', 'fa-clock-rotate-left', 'fa-play',
+];
+
+router.post('/admin/health/containers/:id/actions', (req, res) => {
+  const container = db.prepare('SELECT * FROM admin_health_containers WHERE id = ?').get(req.params.id);
+  if (!container) return res.status(404).json({ ok: false, message: 'Container not found.' });
+
+  const label = String(req.body.label || '').trim();
+  const icon = CONTAINER_ACTION_ICONS.includes(req.body.icon) ? req.body.icon : 'fa-bolt';
+  const command = String(req.body.command || '').trim();
+
+  if (!label || !command) {
+    return res.status(400).json({ ok: false, message: 'Both a label and a command are required.' });
+  }
+
+  const info = db
+    .prepare('INSERT INTO admin_container_actions (container_id, label, icon, command) VALUES (?, ?, ?, ?)')
+    .run(container.id, label, icon, command);
+
+  res.json({ ok: true, action: { id: info.lastInsertRowid, label, icon, command } });
+});
+
+router.post('/admin/health/containers/:id/actions/:actionId/delete', (req, res) => {
+  db.prepare('DELETE FROM admin_container_actions WHERE id = ? AND container_id = ?').run(req.params.actionId, req.params.id);
+  res.json({ ok: true });
+});
+
+router.post('/admin/health/containers/:id/actions/:actionId/run', async (req, res) => {
+  const globalState = getResetState();
+  if (globalState.active) {
+    return res.status(409).json({
+      ok: false,
+      message: `A reset is already in progress (${globalState.source || 'another action'}) - wait for it to finish first.`,
+    });
+  }
+
+  const container = db.prepare('SELECT * FROM admin_health_containers WHERE id = ?').get(req.params.id);
+  if (!container) return res.status(404).json({ ok: false, message: 'Container not found.' });
+
+  const action = db.prepare('SELECT * FROM admin_container_actions WHERE id = ? AND container_id = ?').get(req.params.actionId, req.params.id);
+  if (!action) return res.status(404).json({ ok: false, message: 'Action not found.' });
+
+  const target = db.prepare('SELECT * FROM admin_ssh LIMIT 1').get();
+  if (!target) {
+    return res.status(400).json({ ok: false, message: 'No admin SSH access configured yet. Set it up in Settings first.' });
+  }
+
+  const result = await runCommand(target, action.command, 5 * 60 * 1000); // custom commands could reasonably take a while (backups, world resets, etc.)
+
+  db.prepare(
+    'INSERT INTO admin_health_log (admin_user_id, container_name, action, success, output) VALUES (?, ?, ?, ?, ?)'
+  ).run(req.user.id, container.container_name, `custom: ${action.label}`, result.success ? 1 : 0, result.output);
+
+  res.json({
+    ok: result.success,
+    message: result.success ? `${action.label} completed successfully.` : `${action.label} failed: ${result.output}`,
   });
 });
 

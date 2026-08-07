@@ -171,6 +171,7 @@ input[type="file"]::file-selector-button:hover { background: #38bdf8; }
 /* Bulk-select mode */
 .bulk-select-checkbox { display: none; }
 [data-bulk-mode="on"] .bulk-select-checkbox { display: block; }
+[data-bulk-mode="on"] .container-actions-btn { display: none; }
 
 /* SSH console output */
 .console-output {

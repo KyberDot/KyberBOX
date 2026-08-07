@@ -29,7 +29,7 @@
                 <% } %>
             <% } %>
             <span class="text-slate-600">|</span>
-            <span class="text-slate-500"><%= currentUser.name %></span>
+            <span class="<%= currentUser.role === 'admin' ? 'gradient-text font-bold' : 'text-slate-500' %>"><%= currentUser.name %></span>
             <form action="/logout" method="POST">
                 <button class="text-slate-400 hover:text-red-400 transition font-medium">
                     <i class="fas fa-right-from-bracket mr-1"></i> Logout
@@ -68,7 +68,7 @@
             <% } %>
         <% } %>
         <div class="border-t border-white/10 my-2"></div>
-        <span class="text-slate-500 px-2 py-1"><%= currentUser.name %></span>
+        <span class="<%= currentUser.role === 'admin' ? 'gradient-text font-bold' : 'text-slate-500' %> px-2 py-1"><%= currentUser.name %></span>
         <form action="/logout" method="POST">
             <button class="w-full text-left text-slate-300 hover:text-red-400 transition font-medium py-2 px-2 rounded-lg hover:bg-white/5">
                 <i class="fas fa-right-from-bracket mr-2"></i> Logout

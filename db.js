@@ -17,6 +17,31 @@ CREATE TABLE IF NOT EXISTS payment_methods (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Which admin pages/sections a "limited" admin (see users.admin_access_mode)
+-- is allowed into. Irrelevant for 'full' access admins, who bypass this
+-- check entirely - this table only ever restricts, never grants beyond
+-- what a full admin already has.
+CREATE TABLE IF NOT EXISTS admin_page_access (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  page_key TEXT NOT NULL,
+  UNIQUE(user_id, page_key)
+);
+
+-- Custom admin-defined actions per health container (e.g. "Reset World
+-- Seed" running a specific docker exec command) - separate from
+-- plan_actions, which are subscriber-facing actions tied to a plan rather
+-- than admin-facing actions tied to a specific container.
+CREATE TABLE IF NOT EXISTS admin_container_actions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  container_id INTEGER NOT NULL REFERENCES admin_health_containers(id) ON DELETE CASCADE,
+  label TEXT NOT NULL,
+  icon TEXT NOT NULL DEFAULT 'fa-bolt',
+  command TEXT NOT NULL,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
@@ -231,6 +256,7 @@ ensureColumn('users', 'payment_method_id', 'payment_method_id INTEGER REFERENCES
 ensureColumn('users', 'plex_username', 'plex_username TEXT');
 ensureColumn('users', 'plex_user_id', 'plex_user_id TEXT'); // Plex.tv account id, matched by email - used for Tautulli watch history/now-watching only
 ensureColumn('users', 'plex_link_attempted_at', 'plex_link_attempted_at TEXT');
+ensureColumn('users', 'admin_access_mode', "admin_access_mode TEXT NOT NULL DEFAULT 'full'"); // full | limited - only meaningful when role = 'admin'; limited admins are gated per-page via admin_page_access
 ensureColumn('subscriptions', 'renewal_mode', "renewal_mode TEXT NOT NULL DEFAULT 'manual'"); // auto | manual | expired
 ensureColumn('subscriptions', 'expiry_warning_sent_at', 'expiry_warning_sent_at TEXT');
 ensureColumn('tickets', 'plan_id', 'plan_id INTEGER REFERENCES plans(id)'); // set for plan-specific tickets, e.g. a Minecraft world seed reset request

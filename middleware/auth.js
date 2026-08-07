@@ -12,7 +12,7 @@ function attachUser(req, res, next) {
   if (token) {
     try {
       const payload = jwt.verify(token, process.env.JWT_SECRET);
-      const user = db.prepare('SELECT id, name, email, role FROM users WHERE id = ?').get(payload.id);
+      const user = db.prepare('SELECT id, name, email, role, admin_access_mode FROM users WHERE id = ?').get(payload.id);
       if (user) req.user = user;
     } catch (_) {
       // invalid/expired token - treat as logged out
@@ -79,10 +79,42 @@ function requireLogin(req, res, next) {
   next();
 }
 
+// Which admin_page_access page_key a given request path belongs to - more
+// specific prefixes are checked first so e.g. /admin/users/invite still
+// resolves to 'users', not falling through to the generic default.
+function pageKeyForPath(path) {
+  if (path.startsWith('/admin/users')) return 'users';
+  if (path.startsWith('/admin/plans')) return 'plans';
+  if (path.startsWith('/admin/health')) return 'health';
+  if (path.startsWith('/admin/tickets')) return 'tickets';
+  if (path.startsWith('/admin/settings') || path.startsWith('/admin/admins')) return 'settings';
+  return 'overview'; // /admin itself, plus overview-only endpoints like /admin/plex/now-watching-all
+}
+
 function requireAdmin(req, res, next) {
   if (!req.user) return res.redirect('/login');
   if (req.user.role !== 'admin') return res.status(403).render('error', { message: 'Admins only.' });
+
+  if (req.user.admin_access_mode === 'limited') {
+    const pageKey = pageKeyForPath(req.path);
+    const allowed = db.prepare('SELECT 1 FROM admin_page_access WHERE user_id = ? AND page_key = ?').get(req.user.id, pageKey);
+    if (!allowed) return res.status(403).render('error', { message: "You don't have access to this section. Ask a full-access admin to grant it." });
+  }
+
   next();
 }
 
-module.exports = { attachUser, requireLogin, requireAdmin };
+// For managing other admins specifically (inviting, changing their page
+// access, removing them) - deliberately separate from ordinary "settings"
+// page access, since granting someone the settings page shouldn't also
+// hand them the ability to grant themselves (or anyone else) more access
+// than they were given.
+function requireFullAdmin(req, res, next) {
+  if (!req.user) return res.redirect('/login');
+  if (req.user.role !== 'admin' || req.user.admin_access_mode !== 'full') {
+    return res.status(403).render('error', { message: 'Only full-access admins can manage other admins.' });
+  }
+  next();
+}
+
+module.exports = { attachUser, requireLogin, requireAdmin, requireFullAdmin };

@@ -66,6 +66,9 @@
             <% containers.forEach(function(c, index) { %>
                 <div class="glass rounded-2xl p-3 sm:p-4 flex flex-col items-center text-center gap-2 relative" data-container-row data-container-id="<%= c.id %>" data-container-search="<%= (c.label + ' ' + c.container_name).toLowerCase() %>">
                     <input type="checkbox" class="bulk-select-checkbox absolute top-2 left-2 w-4 h-4 accent-sky-500" data-bulk-checkbox value="<%= c.id %>">
+                    <button type="button" class="container-actions-btn absolute top-2 left-2 w-5 h-5 flex items-center justify-center rounded text-slate-500 hover:text-white hover:bg-white/5 text-[10px]" title="Actions" onclick="openContainerActions('<%= c.id %>', '<%= c.label %>')" data-custom-actions="<%= JSON.stringify(c.customActions) %>">
+                        <i class="fas fa-sliders"></i>
+                    </button>
                     <button type="button" class="absolute top-2 right-2 w-5 h-5 flex items-center justify-center rounded text-slate-500 hover:text-white hover:bg-white/5 text-[10px]" title="Server usage" onclick="openUsage('<%= c.id %>', '<%= c.label %>')">
                         <i class="fas fa-chart-line"></i>
                     </button>
@@ -255,6 +258,48 @@
                     <p class="text-slate-500 text-sm col-span-2">Loading…</p>
                 </div>
                 <p class="text-slate-500 text-xs mt-3">Only meaningful while the container is running.</p>
+            </div>
+        </div>
+
+        <!-- Container Actions Modal -->
+        <div id="containerActionsModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden items-center justify-center z-50 px-4 py-8 overflow-y-auto">
+            <div class="glass rounded-3xl p-6 sm:p-8 max-w-lg w-full my-auto">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-bold text-white"><i class="fas fa-sliders mr-2 text-sky-400"></i>Actions — <span id="containerActionsLabel"></span></h3>
+                    <button type="button" onclick="closeContainerActions()" title="Close" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5">
+                        <i class="fas fa-xmark"></i>
+                    </button>
+                </div>
+
+                <div id="containerActionsResult" class="hidden text-sm rounded-xl p-3 mb-4"></div>
+
+                <div id="containerActionsList" class="space-y-2 mb-5">
+                    <p class="text-slate-500 text-sm">No custom actions yet - add one below.</p>
+                </div>
+
+                <details>
+                    <summary class="cursor-pointer text-sky-400 text-xs font-semibold uppercase tracking-wide">Add New Action</summary>
+                    <form id="newActionForm" class="mt-3 space-y-3" onsubmit="submitNewAction(event)">
+                        <input type="text" name="label" required class="input" placeholder="Label (e.g. Reset World Seed)">
+                        <div>
+                            <label class="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-2 block">Icon</label>
+                            <div class="grid grid-cols-6 gap-2" id="newActionIconPicker">
+                                <% ['fa-bolt', 'fa-dice', 'fa-rotate', 'fa-terminal', 'fa-database', 'fa-broom', 'fa-download', 'fa-upload', 'fa-trash', 'fa-wrench', 'fa-clock-rotate-left', 'fa-play'].forEach(function(icon, i) { %>
+                                    <label class="flex items-center justify-center h-10 rounded-lg bg-slate-900/60 cursor-pointer has-[:checked]:bg-sky-500/20 has-[:checked]:ring-1 has-[:checked]:ring-sky-500">
+                                        <input type="radio" name="icon" value="<%= icon %>" class="hidden" <%= i === 0 ? 'checked' : '' %>>
+                                        <i class="fas <%= icon %> text-slate-300"></i>
+                                    </label>
+                                <% }); %>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-1.5 block">Command</label>
+                            <textarea name="command" required rows="3" class="input font-mono text-xs" placeholder="The full command to run over SSH, e.g. docker exec mc-server rcon-cli seed-reset"></textarea>
+                            <p class="text-slate-500 text-xs mt-1.5">Runs exactly as written, over the same SSH connection used for the other actions on this page.</p>
+                        </div>
+                        <button type="submit" class="btn-primary py-2.5 px-5 rounded-lg text-sm">Add Action</button>
+                    </form>
+                </details>
             </div>
         </div>
     </main>
@@ -520,9 +565,153 @@
             }
         }
 
-        // ---------- Update (stop, pull, up) ----------
-        document.addEventListener('click', async function (e) {
-            const btn = e.target.closest('[data-update-btn]');
+        // ---------- Container Actions (custom per-container) ----------
+        let containerActionsId = null;
+
+        function openContainerActions(id, label) {
+            containerActionsId = id;
+            document.getElementById('containerActionsLabel').textContent = label;
+            document.getElementById('containerActionsResult').classList.add('hidden');
+            document.getElementById('newActionForm').reset();
+
+            const btn = document.querySelector('[data-container-id="' + id + '"] .container-actions-btn');
+            let actions = [];
+            try { actions = JSON.parse((btn && btn.getAttribute('data-custom-actions')) || '[]'); } catch (e) { actions = []; }
+            renderContainerActions(actions);
+
+            openModal('containerActionsModal');
+        }
+
+        function closeContainerActions() {
+            closeModal('containerActionsModal');
+            containerActionsId = null;
+        }
+
+        function renderContainerActions(actions) {
+            const list = document.getElementById('containerActionsList');
+            if (!actions || actions.length === 0) {
+                list.innerHTML = '<p class="text-slate-500 text-sm">No custom actions yet - add one below.</p>';
+                return;
+            }
+            list.innerHTML = actions.map(function (a) {
+                return '<div class="flex items-center gap-3 bg-slate-900/40 rounded-xl px-3 py-2.5" data-action-row="' + a.id + '">' +
+                    '<div class="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center flex-shrink-0"><i class="fas ' + a.icon + ' text-sky-400 text-sm"></i></div>' +
+                    '<span class="text-slate-200 text-sm flex-1 truncate">' + a.label + '</span>' +
+                    '<button type="button" onclick="runCustomAction(' + a.id + ', this)" class="btn-outline py-1.5 px-3 rounded-lg text-xs flex-shrink-0">Run</button>' +
+                    '<button type="button" onclick="deleteCustomAction(' + a.id + ')" title="Delete" class="text-slate-500 hover:text-red-400 w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/5 flex-shrink-0"><i class="fas fa-trash text-xs"></i></button>' +
+                    '</div>';
+            }).join('');
+        }
+
+        function showContainerActionsResult(ok, message) {
+            const box = document.getElementById('containerActionsResult');
+            box.classList.remove('hidden');
+            box.className = 'text-sm rounded-xl p-3 mb-4 ' + (ok ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400' : 'bg-red-500/10 border border-red-500/30 text-red-400');
+            box.textContent = message;
+            showToast(message, ok ? 'success' : 'error');
+        }
+
+        async function runCustomAction(actionId, btn) {
+            if (!confirm('Run this action now? This runs the exact command configured for it.')) return;
+            const originalHtml = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+
+            try {
+                const res = await fetch('/admin/health/containers/' + containerActionsId + '/actions/' + actionId + '/run', { method: 'POST' });
+                const data = await res.json();
+                showContainerActionsResult(data.ok, data.message);
+            } catch (e) {
+                showContainerActionsResult(false, 'Something went wrong sending that request.');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = originalHtml;
+            }
+        }
+
+        async function deleteCustomAction(actionId) {
+            if (!confirm('Delete this action? This only removes the button - it does not undo anything it already ran.')) return;
+            try {
+                const res = await fetch('/admin/health/containers/' + containerActionsId + '/actions/' + actionId + '/delete', { method: 'POST' });
+                const data = await res.json();
+                if (!data.ok) return showContainerActionsResult(false, data.message || 'Could not delete that action.');
+
+                // Update both the modal's live list and the cached data on
+                // the triggering button, so reopening later (without a full
+                // page reload) reflects the deletion too.
+                const row = document.querySelector('[data-action-row="' + actionId + '"]');
+                if (row) row.remove();
+                const list = document.getElementById('containerActionsList');
+                if (!list.querySelector('[data-action-row]')) {
+                    list.innerHTML = '<p class="text-slate-500 text-sm">No custom actions yet - add one below.</p>';
+                }
+                const btn = document.querySelector('[data-container-id="' + containerActionsId + '"] .container-actions-btn');
+                if (btn) {
+                    try {
+                        const actions = JSON.parse(btn.getAttribute('data-custom-actions') || '[]').filter(function (a) { return a.id !== actionId; });
+                        btn.setAttribute('data-custom-actions', JSON.stringify(actions));
+                    } catch (e) { /* leave cached data as-is if it was somehow malformed */ }
+                }
+                showToast('Action deleted.', 'success');
+            } catch (e) {
+                showContainerActionsResult(false, 'Something went wrong sending that request.');
+            }
+        }
+
+        async function submitNewAction(e) {
+            e.preventDefault();
+            const form = e.target;
+            const submitBtn = form.querySelector('button[type="submit"]');
+            const originalHtml = submitBtn.innerHTML;
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+
+            try {
+                const formData = new URLSearchParams(new FormData(form));
+                const res = await fetch('/admin/health/containers/' + containerActionsId + '/actions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: formData.toString(),
+                });
+                const data = await res.json();
+                if (!data.ok) {
+                    showContainerActionsResult(false, data.message || 'Could not add that action.');
+                    return;
+                }
+
+                // Update both the live list and the cached data on the
+                // triggering button, matching the deletion path above.
+                const list = document.getElementById('containerActionsList');
+                const emptyMsg = list.querySelector('p');
+                if (emptyMsg) list.innerHTML = '';
+                list.insertAdjacentHTML('beforeend',
+                    '<div class="flex items-center gap-3 bg-slate-900/40 rounded-xl px-3 py-2.5" data-action-row="' + data.action.id + '">' +
+                    '<div class="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center flex-shrink-0"><i class="fas ' + data.action.icon + ' text-sky-400 text-sm"></i></div>' +
+                    '<span class="text-slate-200 text-sm flex-1 truncate">' + data.action.label + '</span>' +
+                    '<button type="button" onclick="runCustomAction(' + data.action.id + ', this)" class="btn-outline py-1.5 px-3 rounded-lg text-xs flex-shrink-0">Run</button>' +
+                    '<button type="button" onclick="deleteCustomAction(' + data.action.id + ')" title="Delete" class="text-slate-500 hover:text-red-400 w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/5 flex-shrink-0"><i class="fas fa-trash text-xs"></i></button>' +
+                    '</div>'
+                );
+                const btn = document.querySelector('[data-container-id="' + containerActionsId + '"] .container-actions-btn');
+                if (btn) {
+                    try {
+                        const actions = JSON.parse(btn.getAttribute('data-custom-actions') || '[]');
+                        actions.push(data.action);
+                        btn.setAttribute('data-custom-actions', JSON.stringify(actions));
+                    } catch (e) { /* leave cached data as-is if it was somehow malformed */ }
+                }
+
+                form.reset();
+                showContainerActionsResult(true, 'Action added.');
+            } catch (e) {
+                showContainerActionsResult(false, 'Something went wrong sending that request.');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = originalHtml;
+            }
+        }
+
+
             if (!btn) return;
 
             const label = btn.getAttribute('data-update-label');
