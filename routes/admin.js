@@ -1058,7 +1058,7 @@ router.get('/admin/server-data/status', async (req, res) => {
 
   const marker = '::';
   const command = [
-    `echo "UPTIME${marker}$(uptime -p 2>/dev/null || uptime)"`,
+    `echo "UPTIME${marker}$(awk '{d=int($1/86400); h=int(($1%86400)/3600); m=int(($1%3600)/60); if (d>0) printf "%dd %dh", d, h; else if (h>0) printf "%dh %dm", h, m; else printf "%dm", m}' /proc/uptime 2>/dev/null)"`,
     `echo "CPU${marker}$(top -bn1 | grep -i 'Cpu(s)' | awk '{printf "%.1f%%", 100-$8}')"`,
     `echo "MEM${marker}$(free -m 2>/dev/null | awk '/^Mem:/ {printf "%s MB / %s MB", $3, $2}')"`,
     `echo "MEMPERCENT${marker}$(free -m 2>/dev/null | awk '/^Mem:/ {printf "%.0f%%", ($3/$2)*100}')"`,
