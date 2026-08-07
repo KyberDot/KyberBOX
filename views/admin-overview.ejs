@@ -10,7 +10,7 @@
     <main class="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
         <h1 class="text-2xl sm:text-3xl font-extrabold mb-8 flex items-center gap-3">
             Admin Overview
-            <span class="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-1 rounded-full align-middle">
+            <span class="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-full leading-none">
                 <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
                 Live
             </span>
@@ -51,6 +51,9 @@
             <div class="glass rounded-2xl p-5 sm:p-6">
                 <p class="text-slate-500 text-xs uppercase tracking-widest font-semibold mb-2"><i class="fas fa-hard-drive mr-1"></i>Disk</p>
                 <p class="text-base sm:text-lg font-bold text-white" data-server-stat="disk">—</p>
+                <div class="w-full bg-slate-800 rounded-full h-1.5 mt-2.5">
+                    <div class="h-1.5 rounded-full bg-sky-500 transition-all duration-500" data-server-bar="disk" style="width:0%"></div>
+                </div>
             </div>
         </div>
         <p id="serverDataMessage" class="hidden text-slate-500 text-sm -mt-8 mb-10 sm:mb-12"></p>
@@ -227,6 +230,7 @@
                 };
                 setBar('cpu', data.cpu);
                 setBar('memory', data.memPercent);
+                setBar('disk', data.diskPercent);
             } catch (e) {
                 grid.classList.add('hidden');
                 if (messageEl) {

@@ -1063,6 +1063,7 @@ router.get('/admin/server-data/status', async (req, res) => {
     `echo "MEM${marker}$(free -m 2>/dev/null | awk '/^Mem:/ {printf "%s MB / %s MB", $3, $2}')"`,
     `echo "MEMPERCENT${marker}$(free -m 2>/dev/null | awk '/^Mem:/ {printf "%.0f%%", ($3/$2)*100}')"`,
     `echo "DISK${marker}$(df -h / 2>/dev/null | awk 'NR==2 {printf "%s / %s (%s used)", $3, $2, $5}')"`,
+    `echo "DISKPERCENT${marker}$(df -h / 2>/dev/null | awk 'NR==2 {print $5}')"`,
   ].join(' ; ');
 
   const result = await runCommand(target, command);
@@ -1084,6 +1085,7 @@ router.get('/admin/server-data/status', async (req, res) => {
     memory: parsed.MEM || '—',
     memPercent: parsed.MEMPERCENT || '—',
     disk: parsed.DISK || '—',
+    diskPercent: parsed.DISKPERCENT || '—',
   });
 });
 

@@ -616,6 +616,24 @@
             return isNaN(n) ? -1 : n; // unparseable values sort to the bottom either way
         }
 
+        // Docker reports each container's memory against its OWN limit, so
+        // percentage isn't a fair way to find "what's actually using the
+        // most RAM" - a container with a small limit can show 80% while
+        // barely using any real memory, while one with a huge limit can
+        // show 5% while actually using gigabytes. Sorting by the raw used
+        // amount (normalized to MB, since Docker's format switches between
+        // KiB/MiB/GiB depending on magnitude) reflects real usage instead.
+        function parseMemUsageToMB(str) {
+            if (!str) return -1;
+            const usedPart = String(str).split('/')[0].trim();
+            const match = usedPart.match(/^([\d.]+)\s*([a-zA-Z]+)/);
+            if (!match) return -1;
+            const value = parseFloat(match[1]);
+            const unit = match[2].toLowerCase();
+            const multipliers = { b: 1 / (1024 * 1024), kib: 1 / 1024, kb: 1 / 1024, mib: 1, mb: 1, gib: 1024, gb: 1024, tib: 1024 * 1024, tb: 1024 * 1024 };
+            return value * (multipliers[unit] !== undefined ? multipliers[unit] : 1);
+        }
+
         function renderLiveStatsContainers() {
             const containersBox = document.getElementById('liveStatsContainers');
             updateSortButtonVisuals();
@@ -626,10 +644,14 @@
             }
 
             let sorted = liveStatsData;
-            if (liveStatsSortBy) {
-                const key = liveStatsSortBy === 'cpu' ? 'cpu' : 'memPercent';
+            if (liveStatsSortBy === 'cpu') {
                 sorted = liveStatsData.slice().sort(function (a, b) {
-                    const diff = parsePercentValue(a[key]) - parsePercentValue(b[key]);
+                    const diff = parsePercentValue(a.cpu) - parsePercentValue(b.cpu);
+                    return liveStatsSortDir === 'desc' ? -diff : diff;
+                });
+            } else if (liveStatsSortBy === 'mem') {
+                sorted = liveStatsData.slice().sort(function (a, b) {
+                    const diff = parseMemUsageToMB(a.memUsage) - parseMemUsageToMB(b.memUsage);
                     return liveStatsSortDir === 'desc' ? -diff : diff;
                 });
             }
