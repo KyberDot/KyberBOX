@@ -51,7 +51,8 @@
             <div class="glass rounded-2xl p-5 sm:p-6">
                 <p class="text-slate-500 text-xs uppercase tracking-widest font-semibold mb-2"><i class="fas fa-hard-drive mr-1"></i>Disk</p>
                 <p class="text-base sm:text-lg font-bold text-white" data-server-stat="disk">—</p>
-                <div class="w-full bg-slate-800 rounded-full h-1.5 mt-2.5">
+                <p class="text-slate-500 text-xs font-semibold mt-1" data-server-stat="diskPercent">—</p>
+                <div class="w-full bg-slate-800 rounded-full h-1.5 mt-2">
                     <div class="h-1.5 rounded-full bg-sky-500 transition-all duration-500" data-server-bar="disk" style="width:0%"></div>
                 </div>
             </div>
@@ -208,7 +209,7 @@
 
                 grid.classList.remove('hidden');
                 if (messageEl) messageEl.classList.add('hidden');
-                ['uptime', 'cpu', 'memory', 'memPercent', 'disk'].forEach(function (key) {
+                ['uptime', 'cpu', 'memory', 'memPercent', 'disk', 'diskPercent'].forEach(function (key) {
                     const el = grid.querySelector('[data-server-stat="' + key + '"]');
                     if (el) el.textContent = data[key];
                 });
