@@ -13,6 +13,7 @@ const { runCommand, getContainerStatuses } = require('../utils/ssh');
 const { upload } = require('../utils/uploads');
 const { startReset, endReset, getResetState } = require('../utils/resetLock');
 const { requireFullAdmin } = require('../middleware/auth');
+const { triggerFullReset, getFullResetState } = require('../utils/fullReset');
 
 const router = express.Router();
 const brandingUpload = upload.fields([{ name: 'favicon', maxCount: 1 }, { name: 'apple_icon', maxCount: 1 }]);
@@ -934,6 +935,20 @@ router.post('/admin/settings/health-ssh', (req, res) => {
   res.render('admin-settings', { ...loadSettingsPageData(), saved: 'health-ssh', testResult: null, brandingError: null });
 });
 
+router.post('/admin/settings/stuck-watch', (req, res) => {
+  const containerName = String(req.body.container_name || '').trim();
+  setSetting('stuck_watch_container_name', containerName);
+
+  // A changed container means whatever the old one was mid-way through
+  // tracking no longer applies to the new one - clear the streak rather
+  // than let a stale count from a totally different container carry over.
+  db.prepare(
+    `UPDATE stuck_watch_state SET consecutive_stuck_checks = 0, last_signature = NULL, last_status = 'unknown' WHERE id = 1`
+  ).run();
+
+  res.render('admin-settings', { ...loadSettingsPageData(), saved: 'stuck-watch', testResult: null, brandingError: null });
+});
+
 router.post('/admin/settings/payment-methods', (req, res) => {
   const name = String(req.body.name || '').trim();
   if (name) db.prepare('INSERT INTO payment_methods (name) VALUES (?)').run(name);
@@ -981,7 +996,10 @@ router.get('/admin/health', (req, res) => {
   });
   containers.forEach((c) => { c.customActions = customActionsByContainer[c.id] || []; });
 
-  res.render('admin-health', { sshConfigured, containers, recentLog });
+  const stuckWatchContainerName = getAllSettings().stuck_watch_container_name || null;
+  const stuckWatchState = db.prepare('SELECT * FROM stuck_watch_state WHERE id = 1').get();
+
+  res.render('admin-health', { sshConfigured, containers, recentLog, stuckWatchContainerName, stuckWatchState });
 });
 
 router.post('/admin/health/containers', (req, res) => {
@@ -1463,82 +1481,14 @@ router.post('/admin/health/containers/bulk-action', async (req, res) => {
 // In-memory tracker for the background full-reset job. This app runs as a
 // single process (no horizontal scaling), so this is safe and avoids extra
 // schema just to track "is a reset currently running".
-let fullResetState = { running: false, lastResult: null };
-
 router.post('/admin/health/full-reset', (req, res) => {
-  const globalState = getResetState();
-  if (globalState.active) {
-    return res.status(409).json({
-      ok: false,
-      message: `A reset is already in progress (${globalState.source || 'another action'}) - wait for it to finish first.`,
-    });
-  }
-
-  const settings = getAllSettings();
-  const composePath = settings.compose_path;
-  if (!composePath) {
-    return res.status(400).json({ ok: false, message: 'Set a Docker Compose path in Settings first (e.g. /opt/media-stack).' });
-  }
-
-  const target = db.prepare('SELECT * FROM admin_ssh LIMIT 1').get();
-  if (!target) {
-    return res.status(400).json({ ok: false, message: 'No admin SSH access configured yet. Set it up in Settings first.' });
-  }
-
-  const safePath = composePath.replace(/'/g, `'"'"'`);
-  const adminUserId = req.user.id;
-
-  const command = `cd '${safePath}' && docker compose down && docker compose pull && docker compose up -d`;
-
-  fullResetState = { running: true, lastResult: null };
-  startReset('Admin: Full Reset & Update');
-
-  const allActiveSubscribers = db
-    .prepare(
-      `SELECT DISTINCT u.id, u.email, u.name FROM subscriptions s
-       JOIN users u ON u.id = s.user_id
-       WHERE s.status = 'active'
-         AND u.id NOT IN (
-           SELECT s2.user_id FROM subscriptions s2
-           JOIN plans p2 ON p2.id = s2.plan_id
-           WHERE s2.status = 'active' AND p2.maintenance_mode = 1
-         )`
-    )
-    .all();
-  notifyResetStarted(allActiveSubscribers);
-
-  // Deliberately not awaited: the HTTP request/response below finishes in
-  // well under a second regardless of how long this actually takes, so no
-  // reverse proxy, tunnel, or load balancer sitting in front of this app
-  // can time out the connection partway through a multi-minute pull. The
-  // browser polls GET /admin/health/full-reset/status for the real result.
-  runCommand(target, command, 15 * 60 * 1000)
-    .then((result) => {
-      db.prepare(
-        'INSERT INTO admin_health_log (admin_user_id, container_name, action, success, output) VALUES (?, ?, ?, ?, ?)'
-      ).run(adminUserId, 'ALL (full stack)', 'full-reset', result.success ? 1 : 0, result.output);
-
-      fullResetState = {
-        running: false,
-        lastResult: {
-          ok: result.success,
-          message: result.success
-            ? 'Full reset complete: stack was taken down, images pulled, and brought back up.'
-            : `Full reset failed: ${result.output}`,
-        },
-      };
-      endReset();
-    })
-    .catch((err) => {
-      fullResetState = { running: false, lastResult: { ok: false, message: `Full reset failed: ${err.message}` } };
-      endReset();
-    });
-
-  res.json({ ok: true, started: true, message: 'Full reset started in the background — this can take several minutes.' });
+  const result = triggerFullReset('Admin: Full Reset & Update', req.user.id);
+  const status = result.ok ? 200 : (result.message.includes('already in progress') ? 409 : 400);
+  res.status(status).json(result);
 });
 
 router.get('/admin/health/full-reset/status', (req, res) => {
-  res.json(fullResetState);
+  res.json(getFullResetState());
 });
 
 // ---------- SSH Console ----------

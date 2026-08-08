@@ -5,6 +5,7 @@
 // genuine background job instead, independent of anyone logging in.
 
 const { applyAutoRenewals, applyManualExpirations, applyExpiryWarnings } = require('./renewals');
+const { checkStuckWatch } = require('./stuckWatch');
 
 const INTERVAL_MS = 5 * 60 * 1000; // every 5 minutes
 
@@ -20,6 +21,12 @@ async function runMaintenanceCycle() {
     await applyExpiryWarnings();
   } catch (err) {
     console.error('[scheduler] expiry warnings failed:', err.message);
+  }
+
+  try {
+    await checkStuckWatch();
+  } catch (err) {
+    console.error('[scheduler] stuck-watch check failed:', err.message);
   }
 }
 

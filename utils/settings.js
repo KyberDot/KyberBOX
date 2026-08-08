@@ -44,6 +44,7 @@ function getAllSettings() {
     compose_path: getSetting('compose_path', ''),
     tautulli_url: getSetting('tautulli_url', ''),
     tautulli_api_key: getSetting('tautulli_api_key', ''), // decrypted value, for internal use only
+    stuck_watch_container_name: getSetting('stuck_watch_container_name', ''),
   };
 }
 

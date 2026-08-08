@@ -95,10 +95,13 @@
                     <% } %>
 
                     <div class="w-full min-w-0">
+                        <% if (c.container_name === stuckWatchContainerName) { %>
+                            <i class="fas fa-eye text-sky-400 text-[10px] mr-1 <%= stuckWatchState.last_status === 'waiting' ? 'animate-pulse' : '' %>" title="Watched for stuck startup (status: <%= stuckWatchState.last_status %><%= stuckWatchState.last_status === 'waiting' ? ', ' + stuckWatchState.consecutive_stuck_checks + '/3 stuck checks' : '' %>)"></i>
+                        <% } %>
                         <% if (c.link_url) { %>
-                            <a href="<%= c.link_url %>" target="_blank" rel="noopener noreferrer" class="font-semibold text-white text-xs truncate block hover:text-sky-400"><%= c.label %></a>
+                            <a href="<%= c.link_url %>" target="_blank" rel="noopener noreferrer" class="font-semibold text-white text-xs truncate hover:text-sky-400"><%= c.label %></a>
                         <% } else { %>
-                            <p class="font-semibold text-white text-xs truncate"><%= c.label %></p>
+                            <span class="font-semibold text-white text-xs truncate"><%= c.label %></span>
                         <% } %>
                         <p class="text-slate-500 text-[10px] font-mono truncate"><%= c.container_name %></p>
                     </div>

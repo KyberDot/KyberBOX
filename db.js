@@ -28,6 +28,21 @@ CREATE TABLE IF NOT EXISTS admin_page_access (
   UNIQUE(user_id, page_key)
 );
 
+-- Tracks the stuck-mount watchdog: which container's startup logs are
+-- being monitored (see settings key stuck_watch_container_name), how many
+-- consecutive checks in a row have found it stuck on the same step, and
+-- when a reset was last auto-triggered because of it. Single row (id=1)
+-- since only one container can be watched at a time.
+CREATE TABLE IF NOT EXISTS stuck_watch_state (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  consecutive_stuck_checks INTEGER NOT NULL DEFAULT 0,
+  last_signature TEXT,
+  last_status TEXT NOT NULL DEFAULT 'unknown',
+  last_checked_at TEXT,
+  last_reset_triggered_at TEXT
+);
+INSERT OR IGNORE INTO stuck_watch_state (id) VALUES (1);
+
 -- Custom admin-defined actions per health container (e.g. "Reset World
 -- Seed" running a specific docker exec command) - separate from
 -- plan_actions, which are subscriber-facing actions tied to a plan rather

@@ -170,6 +170,15 @@
                 </button>
             </form>
             <p class="text-slate-500 text-xs mt-4">Manage which containers show up on the Health page from <a href="/admin/health" class="text-sky-400 hover:text-sky-300">Admin → Health</a>, or run one-off commands from <a href="/admin/ssh-console" class="text-sky-400 hover:text-sky-300">Admin → SSH Console</a>.</p>
+
+            <div class="mt-6 pt-6 border-t border-white/5">
+                <h3 class="text-sm font-bold text-white mb-1"><i class="fas fa-eye mr-2 text-sky-400"></i>Stuck-Mount Watchdog</h3>
+                <p class="text-slate-400 text-xs mb-3">If set, checks this container's recent startup logs every few minutes for a script stuck waiting on the same step (e.g. mounts never coming up) and automatically runs a Full Reset if it's been stuck for ~15 minutes straight. Built for scripts like the Plex mount-checker that print repeated "⏳ waiting..." lines while a dependency is down. Leave blank to disable.</p>
+                <form method="POST" action="/admin/settings/stuck-watch" data-ajax-form class="flex flex-wrap gap-3">
+                    <input type="text" name="container_name" class="input flex-1 min-w-[200px]" placeholder="Exact container name (e.g. plex)" value="<%= settings.stuck_watch_container_name %>">
+                    <button type="submit" class="btn-primary px-6 py-3 rounded-xl text-sm">Save</button>
+                </form>
+            </div>
         </div>
 
         <!-- Payment Methods -->
