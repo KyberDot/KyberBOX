@@ -101,6 +101,24 @@ CREATE TABLE IF NOT EXISTS storage_buckets (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- SFTP-based storage connections (Hetzner Storage Box and similar plain
+-- SFTP/SSH-only storage that doesn't speak S3). Separate table from
+-- storage_buckets since the connection fields and file operations are
+-- genuinely different (host/port/username/password-or-key vs
+-- endpoint/region/access-key/secret-key), even though both show up
+-- together on the same Storage page.
+CREATE TABLE IF NOT EXISTS sftp_storage_boxes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  label TEXT NOT NULL,
+  host TEXT NOT NULL,
+  port INTEGER NOT NULL DEFAULT 22,
+  username TEXT NOT NULL,
+  auth_type TEXT NOT NULL DEFAULT 'password', -- password | key
+  secret_encrypted TEXT NOT NULL, -- password or private key, depending on auth_type
+  root_path TEXT NOT NULL DEFAULT '/',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Custom admin-defined actions per health container (e.g. "Reset World
 -- Seed" running a specific docker exec command) - separate from
 -- plan_actions, which are subscriber-facing actions tied to a plan rather

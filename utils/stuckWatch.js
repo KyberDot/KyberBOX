@@ -16,31 +16,40 @@
 // is compared.
 //
 // The success marker, like the waiting lines, only ever gets printed
-// once - right before the container hands off to the real service. Once
-// that's happened, a chatty service (Jellyfin logging playback activity,
-// library scans, etc.) can push that one line out of even a generous
-// tail window within minutes, which would make a naive "always re-scan
-// the tail" approach incorrectly flip a perfectly healthy container back
-// to "unknown". Fixed the same way as vpnWatch.js: once a container's
-// success has been confirmed, its logs are left alone on every
-// subsequent check until its observed start time actually changes (i.e.
-// it restarted), which is the only time the script would run its
-// startup check again for real. This only applies to the confirmed-"ok"
-// state - a container still in a genuine wait/stuck loop keeps getting
-// checked normally every cycle, since that's exactly the multi-check
-// comparison this whole feature depends on.
+// once - right before the container hands off to the real service. A
+// chatty service (Jellyfin logging playback activity, library scans,
+// etc.) can push that one line out of any FIXED-SIZE tail window within
+// minutes, and once that's happened a tail-based scan can never recover
+// - every future check looks at the same (now marker-less) recent window
+// and keeps finding nothing. The fix: the success marker is checked via
+// a time-window query anchored to the container's actual start time
+// (`docker inspect` State.StartedAt to start+30min), which reliably
+// contains it regardless of how much has been logged since. The small
+// recent tail is still used, but only as a fallback for the genuinely
+// "what's happening right now" waiting-signature comparison the stuck-
+// detection logic depends on - once the success marker is confirmed via
+// the time-window check, subsequent checks are skipped entirely as long
+// as the container hasn't actually restarted, since nothing could have
+// changed.
 
 const db = require('../db');
 const { runCommand } = require('./ssh');
 const { triggerFullReset } = require('./fullReset');
 
 const WAITING_MARKER = '⏳';
+const STARTUP_WINDOW_MINUTES = 30;
 
 // Consecutive checks (each ~5 min apart, matching the scheduler's cadence)
 // showing the exact same stuck step before a reset is triggered - roughly
 // 15 minutes of zero progress, long enough that this isn't just a slow
 // mount taking its normal time to come up.
 const STUCK_THRESHOLD = 3;
+
+function addMinutes(isoString, minutes) {
+  const d = new Date(isoString);
+  d.setMinutes(d.getMinutes() + minutes);
+  return d.toISOString();
+}
 
 function extractWaitingSignature(output) {
   const lines = output.trim().split('\n');
@@ -60,28 +69,36 @@ async function checkOneContainer(target, watch) {
 
   // Already confirmed healthy and the container hasn't restarted since -
   // nothing new could have happened, since the script only ever runs its
-  // check once per container lifetime. Skip re-scanning logs entirely
-  // rather than risk the marker having scrolled out of view.
+  // check once per container lifetime. Skip re-scanning logs entirely.
   if (!containerRestarted && watch.last_status === 'ok') {
     db.prepare(`UPDATE stuck_watch_containers SET last_checked_at = datetime('now') WHERE id = ?`).run(watch.id);
     return;
   }
 
-  const result = await runCommand(target, `docker logs --tail 5 '${safeName}' 2>&1`, 30000);
-  if (!result.success) return; // couldn't read logs this cycle (container down, SSH hiccup, etc.) - skip rather than guess, try again next cycle
-
-  const output = result.output || '';
-
-  if (output.includes(watch.success_marker)) {
+  // Check the startup window specifically for the success marker first -
+  // this is the part that reliably finds it regardless of how chatty the
+  // container has become since.
+  const until = addMinutes(startedAt, STARTUP_WINDOW_MINUTES);
+  const windowResult = await runCommand(target, `docker logs --since '${startedAt}' --until '${until}' '${safeName}' 2>&1`, 30000);
+  if (windowResult.success && (windowResult.output || '').includes(watch.success_marker)) {
     db.prepare(
       `UPDATE stuck_watch_containers SET consecutive_stuck_checks = 0, last_signature = NULL, last_status = 'ok', last_container_start_at = ?, last_checked_at = datetime('now') WHERE id = ?`
     ).run(startedAt, watch.id);
     return;
   }
 
+  // Not found in the startup window (yet, or the container never
+  // succeeds) - fall back to a small recent tail for the ongoing "same
+  // step repeating" comparison, which needs to know what's happening
+  // right now, not what happened at container start.
+  const result = await runCommand(target, `docker logs --tail 5 '${safeName}' 2>&1`, 30000);
+  if (!result.success) return; // couldn't read logs this cycle (container down, SSH hiccup, etc.) - skip rather than guess, try again next cycle
+
+  const output = result.output || '';
+
   const signature = extractWaitingSignature(output);
   if (!signature) {
-    // No clear waiting line and no success marker - ambiguous output
+    // No clear waiting line in the recent tail either - ambiguous output
     // (container just restarted, unrelated log noise, etc.). Don't count
     // it as progress or as stuck; just note it and move on.
     db.prepare(`UPDATE stuck_watch_containers SET last_status = 'unknown', last_container_start_at = ?, last_checked_at = datetime('now') WHERE id = ?`).run(startedAt, watch.id);

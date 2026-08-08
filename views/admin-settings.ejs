@@ -61,7 +61,7 @@
                                 <option value="limited" <%= admin.admin_access_mode === 'limited' ? 'selected' : '' %>>Limited (only selected pages below)</option>
                             </select>
                             <div id="admin-pages-<%= admin.id %>" class="grid sm:grid-cols-3 gap-2 mb-4 <%= admin.admin_access_mode === 'limited' ? '' : 'hidden' %>">
-                                <% ['overview', 'users', 'plans', 'health', 'settings', 'tickets', 'buckets'].forEach(function(page) { %>
+                                <% ['overview', 'users', 'plans', 'health', 'settings', 'tickets', 'storage'].forEach(function(page) { %>
                                     <label class="flex items-center gap-2 bg-slate-900/60 rounded-lg px-3 py-2 text-xs text-slate-300 cursor-pointer">
                                         <input type="checkbox" name="pages" value="<%= page %>" <%= admin.pages.indexOf(page) !== -1 ? 'checked' : '' %> class="accent-sky-500">
                                         <%= page.charAt(0).toUpperCase() + page.slice(1) %>
@@ -89,7 +89,7 @@
                         <option value="limited" selected>Limited (only selected pages below)</option>
                     </select>
                     <div id="invite-admin-pages" class="grid sm:grid-cols-3 gap-2 sm:col-span-2">
-                        <% ['overview', 'users', 'plans', 'health', 'settings', 'tickets', 'buckets'].forEach(function(page) { %>
+                        <% ['overview', 'users', 'plans', 'health', 'settings', 'tickets', 'storage'].forEach(function(page) { %>
                             <label class="flex items-center gap-2 bg-slate-900/40 rounded-lg px-3 py-2 text-xs text-slate-300 cursor-pointer">
                                 <input type="checkbox" name="pages" value="<%= page %>" class="accent-sky-500">
                                 <%= page.charAt(0).toUpperCase() + page.slice(1) %>

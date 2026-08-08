@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <% pageTitle = 'Storage' %>
+    <%- include('partials/head') %>
+</head>
+<body class="antialiased overflow-x-hidden">
+    <%- include('partials/nav') %>
+
+    <main class="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-10 pb-24">
+        <div class="flex items-start justify-between gap-4 mb-2">
+            <h1 class="text-2xl sm:text-3xl font-extrabold">Storage</h1>
+            <button type="button" onclick="openModal('addStorageModal')" title="Connect Storage" class="w-10 h-10 flex items-center justify-center rounded-xl btn-outline flex-shrink-0">
+                <i class="fas fa-plus"></i>
+            </button>
+        </div>
+        <p class="text-slate-400 text-sm mb-8">Connect S3-compatible object storage (Hetzner Object Storage, AWS S3, Backblaze B2, DigitalOcean Spaces, Cloudflare R2, MinIO) or plain SFTP storage (Hetzner Storage Box and similar). Browse files, check storage usage, and manage contents directly.</p>
+
+        <% if (typeof addResult !== 'undefined' && addResult) { %>
+            <div class="mb-6 px-4 py-3 rounded-xl <%= addResult.ok ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400' : 'bg-red-500/10 border border-red-500/30 text-red-400' %> text-sm">
+                <i class="fas <%= addResult.ok ? 'fa-circle-check' : 'fa-triangle-exclamation' %> mr-2"></i><%= addResult.message %>
+            </div>
+        <% } %>
+
+        <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5 mb-10">
+            <% buckets.forEach(function(b) { %>
+                <a href="/admin/storage/bucket/<%= b.id %>" class="glass rounded-2xl p-5 sm:p-6 hover:bg-white/5 transition block">
+                    <div class="flex items-start justify-between mb-3">
+                        <div class="w-10 h-10 rounded-xl bg-sky-500/10 border border-sky-500/30 flex items-center justify-center">
+                            <i class="fas fa-cloud-arrow-up text-sky-400"></i>
+                        </div>
+                        <form method="POST" action="/admin/storage/bucket/<%= b.id %>/delete" data-ajax-form data-confirm="Remove this connection? This doesn't delete anything in the bucket itself, just disconnects it here." onclick="event.stopPropagation()">
+                            <button type="submit" class="text-slate-500 hover:text-red-400 w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/5">
+                                <i class="fas fa-trash text-xs"></i>
+                            </button>
+                        </form>
+                    </div>
+                    <p class="font-bold text-white text-sm mb-1"><%= b.label %></p>
+                    <span class="badge badge-answered text-[10px] mb-1 inline-block">S3 Bucket</span>
+                    <p class="text-slate-500 text-xs font-mono truncate"><%= b.bucket_name %></p>
+                    <p class="text-slate-600 text-[10px] font-mono truncate mt-0.5"><%= b.endpoint %></p>
+                </a>
+            <% }); %>
+            <% sftpBoxes.forEach(function(b) { %>
+                <a href="/admin/storage/sftp/<%= b.id %>" class="glass rounded-2xl p-5 sm:p-6 hover:bg-white/5 transition block">
+                    <div class="flex items-start justify-between mb-3">
+                        <div class="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center">
+                            <i class="fas fa-server text-amber-400"></i>
+                        </div>
+                        <form method="POST" action="/admin/storage/sftp/<%= b.id %>/delete" data-ajax-form data-confirm="Remove this connection? This doesn't delete anything on the storage box itself, just disconnects it here." onclick="event.stopPropagation()">
+                            <button type="submit" class="text-slate-500 hover:text-red-400 w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/5">
+                                <i class="fas fa-trash text-xs"></i>
+                            </button>
+                        </form>
+                    </div>
+                    <p class="font-bold text-white text-sm mb-1"><%= b.label %></p>
+                    <span class="badge badge-suspended text-[10px] mb-1 inline-block">SFTP Box</span>
+                    <p class="text-slate-500 text-xs font-mono truncate"><%= b.username %>@<%= b.host %></p>
+                    <p class="text-slate-600 text-[10px] font-mono truncate mt-0.5"><%= b.root_path %></p>
+                </a>
+            <% }); %>
+            <% if (buckets.length === 0 && sftpBoxes.length === 0) { %>
+                <p class="text-slate-500 text-sm">Nothing connected yet - use the <i class="fas fa-plus mx-1"></i> button above to add a bucket or storage box.</p>
+            <% } %>
+        </div>
+
+        <!-- Add Storage Modal -->
+        <div id="addStorageModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden items-center justify-center z-50 px-4 py-8 overflow-y-auto">
+            <div class="glass rounded-3xl p-6 sm:p-8 max-w-lg w-full my-auto">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-bold text-white"><i class="fas fa-plus mr-2 text-sky-400"></i>Connect Storage</h3>
+                    <button type="button" onclick="closeModal('addStorageModal')" title="Close" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5">
+                        <i class="fas fa-xmark"></i>
+                    </button>
+                </div>
+
+                <div class="flex gap-1 mb-5 bg-slate-900/60 rounded-xl p-1">
+                    <button type="button" id="tabBtnBucket" onclick="switchStorageTab('bucket')" class="flex-1 py-2 rounded-lg text-xs font-semibold transition">
+                        <i class="fas fa-cloud-arrow-up mr-1.5"></i>S3 Bucket
+                    </button>
+                    <button type="button" id="tabBtnSftp" onclick="switchStorageTab('sftp')" class="flex-1 py-2 rounded-lg text-xs font-semibold transition">
+                        <i class="fas fa-server mr-1.5"></i>SFTP Box
+                    </button>
+                </div>
+
+                <div id="tabPanelBucket">
+                    <p class="text-slate-400 text-xs mb-4">S3-compatible object storage. Tested before saving.</p>
+                    <form method="POST" action="/admin/storage/bucket" data-ajax-form class="grid gap-3">
+                        <input type="text" name="label" required class="input" placeholder="Display name (e.g. Hetzner Backups)">
+                        <input type="text" name="bucket_name" required class="input" placeholder="Bucket name">
+                        <input type="text" name="endpoint" required class="input" placeholder="Endpoint URL (e.g. https://fsn1.your-objectstorage.com)">
+                        <input type="text" name="region" class="input" placeholder="Region (optional - defaults to &quot;auto&quot;)">
+                        <label class="flex items-center gap-2 bg-slate-900/40 rounded-lg px-3 py-2.5 text-xs text-slate-300 cursor-pointer">
+                            <input type="checkbox" name="force_path_style" class="accent-sky-500">
+                            Use path-style URLs (needed for some self-hosted/MinIO setups)
+                        </label>
+                        <input type="text" name="access_key" required class="input" placeholder="Access key">
+                        <input type="password" name="secret_key" required class="input" placeholder="Secret key">
+                        <button type="submit" class="btn-primary py-3 rounded-xl text-sm">Connect Bucket</button>
+                    </form>
+                </div>
+
+                <div id="tabPanelSftp" class="hidden">
+                    <p class="text-slate-400 text-xs mb-4">Plain SFTP storage, like Hetzner Storage Box - no S3 API needed. Tested before saving.</p>
+                    <form method="POST" action="/admin/storage/sftp" data-ajax-form class="grid gap-3">
+                        <input type="text" name="label" required class="input" placeholder="Display name (e.g. Hetzner BX11)">
+                        <input type="text" name="host" required class="input" placeholder="Host (e.g. u123456.your-storagebox.de)">
+                        <div class="grid grid-cols-2 gap-3">
+                            <input type="number" name="port" class="input" placeholder="Port (default 22)">
+                            <input type="text" name="username" required class="input" placeholder="Username">
+                        </div>
+                        <select name="auth_type" class="input" onchange="
+                            const isKey = this.value === 'key';
+                            document.getElementById('sftpPasswordInput').classList.toggle('hidden', isKey);
+                            document.getElementById('sftpPasswordInput').disabled = isKey;
+                            document.getElementById('sftpKeyInput').classList.toggle('hidden', !isKey);
+                            document.getElementById('sftpKeyInput').disabled = !isKey;
+                        ">
+                            <option value="password">Password</option>
+                            <option value="key">Private Key</option>
+                        </select>
+                        <input type="password" name="secret" id="sftpPasswordInput" required class="input" placeholder="Password">
+                        <textarea name="secret" id="sftpKeyInput" rows="4" class="input hidden font-mono text-xs" disabled required placeholder="Paste the full private key contents, including the BEGIN/END lines"></textarea>
+                        <input type="text" name="root_path" class="input" placeholder="Root path (optional, defaults to /)">
+                        <button type="submit" class="btn-primary py-3 rounded-xl text-sm">Connect Storage Box</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        function switchStorageTab(tab) {
+            const isBucket = tab === 'bucket';
+            document.getElementById('tabPanelBucket').classList.toggle('hidden', !isBucket);
+            document.getElementById('tabPanelSftp').classList.toggle('hidden', isBucket);
+            document.getElementById('tabBtnBucket').className = 'flex-1 py-2 rounded-lg text-xs font-semibold transition ' + (isBucket ? 'bg-sky-500/20 text-sky-400' : 'text-slate-400 hover:text-white');
+            document.getElementById('tabBtnSftp').className = 'flex-1 py-2 rounded-lg text-xs font-semibold transition ' + (!isBucket ? 'bg-sky-500/20 text-sky-400' : 'text-slate-400 hover:text-white');
+        }
+        switchStorageTab('bucket');
+    </script>
+</body>
+</html>

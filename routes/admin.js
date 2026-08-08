@@ -15,6 +15,7 @@ const { startReset, endReset, getResetState } = require('../utils/resetLock');
 const { requireFullAdmin } = require('../middleware/auth');
 const { triggerFullReset, getFullResetState } = require('../utils/fullReset');
 const s3 = require('../utils/s3');
+const sftpStorage = require('../utils/sftpStorage');
 const { bucketUpload } = require('../utils/uploads');
 
 const router = express.Router();
@@ -438,17 +439,19 @@ router.post('/admin/plans/:id/containers/:containerId/move', (req, res) => {
   res.redirect('/admin/plans');
 });
 
-// ---------- Storage Buckets ----------
+// ---------- Storage (S3 Buckets + SFTP Storage Boxes) ----------
 
-function loadBucketsList() {
-  return db.prepare('SELECT id, label, endpoint, region, bucket_name, created_at FROM storage_buckets ORDER BY created_at ASC').all();
+function loadStorageLists() {
+  const buckets = db.prepare('SELECT id, label, endpoint, region, bucket_name, created_at FROM storage_buckets ORDER BY created_at ASC').all();
+  const sftpBoxes = db.prepare('SELECT id, label, host, port, username, root_path, created_at FROM sftp_storage_boxes ORDER BY created_at ASC').all();
+  return { buckets, sftpBoxes };
 }
 
-router.get('/admin/buckets', (req, res) => {
-  res.render('admin-buckets', { buckets: loadBucketsList(), addResult: null });
+router.get('/admin/storage', (req, res) => {
+  res.render('admin-storage', { ...loadStorageLists(), addResult: null });
 });
 
-router.post('/admin/buckets', async (req, res) => {
+router.post('/admin/storage/bucket', async (req, res) => {
   const label = String(req.body.label || '').trim();
   const endpoint = String(req.body.endpoint || '').trim();
   const region = String(req.body.region || '').trim() || 'auto';
@@ -458,7 +461,7 @@ router.post('/admin/buckets', async (req, res) => {
   const forcePathStyle = req.body.force_path_style === 'on' || req.body.force_path_style === '1';
 
   if (!label || !endpoint || !bucketName || !accessKey || !secretKey) {
-    return res.status(400).render('admin-buckets', { buckets: loadBucketsList(), addResult: { ok: false, message: 'All fields except region are required.' } });
+    return res.status(400).render('admin-storage', { ...loadStorageLists(), addResult: { ok: false, message: 'All fields except region are required.' } });
   }
 
   // Tested before saving, so a typo in the endpoint or a bad key doesn't
@@ -474,28 +477,28 @@ router.post('/admin/buckets', async (req, res) => {
   };
   const testResult = await s3.testConnection(testBucket);
   if (!testResult.ok) {
-    return res.status(400).render('admin-buckets', { buckets: loadBucketsList(), addResult: { ok: false, message: 'Could not connect: ' + testResult.message } });
+    return res.status(400).render('admin-storage', { ...loadStorageLists(), addResult: { ok: false, message: 'Could not connect: ' + testResult.message } });
   }
 
   db.prepare(
     'INSERT INTO storage_buckets (label, endpoint, region, bucket_name, access_key_encrypted, secret_key_encrypted, force_path_style) VALUES (?, ?, ?, ?, ?, ?, ?)'
   ).run(label, endpoint, region, bucketName, testBucket.access_key_encrypted, testBucket.secret_key_encrypted, testBucket.force_path_style);
 
-  res.render('admin-buckets', { buckets: loadBucketsList(), addResult: { ok: true, message: `${label} connected successfully.` } });
+  res.render('admin-storage', { ...loadStorageLists(), addResult: { ok: true, message: `${label} connected successfully.` } });
 });
 
-router.post('/admin/buckets/:id/delete', (req, res) => {
+router.post('/admin/storage/bucket/:id/delete', (req, res) => {
   db.prepare('DELETE FROM storage_buckets WHERE id = ?').run(req.params.id);
-  res.redirect('/admin/buckets');
+  res.redirect('/admin/storage');
 });
 
-router.get('/admin/buckets/:id', (req, res) => {
+router.get('/admin/storage/bucket/:id', (req, res) => {
   const bucket = db.prepare('SELECT id, label, endpoint, region, bucket_name, created_at FROM storage_buckets WHERE id = ?').get(req.params.id);
   if (!bucket) return res.status(404).render('error', { message: 'Bucket not found.' });
-  res.render('admin-bucket-detail', { bucket });
+  res.render('admin-storage-detail', { item: bucket, type: 'bucket' });
 });
 
-router.get('/admin/buckets/:id/list', async (req, res) => {
+router.get('/admin/storage/bucket/:id/list', async (req, res) => {
   const bucket = db.prepare('SELECT * FROM storage_buckets WHERE id = ?').get(req.params.id);
   if (!bucket) return res.status(404).json({ ok: false, message: 'Bucket not found.' });
 
@@ -507,7 +510,7 @@ router.get('/admin/buckets/:id/list', async (req, res) => {
   }
 });
 
-router.get('/admin/buckets/:id/stats', async (req, res) => {
+router.get('/admin/storage/bucket/:id/stats', async (req, res) => {
   const bucket = db.prepare('SELECT * FROM storage_buckets WHERE id = ?').get(req.params.id);
   if (!bucket) return res.status(404).json({ ok: false, message: 'Bucket not found.' });
 
@@ -525,7 +528,7 @@ router.get('/admin/buckets/:id/stats', async (req, res) => {
   }
 });
 
-router.post('/admin/buckets/:id/delete-file', async (req, res) => {
+router.post('/admin/storage/bucket/:id/delete-file', async (req, res) => {
   const bucket = db.prepare('SELECT * FROM storage_buckets WHERE id = ?').get(req.params.id);
   if (!bucket) return res.status(404).json({ ok: false, message: 'Bucket not found.' });
   const key = String(req.body.key || '');
@@ -539,7 +542,7 @@ router.post('/admin/buckets/:id/delete-file', async (req, res) => {
   }
 });
 
-router.get('/admin/buckets/:id/download', async (req, res) => {
+router.get('/admin/storage/bucket/:id/download', async (req, res) => {
   const bucket = db.prepare('SELECT * FROM storage_buckets WHERE id = ?').get(req.params.id);
   if (!bucket) return res.status(404).json({ ok: false, message: 'Bucket not found.' });
   const key = String(req.query.key || '');
@@ -553,7 +556,7 @@ router.get('/admin/buckets/:id/download', async (req, res) => {
   }
 });
 
-router.post('/admin/buckets/:id/upload', (req, res) => {
+router.post('/admin/storage/bucket/:id/upload', (req, res) => {
   bucketUpload.single('file')(req, res, async (err) => {
     if (err) return res.status(400).json({ ok: false, message: err.message });
 
@@ -566,6 +569,126 @@ router.post('/admin/buckets/:id/upload', (req, res) => {
 
     try {
       await s3.uploadObject(bucket, key, req.file.buffer, req.file.mimetype);
+      res.json({ ok: true, key });
+    } catch (uploadErr) {
+      res.status(500).json({ ok: false, message: uploadErr.message });
+    }
+  });
+});
+
+// ---- SFTP Storage Boxes ----
+
+router.post('/admin/storage/sftp', async (req, res) => {
+  const label = String(req.body.label || '').trim();
+  const host = String(req.body.host || '').trim();
+  const port = Number(req.body.port) || 22;
+  const username = String(req.body.username || '').trim();
+  const authType = req.body.auth_type === 'key' ? 'key' : 'password';
+  const secret = String(req.body.secret || '').trim();
+  const rootPath = String(req.body.root_path || '/').trim() || '/';
+
+  if (!label || !host || !username || !secret) {
+    return res.status(400).render('admin-storage', { ...loadStorageLists(), addResult: { ok: false, message: 'Label, host, username, and password/key are all required.' } });
+  }
+
+  const testBox = { host, port, username, auth_type: authType, secret_encrypted: encrypt(secret), root_path: rootPath };
+  const testResult = await sftpStorage.testConnection(testBox);
+  if (!testResult.ok) {
+    return res.status(400).render('admin-storage', { ...loadStorageLists(), addResult: { ok: false, message: 'Could not connect: ' + testResult.message } });
+  }
+
+  db.prepare(
+    'INSERT INTO sftp_storage_boxes (label, host, port, username, auth_type, secret_encrypted, root_path) VALUES (?, ?, ?, ?, ?, ?, ?)'
+  ).run(label, host, port, username, authType, testBox.secret_encrypted, rootPath);
+
+  res.render('admin-storage', { ...loadStorageLists(), addResult: { ok: true, message: `${label} connected successfully.` } });
+});
+
+router.post('/admin/storage/sftp/:id/delete', (req, res) => {
+  db.prepare('DELETE FROM sftp_storage_boxes WHERE id = ?').run(req.params.id);
+  res.redirect('/admin/storage');
+});
+
+router.get('/admin/storage/sftp/:id', (req, res) => {
+  const box = db.prepare('SELECT id, label, host, port, username, root_path, created_at FROM sftp_storage_boxes WHERE id = ?').get(req.params.id);
+  if (!box) return res.status(404).render('error', { message: 'Storage box not found.' });
+  res.render('admin-storage-detail', { item: box, type: 'sftp' });
+});
+
+router.get('/admin/storage/sftp/:id/list', async (req, res) => {
+  const box = db.prepare('SELECT * FROM sftp_storage_boxes WHERE id = ?').get(req.params.id);
+  if (!box) return res.status(404).json({ ok: false, message: 'Storage box not found.' });
+
+  try {
+    const result = await sftpStorage.listObjects(box, req.query.prefix || box.root_path);
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    res.status(500).json({ ok: false, message: err.message });
+  }
+});
+
+router.get('/admin/storage/sftp/:id/stats', async (req, res) => {
+  const box = db.prepare('SELECT * FROM sftp_storage_boxes WHERE id = ?').get(req.params.id);
+  if (!box) return res.status(404).json({ ok: false, message: 'Storage box not found.' });
+
+  try {
+    const stats = await sftpStorage.getBucketStats(box);
+    res.json({
+      ok: true,
+      totalSize: stats.totalSize,
+      totalSizeFormatted: s3.formatBytes(stats.totalSize),
+      totalCount: stats.totalCount,
+      isComplete: stats.isComplete,
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, message: err.message });
+  }
+});
+
+router.post('/admin/storage/sftp/:id/delete-file', async (req, res) => {
+  const box = db.prepare('SELECT * FROM sftp_storage_boxes WHERE id = ?').get(req.params.id);
+  if (!box) return res.status(404).json({ ok: false, message: 'Storage box not found.' });
+  const key = String(req.body.key || '');
+  if (!key) return res.status(400).json({ ok: false, message: 'No file specified.' });
+
+  try {
+    await sftpStorage.deleteObject(box, key);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ ok: false, message: err.message });
+  }
+});
+
+router.get('/admin/storage/sftp/:id/download', async (req, res) => {
+  const box = db.prepare('SELECT * FROM sftp_storage_boxes WHERE id = ?').get(req.params.id);
+  if (!box) return res.status(404).json({ ok: false, message: 'Storage box not found.' });
+  const key = String(req.query.key || '');
+  if (!key) return res.status(400).send('No file specified.');
+
+  try {
+    const buffer = await sftpStorage.downloadObject(box, key);
+    const filename = key.split('/').pop();
+    res.setHeader('Content-Disposition', `attachment; filename="${filename.replace(/"/g, '')}"`);
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.send(buffer);
+  } catch (err) {
+    res.status(500).send('Could not download that file: ' + err.message);
+  }
+});
+
+router.post('/admin/storage/sftp/:id/upload', (req, res) => {
+  bucketUpload.single('file')(req, res, async (err) => {
+    if (err) return res.status(400).json({ ok: false, message: err.message });
+
+    const box = db.prepare('SELECT * FROM sftp_storage_boxes WHERE id = ?').get(req.params.id);
+    if (!box) return res.status(404).json({ ok: false, message: 'Storage box not found.' });
+    if (!req.file) return res.status(400).json({ ok: false, message: 'No file provided.' });
+
+    const prefix = String(req.body.prefix || box.root_path);
+    const key = prefix.replace(/\/+$/, '') + '/' + req.file.originalname;
+
+    try {
+      await sftpStorage.uploadObject(box, key, req.file.buffer);
       res.json({ ok: true, key });
     } catch (uploadErr) {
       res.status(500).json({ ok: false, message: uploadErr.message });
@@ -914,7 +1037,7 @@ router.get('/admin/settings', (req, res) => {
   res.render('admin-settings', { ...loadSettingsPageData(), saved: null, testResult: null, brandingError: null, adminActionResult: null });
 });
 
-const ADMIN_PAGE_KEYS = ['overview', 'users', 'plans', 'health', 'settings', 'tickets', 'buckets'];
+const ADMIN_PAGE_KEYS = ['overview', 'users', 'plans', 'health', 'settings', 'tickets', 'storage'];
 
 router.post('/admin/admins/invite', requireFullAdmin, async (req, res) => {
   const name = String(req.body.name || '').trim();

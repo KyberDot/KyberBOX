@@ -16,15 +16,21 @@
 //
 // Critically, the marker only ever gets printed ONCE, right at startup -
 // it's never repeated. A chatty container (Decypharr itself, once
-// actually running, is a good example) can easily push that one line out
-// of even a fairly large `docker logs --tail` window within minutes,
-// which would make a naive "re-scan the tail every check" approach
-// eventually and incorrectly report "unknown" for a container that's
-// been fine the whole time. Fixed by tracking each container's observed
-// start time (`docker inspect` State.StartedAt) - once a status has been
-// determined, it's left alone on every subsequent check until the
-// container's start time actually changes (i.e. it restarted), which is
-// the only time the script would run its check again for real.
+// actually running, is a good example) can push that one line out of
+// any FIXED-SIZE `docker logs --tail` window within minutes. A tail-based
+// scan can never recover from that once it's happened - every future
+// check keeps looking at the same (now marker-less) recent window and
+// keeps finding nothing, forever, regardless of how large the tail is or
+// whether repeat scans are skipped. The actual fix is to stop using
+// --tail at all: since the container's real start time is already known
+// (`docker inspect` State.StartedAt), the log scan is windowed to
+// exactly the startup period (start time to start+30min, generous for
+// the scripts' own internal retry loops) using `docker logs --since/
+// --until`. That window reliably contains the marker regardless of how
+// much has been logged since. Once a determination is made, subsequent
+// checks are skipped entirely as long as the container hasn't actually
+// restarted, since nothing could have changed - a lighter-weight
+// optimization on top of the real fix, not a substitute for it.
 
 const db = require('../db');
 const { runCommand } = require('./ssh');
@@ -32,6 +38,13 @@ const { notifyAdminVpnFailure } = require('./mailer');
 
 const SUCCESS_MARKER = 'VPN tunnel confirmed UP';
 const FAILURE_MARKER = 'VPN connection FAILED';
+const STARTUP_WINDOW_MINUTES = 30;
+
+function addMinutes(isoString, minutes) {
+  const d = new Date(isoString);
+  d.setMinutes(d.getMinutes() + minutes);
+  return d.toISOString();
+}
 
 async function checkOneContainer(target, watch) {
   const safeName = watch.container_name.replace(/'/g, `'"'"'`);
@@ -44,14 +57,14 @@ async function checkOneContainer(target, watch) {
 
   // Already have a real determination and the container hasn't restarted
   // since - nothing new could have happened, since the script only ever
-  // runs its check once per container lifetime. Skip re-scanning logs
-  // entirely rather than risk the marker having scrolled out of view.
+  // runs its check once per container lifetime.
   if (!containerRestarted && (watch.last_status === 'connected' || watch.last_status === 'failed')) {
     db.prepare(`UPDATE vpn_watch_containers SET last_checked_at = datetime('now') WHERE id = ?`).run(watch.id);
     return;
   }
 
-  const result = await runCommand(target, `docker logs --tail 50 '${safeName}' 2>&1`, 30000);
+  const until = addMinutes(startedAt, STARTUP_WINDOW_MINUTES);
+  const result = await runCommand(target, `docker logs --since '${startedAt}' --until '${until}' '${safeName}' 2>&1`, 30000);
   if (!result.success) return;
 
   const output = result.output || '';
@@ -62,8 +75,9 @@ async function checkOneContainer(target, watch) {
   } else if (output.includes(SUCCESS_MARKER)) {
     newStatus = 'connected';
   } else {
-    // Neither marker present yet - still waiting on the tunnel this run,
-    // or this container's script never had WAIT_FOR_VPN=true set at all.
+    // Neither marker present in the startup window - either it's still
+    // in progress (if we're checking before the window has closed) or
+    // this container's script never had WAIT_FOR_VPN=true set at all.
     newStatus = 'unknown';
   }
 

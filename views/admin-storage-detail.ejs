@@ -1,16 +1,20 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <% pageTitle = bucket.label %>
+    <% pageTitle = item.label %>
     <%- include('partials/head') %>
 </head>
 <body class="antialiased overflow-x-hidden">
     <%- include('partials/nav') %>
 
     <main class="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-10 pb-24">
-        <a href="/admin/buckets" class="text-sky-400 hover:text-sky-300 text-xs mb-4 inline-block"><i class="fas fa-arrow-left mr-1"></i>All Buckets</a>
-        <h1 class="text-2xl sm:text-3xl font-extrabold mb-1"><%= bucket.label %></h1>
-        <p class="text-slate-500 text-xs font-mono mb-8"><%= bucket.bucket_name %> — <%= bucket.endpoint %></p>
+        <a href="/admin/storage" class="text-sky-400 hover:text-sky-300 text-xs mb-4 inline-block"><i class="fas fa-arrow-left mr-1"></i>All Storage</a>
+        <h1 class="text-2xl sm:text-3xl font-extrabold mb-1"><%= item.label %></h1>
+        <% if (type === 'bucket') { %>
+            <p class="text-slate-500 text-xs font-mono mb-8"><%= item.bucket_name %> — <%= item.endpoint %></p>
+        <% } else { %>
+            <p class="text-slate-500 text-xs font-mono mb-8"><%= item.username %>@<%= item.host %>:<%= item.port %> — <%= item.root_path %></p>
+        <% } %>
 
         <!-- Storage Stats -->
         <div class="glass rounded-2xl p-5 sm:p-6 mb-6">
@@ -21,7 +25,7 @@
                 </button>
             </div>
             <div id="statsContent" class="grid grid-cols-2 gap-4 mt-3">
-                <p class="text-slate-500 text-sm col-span-2">Click Calculate to scan the bucket - this walks every object, so it may take a moment for large buckets.</p>
+                <p class="text-slate-500 text-sm col-span-2">Click Calculate to scan - this walks every <%= type === 'bucket' ? 'object' : 'file and folder' %>, so it may take a moment for large amounts of data.</p>
             </div>
         </div>
 
@@ -50,8 +54,11 @@
     </main>
 
     <script>
-        const bucketId = <%= bucket.id %>;
-        let currentPrefix = '';
+        const itemType = '<%= type %>';
+        const itemId = <%= item.id %>;
+        const apiBase = '/admin/storage/' + itemType + '/' + itemId;
+        let currentPrefix = <%- type === 'sftp' ? JSON.stringify(item.root_path) : "''" %>;
+        const rootPrefix = currentPrefix;
         let currentToken = null;
 
         function formatBytes(bytes) {
@@ -75,10 +82,10 @@
             const originalHtml = btn.innerHTML;
             btn.disabled = true;
             btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>Scanning…';
-            content.innerHTML = '<p class="text-slate-500 text-sm col-span-2"><i class="fas fa-circle-notch fa-spin mr-2"></i>Walking every object in the bucket - this can take a while for large buckets…</p>';
+            content.innerHTML = '<p class="text-slate-500 text-sm col-span-2"><i class="fas fa-circle-notch fa-spin mr-2"></i>Walking everything - this can take a while for large amounts of data…</p>';
 
             try {
-                const res = await fetch('/admin/buckets/' + bucketId + '/stats');
+                const res = await fetch(apiBase + '/stats');
                 const data = await res.json();
                 if (!data.ok) {
                     content.innerHTML = '<p class="text-red-400 text-sm col-span-2">' + (data.message || 'Could not load stats.') + '</p>';
@@ -86,8 +93,8 @@
                 }
                 content.innerHTML =
                     '<div><p class="text-slate-500 text-xs uppercase tracking-widest font-semibold mb-1">Total Size</p><p class="text-lg font-bold text-white">' + data.totalSizeFormatted + '</p></div>' +
-                    '<div><p class="text-slate-500 text-xs uppercase tracking-widest font-semibold mb-1">Objects</p><p class="text-lg font-bold text-white">' + data.totalCount.toLocaleString() + '</p></div>' +
-                    (!data.isComplete ? '<p class="text-amber-400 text-xs col-span-2 mt-1"><i class="fas fa-triangle-exclamation mr-1"></i>This bucket is very large - the numbers above are a partial count, not the full total.</p>' : '');
+                    '<div><p class="text-slate-500 text-xs uppercase tracking-widest font-semibold mb-1">Files</p><p class="text-lg font-bold text-white">' + data.totalCount.toLocaleString() + '</p></div>' +
+                    (!data.isComplete ? '<p class="text-amber-400 text-xs col-span-2 mt-1"><i class="fas fa-triangle-exclamation mr-1"></i>This is very large - the numbers above are a partial count, not the full total.</p>' : '');
             } catch (e) {
                 content.innerHTML = '<p class="text-red-400 text-sm col-span-2">Something went wrong sending that request.</p>';
             } finally {
@@ -98,13 +105,14 @@
 
         function renderBreadcrumb() {
             const el = document.getElementById('breadcrumb');
-            const parts = currentPrefix.split('/').filter(Boolean);
-            let html = '<button type="button" onclick="navigateTo(\'\')" class="hover:text-sky-400">Root</button>';
-            let pathSoFar = '';
+            const relativePrefix = currentPrefix.startsWith(rootPrefix) ? currentPrefix.slice(rootPrefix.length) : currentPrefix;
+            const parts = relativePrefix.split('/').filter(Boolean);
+            let html = '<button type="button" onclick="navigateTo(' + JSON.stringify(rootPrefix) + ')" class="hover:text-sky-400">Root</button>';
+            let pathSoFar = rootPrefix;
             parts.forEach(function (part) {
-                pathSoFar += part + '/';
+                pathSoFar = (pathSoFar.endsWith('/') ? pathSoFar : pathSoFar + '/') + part;
                 const p = pathSoFar;
-                html += ' <span class="text-slate-600">/</span> <button type="button" onclick="navigateTo(\'' + p + '\')" class="hover:text-sky-400">' + part + '</button>';
+                html += ' <span class="text-slate-600">/</span> <button type="button" onclick="navigateTo(' + JSON.stringify(p) + ')" class="hover:text-sky-400">' + part + '</button>';
             });
             el.innerHTML = html;
         }
@@ -116,23 +124,27 @@
             loadFiles(false);
         }
 
+        function displayName(fullPath) {
+            const trimmed = fullPath.startsWith(currentPrefix) ? fullPath.slice(currentPrefix.length) : fullPath;
+            return trimmed.replace(/^\/+/, '');
+        }
+
         function fileRowHtml(item, isFolder) {
             if (isFolder) {
-                const name = item.replace(currentPrefix, '').replace(/\/$/, '');
+                const name = displayName(item).replace(/\/$/, '');
                 return '<div class="flex items-center gap-3 bg-slate-900/40 rounded-xl px-3 py-2.5 text-sm">' +
-                    '<button type="button" onclick="navigateTo(\'' + item + '\')" class="flex items-center gap-2 flex-1 min-w-0 text-left hover:text-sky-400">' +
+                    '<button type="button" onclick="navigateTo(' + JSON.stringify(item) + ')" class="flex items-center gap-2 flex-1 min-w-0 text-left hover:text-sky-400">' +
                     '<i class="fas fa-folder text-amber-400"></i><span class="truncate">' + name + '</span>' +
                     '</button>' +
                     '</div>';
             }
-            const name = item.key.replace(currentPrefix, '');
-            const safeKey = item.key.replace(/'/g, "\\'");
+            const name = displayName(item.key);
             return '<div class="flex items-center gap-3 bg-slate-900/40 rounded-xl px-3 py-2.5 text-sm" data-file-key="' + item.key + '">' +
                 '<i class="fas fa-file text-slate-500 flex-shrink-0"></i>' +
                 '<span class="truncate flex-1 min-w-0">' + name + '</span>' +
                 '<span class="text-slate-500 text-xs flex-shrink-0">' + formatBytes(item.size) + '</span>' +
-                '<button type="button" onclick="downloadFile(\'' + safeKey + '\')" title="Download" class="text-slate-500 hover:text-white w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/5 flex-shrink-0"><i class="fas fa-download text-xs"></i></button>' +
-                '<button type="button" onclick="deleteFile(\'' + safeKey + '\')" title="Delete" class="text-slate-500 hover:text-red-400 w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/5 flex-shrink-0"><i class="fas fa-trash text-xs"></i></button>' +
+                '<button type="button" onclick="downloadFile(' + JSON.stringify(item.key) + ')" title="Download" class="text-slate-500 hover:text-white w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/5 flex-shrink-0"><i class="fas fa-download text-xs"></i></button>' +
+                '<button type="button" onclick="deleteFile(' + JSON.stringify(item.key) + ')" title="Delete" class="text-slate-500 hover:text-red-400 w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/5 flex-shrink-0"><i class="fas fa-trash text-xs"></i></button>' +
                 '</div>';
         }
 
@@ -141,7 +153,7 @@
             if (!append) list.innerHTML = '<p class="text-slate-500 text-sm"><i class="fas fa-circle-notch fa-spin mr-2"></i>Loading…</p>';
 
             try {
-                const url = '/admin/buckets/' + bucketId + '/list?prefix=' + encodeURIComponent(currentPrefix) + (currentToken ? '&token=' + encodeURIComponent(currentToken) : '');
+                const url = apiBase + '/list?prefix=' + encodeURIComponent(currentPrefix) + (currentToken ? '&token=' + encodeURIComponent(currentToken) : '');
                 const res = await fetch(url);
                 const data = await res.json();
 
@@ -173,7 +185,7 @@
         async function deleteFile(key) {
             if (!confirm('Delete "' + key + '"? This cannot be undone.')) return;
             try {
-                const res = await fetch('/admin/buckets/' + bucketId + '/delete-file', {
+                const res = await fetch(apiBase + '/delete-file', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                     body: 'key=' + encodeURIComponent(key),
@@ -190,8 +202,14 @@
         }
 
         async function downloadFile(key) {
+            if (itemType === 'sftp') {
+                // No presigned-URL concept for SFTP - the file is streamed
+                // through our own server as a direct download.
+                window.location.href = apiBase + '/download?key=' + encodeURIComponent(key);
+                return;
+            }
             try {
-                const res = await fetch('/admin/buckets/' + bucketId + '/download?key=' + encodeURIComponent(key));
+                const res = await fetch(apiBase + '/download?key=' + encodeURIComponent(key));
                 const data = await res.json();
                 if (!data.ok) return showFileListResult(false, data.message || 'Could not generate a download link.');
                 window.open(data.url, '_blank');
@@ -209,7 +227,7 @@
             formData.append('prefix', currentPrefix);
 
             try {
-                const res = await fetch('/admin/buckets/' + bucketId + '/upload', { method: 'POST', body: formData });
+                const res = await fetch(apiBase + '/upload', { method: 'POST', body: formData });
                 const data = await res.json();
                 if (!data.ok) return showFileListResult(false, data.message || 'Upload failed.');
                 showFileListResult(true, file.name + ' uploaded.');
