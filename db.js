@@ -349,6 +349,10 @@ ensureColumn('users', 'plex_user_id', 'plex_user_id TEXT'); // Plex.tv account i
 ensureColumn('plan_containers', 'link_url', 'link_url TEXT');
 ensureColumn('vpn_watch_containers', 'last_container_start_at', 'last_container_start_at TEXT');
 ensureColumn('stuck_watch_containers', 'last_container_start_at', 'last_container_start_at TEXT');
+ensureColumn('storage_buckets', 'total_capacity_bytes', 'total_capacity_bytes INTEGER');
+ensureColumn('sftp_storage_boxes', 'total_capacity_bytes', 'total_capacity_bytes INTEGER');
+ensureColumn('storage_buckets', 'color', "color TEXT NOT NULL DEFAULT 'sky'");
+ensureColumn('sftp_storage_boxes', 'color', "color TEXT NOT NULL DEFAULT 'amber'");
 ensureColumn('users', 'plex_link_attempted_at', 'plex_link_attempted_at TEXT');
 ensureColumn('users', 'admin_access_mode', "admin_access_mode TEXT NOT NULL DEFAULT 'full'"); // full | limited - only meaningful when role = 'admin'; limited admins are gated per-page via admin_page_access
 

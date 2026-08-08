@@ -164,6 +164,17 @@ async function deleteObject(box, key) {
   });
 }
 
+// SFTP has a native rename operation that handles both a same-folder
+// rename and a cross-folder move identically - just a different
+// destination path either way.
+async function renameObject(box, oldKey, newKey) {
+  return withSftp(box, (sftp) => {
+    return new Promise((resolve, reject) => {
+      sftp.rename(oldKey, newKey, (err) => (err ? reject(err) : resolve()));
+    });
+  });
+}
+
 async function uploadObject(box, key, buffer) {
   return withSftp(box, (sftp) => {
     return new Promise((resolve, reject) => {
@@ -191,4 +202,4 @@ async function downloadObject(box, key) {
   });
 }
 
-module.exports = { testConnection, listObjects, getBucketStats, deleteObject, uploadObject, downloadObject };
+module.exports = { testConnection, listObjects, getBucketStats, deleteObject, renameObject, uploadObject, downloadObject };

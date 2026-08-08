@@ -3,6 +3,23 @@
 <head>
     <% pageTitle = 'Storage' %>
     <%- include('partials/head') %>
+    <%
+      // Tailwind CDN's JIT scanner needs to see full, literal class name
+      // strings somewhere in the page source - it can't resolve classes
+      // built by concatenating a runtime color name into a template
+      // string. This map keeps every color's classes spelled out in
+      // full, so admin-chosen colors still render correctly.
+      var COLOR_CLASSES = {
+        sky: { bg: 'bg-sky-500/10', border: 'border-sky-500/30', text: 'text-sky-400' },
+        amber: { bg: 'bg-amber-500/10', border: 'border-amber-500/30', text: 'text-amber-400' },
+        emerald: { bg: 'bg-emerald-500/10', border: 'border-emerald-500/30', text: 'text-emerald-400' },
+        violet: { bg: 'bg-violet-500/10', border: 'border-violet-500/30', text: 'text-violet-400' },
+        rose: { bg: 'bg-rose-500/10', border: 'border-rose-500/30', text: 'text-rose-400' },
+        cyan: { bg: 'bg-cyan-500/10', border: 'border-cyan-500/30', text: 'text-cyan-400' },
+        fuchsia: { bg: 'bg-fuchsia-500/10', border: 'border-fuchsia-500/30', text: 'text-fuchsia-400' },
+        lime: { bg: 'bg-lime-500/10', border: 'border-lime-500/30', text: 'text-lime-400' },
+      };
+    %>
 </head>
 <body class="antialiased overflow-x-hidden">
     <%- include('partials/nav') %>
@@ -24,16 +41,22 @@
 
         <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5 mb-10">
             <% buckets.forEach(function(b) { %>
+                <% var c = COLOR_CLASSES[b.color] || COLOR_CLASSES.sky; %>
                 <a href="/admin/storage/bucket/<%= b.id %>" class="glass rounded-2xl p-5 sm:p-6 hover:bg-white/5 transition block">
                     <div class="flex items-start justify-between mb-3">
-                        <div class="w-10 h-10 rounded-xl bg-sky-500/10 border border-sky-500/30 flex items-center justify-center">
-                            <i class="fas fa-cloud-arrow-up text-sky-400"></i>
+                        <div class="w-10 h-10 rounded-xl <%= c.bg %> border <%= c.border %> flex items-center justify-center">
+                            <i class="fas fa-cloud-arrow-up <%= c.text %>"></i>
                         </div>
-                        <form method="POST" action="/admin/storage/bucket/<%= b.id %>/delete" data-ajax-form data-confirm="Remove this connection? This doesn't delete anything in the bucket itself, just disconnects it here." onclick="event.stopPropagation()">
-                            <button type="submit" class="text-slate-500 hover:text-red-400 w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/5">
-                                <i class="fas fa-trash text-xs"></i>
+                        <div class="flex items-center gap-0.5">
+                            <button type="button" onclick="event.stopPropagation(); event.preventDefault(); openEditBucket(<%= b.id %>)" title="Edit" class="text-slate-500 hover:text-white w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/5">
+                                <i class="fas fa-pen text-xs"></i>
                             </button>
-                        </form>
+                            <form method="POST" action="/admin/storage/bucket/<%= b.id %>/delete" data-ajax-form data-confirm="Remove this connection? This doesn't delete anything in the bucket itself, just disconnects it here." onclick="event.stopPropagation()">
+                                <button type="submit" class="text-slate-500 hover:text-red-400 w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/5">
+                                    <i class="fas fa-trash text-xs"></i>
+                                </button>
+                            </form>
+                        </div>
                     </div>
                     <p class="font-bold text-white text-sm mb-1"><%= b.label %></p>
                     <span class="badge badge-answered text-[10px] mb-1 inline-block">S3 Bucket</span>
@@ -42,21 +65,27 @@
                 </a>
             <% }); %>
             <% sftpBoxes.forEach(function(b) { %>
+                <% var c = COLOR_CLASSES[b.color] || COLOR_CLASSES.amber; %>
                 <a href="/admin/storage/sftp/<%= b.id %>" class="glass rounded-2xl p-5 sm:p-6 hover:bg-white/5 transition block">
                     <div class="flex items-start justify-between mb-3">
-                        <div class="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center">
-                            <i class="fas fa-server text-amber-400"></i>
+                        <div class="w-10 h-10 rounded-xl <%= c.bg %> border <%= c.border %> flex items-center justify-center">
+                            <i class="fas fa-server <%= c.text %>"></i>
                         </div>
-                        <form method="POST" action="/admin/storage/sftp/<%= b.id %>/delete" data-ajax-form data-confirm="Remove this connection? This doesn't delete anything on the storage box itself, just disconnects it here." onclick="event.stopPropagation()">
-                            <button type="submit" class="text-slate-500 hover:text-red-400 w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/5">
-                                <i class="fas fa-trash text-xs"></i>
+                        <div class="flex items-center gap-0.5">
+                            <button type="button" onclick="event.stopPropagation(); event.preventDefault(); openEditSftp(<%= b.id %>)" title="Edit" class="text-slate-500 hover:text-white w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/5">
+                                <i class="fas fa-pen text-xs"></i>
                             </button>
-                        </form>
+                            <form method="POST" action="/admin/storage/sftp/<%= b.id %>/delete" data-ajax-form data-confirm="Remove this connection? This doesn't delete anything on the storage box itself, just disconnects it here." onclick="event.stopPropagation()">
+                                <button type="submit" class="text-slate-500 hover:text-red-400 w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/5">
+                                    <i class="fas fa-trash text-xs"></i>
+                                </button>
+                            </form>
+                        </div>
                     </div>
                     <p class="font-bold text-white text-sm mb-1"><%= b.label %></p>
                     <span class="badge badge-suspended text-[10px] mb-1 inline-block">SFTP Box</span>
                     <p class="text-slate-500 text-xs font-mono truncate"><%= b.username %>@<%= b.host %></p>
-                    <p class="text-slate-600 text-[10px] font-mono truncate mt-0.5"><%= b.root_path %></p>
+                    <p class="text-slate-600 text-[10px] font-mono truncate mt-0.5"><%= (b.root_path === '/' || !b.root_path) ? 'Default Directory' : b.root_path %></p>
                 </a>
             <% }); %>
             <% if (buckets.length === 0 && sftpBoxes.length === 0) { %>
@@ -90,10 +119,13 @@
                         <input type="text" name="bucket_name" required class="input" placeholder="Bucket name">
                         <input type="text" name="endpoint" required class="input" placeholder="Endpoint URL (e.g. https://fsn1.your-objectstorage.com)">
                         <input type="text" name="region" class="input" placeholder="Region (optional - defaults to &quot;auto&quot;)">
+                        <input type="number" step="0.01" name="total_capacity_gb" class="input" placeholder="Total capacity in GB (optional - shows remaining space)">
                         <label class="flex items-center gap-2 bg-slate-900/40 rounded-lg px-3 py-2.5 text-xs text-slate-300 cursor-pointer">
                             <input type="checkbox" name="force_path_style" class="accent-sky-500">
                             Use path-style URLs (needed for some self-hosted/MinIO setups)
                         </label>
+                        <div data-color-picker="addBucket" class="flex gap-2"></div>
+                        <input type="hidden" name="color" data-color-input="addBucket" value="sky">
                         <input type="text" name="access_key" required class="input" placeholder="Access key">
                         <input type="password" name="secret_key" required class="input" placeholder="Secret key">
                         <button type="submit" class="btn-primary py-3 rounded-xl text-sm">Connect Bucket</button>
@@ -122,14 +154,107 @@
                         <input type="password" name="secret" id="sftpPasswordInput" required class="input" placeholder="Password">
                         <textarea name="secret" id="sftpKeyInput" rows="4" class="input hidden font-mono text-xs" disabled required placeholder="Paste the full private key contents, including the BEGIN/END lines"></textarea>
                         <input type="text" name="root_path" class="input" placeholder="Root path (optional, defaults to /)">
+                        <input type="number" step="0.01" name="total_capacity_gb" class="input" placeholder="Total capacity in GB (optional - e.g. 1024 for a BX11)">
+                        <div data-color-picker="addSftp" class="flex gap-2"></div>
+                        <input type="hidden" name="color" data-color-input="addSftp" value="amber">
                         <button type="submit" class="btn-primary py-3 rounded-xl text-sm">Connect Storage Box</button>
                     </form>
                 </div>
             </div>
         </div>
+
+        <!-- Edit Bucket Modal -->
+        <div id="editBucketModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden items-center justify-center z-50 px-4 py-8 overflow-y-auto">
+            <div class="glass rounded-3xl p-6 sm:p-8 max-w-lg w-full my-auto">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-bold text-white"><i class="fas fa-pen mr-2 text-sky-400"></i>Edit Bucket</h3>
+                    <button type="button" onclick="closeModal('editBucketModal')" title="Close" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5">
+                        <i class="fas fa-xmark"></i>
+                    </button>
+                </div>
+                <p class="text-slate-400 text-xs mb-4">Leave the key fields blank to keep the current credentials. Re-tested on save.</p>
+                <form id="editBucketForm" onsubmit="submitEditBucket(event)" class="grid gap-3">
+                    <input type="text" name="label" required class="input" placeholder="Display name">
+                    <input type="text" name="bucket_name" required class="input" placeholder="Bucket name">
+                    <input type="text" name="endpoint" required class="input" placeholder="Endpoint URL">
+                    <input type="text" name="region" class="input" placeholder="Region">
+                    <input type="number" step="0.01" name="total_capacity_gb" class="input" placeholder="Total capacity in GB (optional)">
+                    <label class="flex items-center gap-2 bg-slate-900/40 rounded-lg px-3 py-2.5 text-xs text-slate-300 cursor-pointer">
+                        <input type="checkbox" name="force_path_style" class="accent-sky-500">
+                        Use path-style URLs (needed for some self-hosted/MinIO setups)
+                    </label>
+                    <div data-color-picker="editBucket" class="flex gap-2"></div>
+                    <input type="hidden" name="color" data-color-input="editBucket" value="sky">
+                    <input type="text" name="access_key" class="input" placeholder="New access key (leave blank to keep current)">
+                    <input type="password" name="secret_key" class="input" placeholder="New secret key (leave blank to keep current)">
+                    <button type="submit" class="btn-primary py-3 rounded-xl text-sm">Save Changes</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Edit SFTP Modal -->
+        <div id="editSftpModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden items-center justify-center z-50 px-4 py-8 overflow-y-auto">
+            <div class="glass rounded-3xl p-6 sm:p-8 max-w-lg w-full my-auto">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-bold text-white"><i class="fas fa-pen mr-2 text-amber-400"></i>Edit Storage Box</h3>
+                    <button type="button" onclick="closeModal('editSftpModal')" title="Close" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5">
+                        <i class="fas fa-xmark"></i>
+                    </button>
+                </div>
+                <p class="text-slate-400 text-xs mb-4">Leave the password/key field blank to keep the current secret. Re-tested on save.</p>
+                <form id="editSftpForm" onsubmit="submitEditSftp(event)" class="grid gap-3">
+                    <input type="text" name="label" required class="input" placeholder="Display name">
+                    <input type="text" name="host" required class="input" placeholder="Host">
+                    <div class="grid grid-cols-2 gap-3">
+                        <input type="number" name="port" class="input" placeholder="Port">
+                        <input type="text" name="username" required class="input" placeholder="Username">
+                    </div>
+                    <select name="auth_type" class="input" onchange="
+                        const isKey = this.value === 'key';
+                        document.getElementById('editSftpPasswordInput').classList.toggle('hidden', isKey);
+                        document.getElementById('editSftpKeyInput').classList.toggle('hidden', !isKey);
+                    ">
+                        <option value="password">Password</option>
+                        <option value="key">Private Key</option>
+                    </select>
+                    <input type="password" name="secret" id="editSftpPasswordInput" class="input" placeholder="New password (leave blank to keep current)">
+                    <textarea name="secret" id="editSftpKeyInput" rows="4" class="input hidden font-mono text-xs" placeholder="New private key (leave blank to keep current)"></textarea>
+                    <input type="text" name="root_path" class="input" placeholder="Root path">
+                    <input type="number" step="0.01" name="total_capacity_gb" class="input" placeholder="Total capacity in GB (optional)">
+                    <div data-color-picker="editSftp" class="flex gap-2"></div>
+                    <input type="hidden" name="color" data-color-input="editSftp" value="amber">
+                    <button type="submit" class="btn-primary py-3 rounded-xl text-sm">Save Changes</button>
+                </form>
+            </div>
+        </div>
     </main>
 
     <script>
+        const bucketsData = <%- JSON.stringify(buckets) %>;
+        const sftpBoxesData = <%- JSON.stringify(sftpBoxes) %>;
+        const STORAGE_COLORS = ['sky', 'amber', 'emerald', 'violet', 'rose', 'cyan', 'fuchsia', 'lime'];
+        const COLOR_SWATCH_CLASS = { sky: 'bg-sky-500', amber: 'bg-amber-500', emerald: 'bg-emerald-500', violet: 'bg-violet-500', rose: 'bg-rose-500', cyan: 'bg-cyan-500', fuchsia: 'bg-fuchsia-500', lime: 'bg-lime-500' };
+
+        function renderColorPicker(key, selected) {
+            const container = document.querySelector('[data-color-picker="' + key + '"]');
+            const input = document.querySelector('[data-color-input="' + key + '"]');
+            container.innerHTML = STORAGE_COLORS.map(function (color) {
+                const isSelected = color === selected;
+                return '<button type="button" data-swatch="' + color + '" onclick="selectColor(\'' + key + '\', \'' + color + '\')" class="w-7 h-7 rounded-full ' + COLOR_SWATCH_CLASS[color] + ' ' + (isSelected ? 'ring-2 ring-offset-2 ring-offset-slate-900 ring-white' : 'opacity-50 hover:opacity-100') + ' transition"></button>';
+            }).join('');
+            input.value = selected;
+        }
+
+        function selectColor(key, color) {
+            const input = document.querySelector('[data-color-input="' + key + '"]');
+            input.value = color;
+            document.querySelectorAll('[data-color-picker="' + key + '"] [data-swatch]').forEach(function (btn) {
+                const swatchColor = btn.getAttribute('data-swatch');
+                const isSelected = swatchColor === color;
+                btn.className = 'w-7 h-7 rounded-full ' + COLOR_SWATCH_CLASS[swatchColor] + ' ' + (isSelected ? 'ring-2 ring-offset-2 ring-offset-slate-900 ring-white' : 'opacity-50 hover:opacity-100') + ' transition';
+            });
+        }
+
         function switchStorageTab(tab) {
             const isBucket = tab === 'bucket';
             document.getElementById('tabPanelBucket').classList.toggle('hidden', !isBucket);
@@ -138,6 +263,83 @@
             document.getElementById('tabBtnSftp').className = 'flex-1 py-2 rounded-lg text-xs font-semibold transition ' + (!isBucket ? 'bg-sky-500/20 text-sky-400' : 'text-slate-400 hover:text-white');
         }
         switchStorageTab('bucket');
+        renderColorPicker('addBucket', 'sky');
+        renderColorPicker('addSftp', 'amber');
+
+        let editingBucketId = null;
+        let editingSftpId = null;
+
+        function formField(form, name) {
+            return form.querySelector('[name="' + name + '"]');
+        }
+
+        function openEditBucket(id) {
+            const item = bucketsData.find(function (b) { return b.id === id; });
+            if (!item) return;
+            editingBucketId = id;
+            const form = document.getElementById('editBucketForm');
+            formField(form, 'label').value = item.label;
+            formField(form, 'bucket_name').value = item.bucket_name;
+            formField(form, 'endpoint').value = item.endpoint;
+            formField(form, 'region').value = item.region;
+            formField(form, 'total_capacity_gb').value = item.total_capacity_bytes ? (item.total_capacity_bytes / (1024 * 1024 * 1024)).toFixed(2) : '';
+            formField(form, 'force_path_style').checked = !!item.force_path_style;
+            formField(form, 'access_key').value = '';
+            formField(form, 'secret_key').value = '';
+            renderColorPicker('editBucket', item.color || 'sky');
+            openModal('editBucketModal');
+        }
+
+        async function submitEditBucket(e) {
+            e.preventDefault();
+            const form = e.target;
+            const formData = new URLSearchParams(new FormData(form));
+            try {
+                const res = await fetch('/admin/storage/bucket/' + editingBucketId + '/update', { method: 'POST', body: formData });
+                const data = await res.json();
+                if (!data.ok) return showToast(data.message || 'Could not save changes.', 'error');
+                showToast('Saved.', 'success');
+                closeModal('editBucketModal');
+                setTimeout(function () { location.reload(); }, 600);
+            } catch (err) {
+                showToast('Something went wrong sending that request.', 'error');
+            }
+        }
+
+        function openEditSftp(id) {
+            const item = sftpBoxesData.find(function (b) { return b.id === id; });
+            if (!item) return;
+            editingSftpId = id;
+            const form = document.getElementById('editSftpForm');
+            formField(form, 'label').value = item.label;
+            formField(form, 'host').value = item.host;
+            formField(form, 'port').value = item.port;
+            formField(form, 'username').value = item.username;
+            formField(form, 'auth_type').value = item.auth_type;
+            formField(form, 'root_path').value = item.root_path;
+            formField(form, 'total_capacity_gb').value = item.total_capacity_bytes ? (item.total_capacity_bytes / (1024 * 1024 * 1024)).toFixed(2) : '';
+            formField(form, 'secret').value = '';
+            document.getElementById('editSftpPasswordInput').classList.toggle('hidden', item.auth_type === 'key');
+            document.getElementById('editSftpKeyInput').classList.toggle('hidden', item.auth_type !== 'key');
+            renderColorPicker('editSftp', item.color || 'amber');
+            openModal('editSftpModal');
+        }
+
+        async function submitEditSftp(e) {
+            e.preventDefault();
+            const form = e.target;
+            const formData = new URLSearchParams(new FormData(form));
+            try {
+                const res = await fetch('/admin/storage/sftp/' + editingSftpId + '/update', { method: 'POST', body: formData });
+                const data = await res.json();
+                if (!data.ok) return showToast(data.message || 'Could not save changes.', 'error');
+                showToast('Saved.', 'success');
+                closeModal('editSftpModal');
+                setTimeout(function () { location.reload(); }, 600);
+            } catch (err) {
+                showToast('Something went wrong sending that request.', 'error');
+            }
+        }
     </script>
 </body>
 </html>

@@ -13,7 +13,7 @@
         <% if (type === 'bucket') { %>
             <p class="text-slate-500 text-xs font-mono mb-8"><%= item.bucket_name %> — <%= item.endpoint %></p>
         <% } else { %>
-            <p class="text-slate-500 text-xs font-mono mb-8"><%= item.username %>@<%= item.host %>:<%= item.port %> — <%= item.root_path %></p>
+            <p class="text-slate-500 text-xs font-mono mb-8"><%= item.username %>@<%= item.host %>:<%= item.port %> — <%= (item.root_path === '/' || !item.root_path) ? 'Default Directory' : item.root_path %></p>
         <% } %>
 
         <!-- Storage Stats -->
@@ -21,11 +21,11 @@
             <div class="flex items-center justify-between mb-1">
                 <h2 class="text-sm uppercase tracking-widest text-slate-500 font-bold">Storage Stats</h2>
                 <button type="button" onclick="loadStats()" id="statsRefreshBtn" class="text-sky-400 hover:text-sky-300 text-xs">
-                    <i class="fas fa-arrows-rotate mr-1"></i>Calculate
+                    <i class="fas fa-arrows-rotate mr-1"></i>Refresh
                 </button>
             </div>
             <div id="statsContent" class="grid grid-cols-2 gap-4 mt-3">
-                <p class="text-slate-500 text-sm col-span-2">Click Calculate to scan - this walks every <%= type === 'bucket' ? 'object' : 'file and folder' %>, so it may take a moment for large amounts of data.</p>
+                <p class="text-slate-500 text-sm col-span-2"><i class="fas fa-circle-notch fa-spin mr-2"></i>Calculating…</p>
             </div>
         </div>
 
@@ -34,10 +34,23 @@
             <div class="flex items-center justify-between mb-4 flex-wrap gap-3">
                 <div id="breadcrumb" class="text-sm text-slate-400 min-w-0 flex-1"></div>
                 <div class="flex items-center gap-2 flex-shrink-0">
+                    <button type="button" id="selectModeBtn" onclick="toggleSelectMode()" class="btn-outline py-2 px-4 rounded-lg text-xs">
+                        <i class="fas fa-list-check mr-1"></i>Select
+                    </button>
                     <button type="button" onclick="document.getElementById('uploadInput').click()" class="btn-outline py-2 px-4 rounded-lg text-xs">
                         <i class="fas fa-upload mr-1"></i>Upload
                     </button>
                     <input type="file" id="uploadInput" class="hidden" onchange="uploadFile(this.files[0])">
+                </div>
+            </div>
+
+            <!-- Bulk action bar - only visible once 1+ items are selected -->
+            <div id="bulkActionBar" class="hidden items-center justify-between gap-3 bg-sky-500/10 border border-sky-500/30 rounded-xl px-4 py-3 mb-3 flex-wrap">
+                <span class="text-sm text-sky-300"><span id="bulkSelectedCount">0</span> selected</span>
+                <div class="flex items-center gap-2">
+                    <button type="button" onclick="bulkDownload()" class="btn-outline py-1.5 px-3 rounded-lg text-xs"><i class="fas fa-download mr-1"></i>Download</button>
+                    <button type="button" onclick="openBulkMove()" class="btn-outline py-1.5 px-3 rounded-lg text-xs"><i class="fas fa-folder-tree mr-1"></i>Move</button>
+                    <button type="button" onclick="bulkDelete()" class="text-red-400 hover:text-red-300 py-1.5 px-3 rounded-lg text-xs border border-red-500/30 hover:bg-red-500/10"><i class="fas fa-trash mr-1"></i>Delete</button>
                 </div>
             </div>
 
@@ -51,6 +64,40 @@
                 Load More
             </button>
         </div>
+
+        <!-- Rename/Move Modal (single item) -->
+        <div id="renameModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden items-center justify-center z-50 px-4 py-8 overflow-y-auto">
+            <div class="glass rounded-3xl p-6 sm:p-8 max-w-md w-full my-auto">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-bold text-white"><i class="fas fa-pen mr-2 text-sky-400"></i>Rename / Move</h3>
+                    <button type="button" onclick="closeModal('renameModal')" title="Close" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5">
+                        <i class="fas fa-xmark"></i>
+                    </button>
+                </div>
+                <p class="text-slate-400 text-xs mb-4">Change just the name to rename in place, or the full path to move it elsewhere.</p>
+                <form onsubmit="submitRename(event)" class="grid gap-3">
+                    <input type="text" id="renameInput" required class="input font-mono text-xs">
+                    <button type="submit" class="btn-primary py-3 rounded-xl text-sm">Save</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Bulk Move Modal -->
+        <div id="bulkMoveModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden items-center justify-center z-50 px-4 py-8 overflow-y-auto">
+            <div class="glass rounded-3xl p-6 sm:p-8 max-w-md w-full my-auto">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-bold text-white"><i class="fas fa-folder-tree mr-2 text-sky-400"></i>Move Selected</h3>
+                    <button type="button" onclick="closeModal('bulkMoveModal')" title="Close" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5">
+                        <i class="fas fa-xmark"></i>
+                    </button>
+                </div>
+                <p class="text-slate-400 text-xs mb-4">Moves <span id="bulkMoveCount"></span> item(s) into the folder path below.</p>
+                <form onsubmit="submitBulkMove(event)" class="grid gap-3">
+                    <input type="text" id="bulkMoveInput" required class="input font-mono text-xs" placeholder="Destination folder path">
+                    <button type="submit" class="btn-primary py-3 rounded-xl text-sm">Move</button>
+                </form>
+            </div>
+        </div>
     </main>
 
     <script>
@@ -60,6 +107,19 @@
         let currentPrefix = <%- type === 'sftp' ? JSON.stringify(item.root_path) : "''" %>;
         const rootPrefix = currentPrefix;
         let currentToken = null;
+        let renameTargetKey = null;
+        let selectMode = false;
+        let selectedKeys = new Set();
+
+        // Embeds a JS string literal safely inside an onclick="..." HTML
+        // attribute. JSON.stringify() wraps in DOUBLE quotes, which
+        // collides with the double-quoted onclick attribute itself and
+        // truncates it at the first quote - this uses single quotes
+        // instead, with both backslashes and single quotes escaped so a
+        // file/folder name containing either still round-trips correctly.
+        function jsStr(str) {
+            return "'" + String(str).replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "'";
+        }
 
         function formatBytes(bytes) {
             if (!bytes || bytes <= 0) return '0 B';
@@ -74,6 +134,46 @@
             box.className = 'text-sm rounded-xl p-3 mb-3 ' + (ok ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400' : 'bg-red-500/10 border border-red-500/30 text-red-400');
             box.textContent = message;
             showToast(message, ok ? 'success' : 'error');
+        }
+
+        // ---------- Progress toast (showToast() can't be updated in
+        // place once shown, so uploads get their own small toast that
+        // this code owns directly, using the same visual container and
+        // styling for consistency) ----------
+        function createProgressToast(label) {
+            let container = document.getElementById('kbToastContainer');
+            if (!container) {
+                container = document.createElement('div');
+                container.id = 'kbToastContainer';
+                container.style.cssText = 'position:fixed;bottom:1rem;right:1rem;z-index:100;display:flex;flex-direction:column;gap:0.5rem;align-items:flex-end;pointer-events:none;';
+                document.body.appendChild(container);
+            }
+
+            const toast = document.createElement('div');
+            toast.className = 'rounded-xl px-4 py-3 text-sm shadow-lg border bg-slate-800 border-sky-500/30 text-white';
+            toast.style.cssText = 'max-width:320px;pointer-events:auto;opacity:0;transform:translateX(12px);transition:opacity 0.2s,transform 0.2s;';
+            toast.innerHTML =
+                '<div class="flex items-center gap-2 mb-1.5"><i class="fas fa-circle-notch fa-spin text-sky-400"></i><span class="truncate flex-1">Uploading ' + label + '…</span><span data-progress-pct>0%</span></div>' +
+                '<div class="w-full bg-slate-700 rounded-full h-1.5"><div data-progress-bar class="h-1.5 rounded-full bg-sky-500" style="width:0%"></div></div>';
+            container.appendChild(toast);
+            requestAnimationFrame(function () { toast.style.opacity = '1'; toast.style.transform = 'translateX(0)'; });
+
+            return {
+                update: function (percent) {
+                    toast.querySelector('[data-progress-pct]').textContent = percent + '%';
+                    toast.querySelector('[data-progress-bar]').style.width = percent + '%';
+                },
+                finish: function (ok, message) {
+                    toast.className = 'rounded-xl px-4 py-3 text-sm shadow-lg border flex items-center gap-2 ' +
+                        (ok ? 'bg-emerald-500 border-emerald-400 text-[#0b0f1a]' : 'bg-red-500 border-red-400 text-white');
+                    toast.innerHTML = '<i class="fas ' + (ok ? 'fa-circle-check' : 'fa-triangle-exclamation') + '"></i><span>' + message + '</span>';
+                    setTimeout(function () {
+                        toast.style.opacity = '0';
+                        toast.style.transform = 'translateX(12px)';
+                        setTimeout(function () { toast.remove(); }, 250);
+                    }, 3000);
+                },
+            };
         }
 
         async function loadStats() {
@@ -91,10 +191,28 @@
                     content.innerHTML = '<p class="text-red-400 text-sm col-span-2">' + (data.message || 'Could not load stats.') + '</p>';
                     return;
                 }
-                content.innerHTML =
-                    '<div><p class="text-slate-500 text-xs uppercase tracking-widest font-semibold mb-1">Total Size</p><p class="text-lg font-bold text-white">' + data.totalSizeFormatted + '</p></div>' +
-                    '<div><p class="text-slate-500 text-xs uppercase tracking-widest font-semibold mb-1">Files</p><p class="text-lg font-bold text-white">' + data.totalCount.toLocaleString() + '</p></div>' +
-                    (!data.isComplete ? '<p class="text-amber-400 text-xs col-span-2 mt-1"><i class="fas fa-triangle-exclamation mr-1"></i>This is very large - the numbers above are a partial count, not the full total.</p>' : '');
+
+                let html =
+                    '<div><p class="text-slate-500 text-xs uppercase tracking-widest font-semibold mb-1">Used</p><p class="text-lg font-bold text-white">' + data.totalSizeFormatted + '</p></div>' +
+                    '<div><p class="text-slate-500 text-xs uppercase tracking-widest font-semibold mb-1">Files</p><p class="text-lg font-bold text-white">' + data.totalCount.toLocaleString() + '</p></div>';
+
+                if (data.totalCapacityFormatted) {
+                    const percentUsed = data.totalCapacityBytes ? Math.min(100, (data.totalSize / data.totalCapacityBytes) * 100) : 0;
+                    const barColor = percentUsed >= 90 ? 'bg-red-500' : (percentUsed >= 75 ? 'bg-amber-500' : 'bg-sky-500');
+                    html +=
+                        '<div><p class="text-slate-500 text-xs uppercase tracking-widest font-semibold mb-1">Remaining</p><p class="text-lg font-bold text-white">' + data.remainingFormatted + '</p></div>' +
+                        '<div><p class="text-slate-500 text-xs uppercase tracking-widest font-semibold mb-1">Total Capacity</p><p class="text-lg font-bold text-white">' + data.totalCapacityFormatted + '</p></div>' +
+                        '<div class="col-span-2"><div class="w-full bg-slate-800 rounded-full h-1.5"><div class="h-1.5 rounded-full ' + barColor + '" style="width:' + percentUsed.toFixed(1) + '%"></div></div>' +
+                        '<p class="text-slate-500 text-xs mt-1">' + percentUsed.toFixed(1) + '% used</p></div>';
+                } else {
+                    html += '<p class="text-slate-500 text-xs col-span-2">Add a total capacity to this connection to see how much space is left.</p>';
+                }
+
+                if (!data.isComplete) {
+                    html += '<p class="text-amber-400 text-xs col-span-2 mt-1"><i class="fas fa-triangle-exclamation mr-1"></i>This is very large - the numbers above are a partial count, not the full total.</p>';
+                }
+
+                content.innerHTML = html;
             } catch (e) {
                 content.innerHTML = '<p class="text-red-400 text-sm col-span-2">Something went wrong sending that request.</p>';
             } finally {
@@ -107,12 +225,12 @@
             const el = document.getElementById('breadcrumb');
             const relativePrefix = currentPrefix.startsWith(rootPrefix) ? currentPrefix.slice(rootPrefix.length) : currentPrefix;
             const parts = relativePrefix.split('/').filter(Boolean);
-            let html = '<button type="button" onclick="navigateTo(' + JSON.stringify(rootPrefix) + ')" class="hover:text-sky-400">Root</button>';
+            let html = '<button type="button" onclick="navigateTo(' + jsStr(rootPrefix) + ')" class="hover:text-sky-400">Root</button>';
             let pathSoFar = rootPrefix;
             parts.forEach(function (part) {
                 pathSoFar = (pathSoFar.endsWith('/') ? pathSoFar : pathSoFar + '/') + part;
                 const p = pathSoFar;
-                html += ' <span class="text-slate-600">/</span> <button type="button" onclick="navigateTo(' + JSON.stringify(p) + ')" class="hover:text-sky-400">' + part + '</button>';
+                html += ' <span class="text-slate-600">/</span> <button type="button" onclick="navigateTo(' + jsStr(p) + ')" class="hover:text-sky-400">' + part + '</button>';
             });
             el.innerHTML = html;
         }
@@ -129,22 +247,69 @@
             return trimmed.replace(/^\/+/, '');
         }
 
-        function fileRowHtml(item, isFolder) {
+        // ---------- Select mode ----------
+        function toggleSelectMode() {
+            selectMode = !selectMode;
+            selectedKeys.clear();
+            updateBulkBar();
+            const btn = document.getElementById('selectModeBtn');
+            btn.innerHTML = selectMode ? '<i class="fas fa-xmark mr-1"></i>Cancel' : '<i class="fas fa-list-check mr-1"></i>Select';
+            loadFiles(false);
+        }
+
+        function toggleFileSelected(key) {
+            if (selectedKeys.has(key)) selectedKeys.delete(key);
+            else selectedKeys.add(key);
+            updateBulkBar();
+            loadFiles(false);
+        }
+
+        function updateBulkBar() {
+            const bar = document.getElementById('bulkActionBar');
+            const count = selectedKeys.size;
+            document.getElementById('bulkSelectedCount').textContent = count;
+            bar.classList.toggle('hidden', count === 0);
+            bar.classList.toggle('flex', count > 0);
+        }
+
+        function fileRowHtml(pathOrItem, isFolder) {
             if (isFolder) {
-                const name = displayName(item).replace(/\/$/, '');
+                const name = displayName(pathOrItem).replace(/\/$/, '');
+                // Folders aren't part of multi-select (bulk delete/move
+                // operate on individual files - recursively deleting or
+                // moving a whole folder's contents is a bigger operation
+                // left to the existing per-folder rename/delete instead),
+                // so they keep their normal controls even in select mode.
                 return '<div class="flex items-center gap-3 bg-slate-900/40 rounded-xl px-3 py-2.5 text-sm">' +
-                    '<button type="button" onclick="navigateTo(' + JSON.stringify(item) + ')" class="flex items-center gap-2 flex-1 min-w-0 text-left hover:text-sky-400">' +
+                    '<button type="button" onclick="navigateTo(' + jsStr(pathOrItem) + ')" class="flex items-center gap-2 flex-1 min-w-0 text-left hover:text-sky-400">' +
                     '<i class="fas fa-folder text-amber-400"></i><span class="truncate">' + name + '</span>' +
                     '</button>' +
+                    '<button type="button" onclick="openRename(' + jsStr(pathOrItem) + ')" title="Rename / Move" class="text-slate-500 hover:text-white w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/5 flex-shrink-0"><i class="fas fa-pen text-xs"></i></button>' +
+                    '<button type="button" onclick="deleteFile(' + jsStr(pathOrItem) + ')" title="Delete" class="text-slate-500 hover:text-red-400 w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/5 flex-shrink-0"><i class="fas fa-trash text-xs"></i></button>' +
                     '</div>';
             }
-            const name = displayName(item.key);
-            return '<div class="flex items-center gap-3 bg-slate-900/40 rounded-xl px-3 py-2.5 text-sm" data-file-key="' + item.key + '">' +
+
+            const name = displayName(pathOrItem.key);
+            const isSelected = selectedKeys.has(pathOrItem.key);
+
+            if (selectMode) {
+                return '<div onclick="toggleFileSelected(' + jsStr(pathOrItem.key) + ')" class="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm cursor-pointer transition ' + (isSelected ? 'bg-sky-500/15 border border-sky-500/40' : 'bg-slate-900/40 border border-transparent hover:bg-white/5') + '">' +
+                    '<span class="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center border-2 ' + (isSelected ? 'bg-sky-500 border-sky-500' : 'border-slate-600') + '">' +
+                    (isSelected ? '<i class="fas fa-check text-[10px] text-[#0b0f1a]"></i>' : '') +
+                    '</span>' +
+                    '<i class="fas fa-file text-slate-500 flex-shrink-0"></i>' +
+                    '<span class="truncate flex-1 min-w-0">' + name + '</span>' +
+                    '<span class="text-slate-500 text-xs flex-shrink-0">' + formatBytes(pathOrItem.size) + '</span>' +
+                    '</div>';
+            }
+
+            return '<div class="flex items-center gap-3 bg-slate-900/40 rounded-xl px-3 py-2.5 text-sm" data-file-key="' + pathOrItem.key + '">' +
                 '<i class="fas fa-file text-slate-500 flex-shrink-0"></i>' +
                 '<span class="truncate flex-1 min-w-0">' + name + '</span>' +
-                '<span class="text-slate-500 text-xs flex-shrink-0">' + formatBytes(item.size) + '</span>' +
-                '<button type="button" onclick="downloadFile(' + JSON.stringify(item.key) + ')" title="Download" class="text-slate-500 hover:text-white w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/5 flex-shrink-0"><i class="fas fa-download text-xs"></i></button>' +
-                '<button type="button" onclick="deleteFile(' + JSON.stringify(item.key) + ')" title="Delete" class="text-slate-500 hover:text-red-400 w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/5 flex-shrink-0"><i class="fas fa-trash text-xs"></i></button>' +
+                '<span class="text-slate-500 text-xs flex-shrink-0">' + formatBytes(pathOrItem.size) + '</span>' +
+                '<button type="button" onclick="downloadFile(' + jsStr(pathOrItem.key) + ')" title="Download" class="text-slate-500 hover:text-white w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/5 flex-shrink-0"><i class="fas fa-download text-xs"></i></button>' +
+                '<button type="button" onclick="openRename(' + jsStr(pathOrItem.key) + ')" title="Rename / Move" class="text-slate-500 hover:text-white w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/5 flex-shrink-0"><i class="fas fa-pen text-xs"></i></button>' +
+                '<button type="button" onclick="deleteFile(' + jsStr(pathOrItem.key) + ')" title="Delete" class="text-slate-500 hover:text-red-400 w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/5 flex-shrink-0"><i class="fas fa-trash text-xs"></i></button>' +
                 '</div>';
         }
 
@@ -193,10 +358,41 @@
                 const data = await res.json();
                 if (!data.ok) return showFileListResult(false, data.message || 'Could not delete that file.');
 
-                const row = document.querySelector('[data-file-key="' + key + '"]');
-                if (row) row.remove();
-                showToast('File deleted.', 'success');
+                showToast('Deleted.', 'success');
+                loadFiles(false);
             } catch (e) {
+                showFileListResult(false, 'Something went wrong sending that request.');
+            }
+        }
+
+        function openRename(key) {
+            renameTargetKey = key;
+            document.getElementById('renameInput').value = key;
+            openModal('renameModal');
+        }
+
+        async function submitRename(e) {
+            e.preventDefault();
+            const newKey = document.getElementById('renameInput').value.trim();
+            if (!newKey || newKey === renameTargetKey) {
+                closeModal('renameModal');
+                return;
+            }
+
+            try {
+                const res = await fetch(apiBase + '/rename-file', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: 'old_key=' + encodeURIComponent(renameTargetKey) + '&new_key=' + encodeURIComponent(newKey),
+                });
+                const data = await res.json();
+                closeModal('renameModal');
+                if (!data.ok) return showFileListResult(false, data.message || 'Could not rename that.');
+
+                showToast('Renamed.', 'success');
+                loadFiles(false);
+            } catch (e) {
+                closeModal('renameModal');
                 showFileListResult(false, 'Something went wrong sending that request.');
             }
         }
@@ -218,29 +414,115 @@
             }
         }
 
-        async function uploadFile(file) {
+        // ---------- Bulk actions ----------
+        async function bulkDelete() {
+            const keys = Array.from(selectedKeys);
+            if (keys.length === 0) return;
+            if (!confirm('Delete ' + keys.length + ' item(s)? This cannot be undone.')) return;
+
+            try {
+                const params = new URLSearchParams();
+                keys.forEach(function (k) { params.append('keys', k); });
+                const res = await fetch(apiBase + '/bulk-delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: params.toString(),
+                });
+                const data = await res.json();
+                if (!data.ok) return showFileListResult(false, data.message || 'Some items could not be deleted.');
+
+                showToast(keys.length + ' item(s) deleted.', 'success');
+                selectedKeys.clear();
+                updateBulkBar();
+                loadFiles(false);
+            } catch (e) {
+                showFileListResult(false, 'Something went wrong sending that request.');
+            }
+        }
+
+        function openBulkMove() {
+            document.getElementById('bulkMoveCount').textContent = selectedKeys.size;
+            document.getElementById('bulkMoveInput').value = currentPrefix;
+            openModal('bulkMoveModal');
+        }
+
+        async function submitBulkMove(e) {
+            e.preventDefault();
+            const destination = document.getElementById('bulkMoveInput').value.trim();
+            const keys = Array.from(selectedKeys);
+            if (!destination || keys.length === 0) { closeModal('bulkMoveModal'); return; }
+
+            try {
+                const params = new URLSearchParams();
+                keys.forEach(function (k) { params.append('keys', k); });
+                params.append('destination', destination);
+                const res = await fetch(apiBase + '/bulk-move', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: params.toString(),
+                });
+                const data = await res.json();
+                closeModal('bulkMoveModal');
+                if (!data.ok) return showFileListResult(false, data.message || 'Some items could not be moved.');
+
+                showToast(keys.length + ' item(s) moved.', 'success');
+                selectedKeys.clear();
+                updateBulkBar();
+                loadFiles(false);
+            } catch (e) {
+                closeModal('bulkMoveModal');
+                showFileListResult(false, 'Something went wrong sending that request.');
+            }
+        }
+
+        function bulkDownload() {
+            const keys = Array.from(selectedKeys);
+            if (keys.length === 0) return;
+            // Staggered rather than simultaneous - firing many downloads
+            // in the same tick tends to get most of them blocked as
+            // popups by the browser.
+            keys.forEach(function (key, i) {
+                setTimeout(function () { downloadFile(key); }, i * 400);
+            });
+        }
+
+        // ---------- Upload with real progress ----------
+        function uploadFile(file) {
             if (!file) return;
-            showToast('Uploading ' + file.name + '…', 'success');
+            const progress = createProgressToast(file.name);
 
             const formData = new FormData();
             formData.append('file', file);
             formData.append('prefix', currentPrefix);
 
-            try {
-                const res = await fetch(apiBase + '/upload', { method: 'POST', body: formData });
-                const data = await res.json();
-                if (!data.ok) return showFileListResult(false, data.message || 'Upload failed.');
-                showFileListResult(true, file.name + ' uploaded.');
-                loadFiles(false);
-            } catch (e) {
-                showFileListResult(false, 'Something went wrong sending that request.');
-            } finally {
+            const xhr = new XMLHttpRequest();
+            xhr.upload.addEventListener('progress', function (e) {
+                if (e.lengthComputable) {
+                    progress.update(Math.round((e.loaded / e.total) * 100));
+                }
+            });
+            xhr.addEventListener('load', function () {
+                let data;
+                try { data = JSON.parse(xhr.responseText); } catch (e) { data = { ok: false }; }
+                if (xhr.status >= 200 && xhr.status < 300 && data.ok) {
+                    progress.finish(true, file.name + ' uploaded.');
+                    loadFiles(false);
+                } else {
+                    progress.finish(false, data.message || 'Upload failed.');
+                }
                 document.getElementById('uploadInput').value = '';
-            }
+            });
+            xhr.addEventListener('error', function () {
+                progress.finish(false, 'Something went wrong sending that request.');
+                document.getElementById('uploadInput').value = '';
+            });
+            xhr.open('POST', apiBase + '/upload');
+            xhr.send(formData);
         }
 
         renderBreadcrumb();
         loadFiles(false);
+        loadStats();
     </script>
 </body>
 </html>

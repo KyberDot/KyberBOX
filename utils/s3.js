@@ -4,7 +4,7 @@
 // The SDK handles all the request signing; this module just adapts it to
 // what the buckets admin page actually needs.
 
-const { S3Client, ListObjectsV2Command, DeleteObjectCommand, PutObjectCommand, GetObjectCommand, HeadBucketCommand } = require('@aws-sdk/client-s3');
+const { S3Client, ListObjectsV2Command, DeleteObjectCommand, PutObjectCommand, GetObjectCommand, HeadBucketCommand, CopyObjectCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const { decrypt } = require('./crypto');
 
@@ -114,6 +114,17 @@ async function deleteObject(bucket, key) {
   await client.send(new DeleteObjectCommand({ Bucket: bucket.bucket_name, Key: key }));
 }
 
+// S3 has no native rename/move operation - the standard way to achieve
+// either is to copy the object to its new key, then delete the original.
+// CopySource needs the bucket name prefixed and each path segment
+// percent-encoded, per S3's API requirements.
+async function renameObject(bucket, oldKey, newKey) {
+  const client = getClient(bucket);
+  const copySource = bucket.bucket_name + '/' + oldKey.split('/').map(encodeURIComponent).join('/');
+  await client.send(new CopyObjectCommand({ Bucket: bucket.bucket_name, CopySource: copySource, Key: newKey }));
+  await client.send(new DeleteObjectCommand({ Bucket: bucket.bucket_name, Key: oldKey }));
+}
+
 async function uploadObject(bucket, key, buffer, contentType) {
   const client = getClient(bucket);
   await client.send(
@@ -143,4 +154,4 @@ function formatBytes(bytes) {
   return (bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1) + ' ' + units[i];
 }
 
-module.exports = { testConnection, listObjects, getBucketStats, deleteObject, uploadObject, getDownloadUrl, formatBytes };
+module.exports = { testConnection, listObjects, getBucketStats, deleteObject, renameObject, uploadObject, getDownloadUrl, formatBytes };

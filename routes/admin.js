@@ -441,9 +441,11 @@ router.post('/admin/plans/:id/containers/:containerId/move', (req, res) => {
 
 // ---------- Storage (S3 Buckets + SFTP Storage Boxes) ----------
 
+const STORAGE_COLORS = ['sky', 'amber', 'emerald', 'violet', 'rose', 'cyan', 'fuchsia', 'lime'];
+
 function loadStorageLists() {
-  const buckets = db.prepare('SELECT id, label, endpoint, region, bucket_name, created_at FROM storage_buckets ORDER BY created_at ASC').all();
-  const sftpBoxes = db.prepare('SELECT id, label, host, port, username, root_path, created_at FROM sftp_storage_boxes ORDER BY created_at ASC').all();
+  const buckets = db.prepare('SELECT id, label, endpoint, region, bucket_name, force_path_style, total_capacity_bytes, color, created_at FROM storage_buckets ORDER BY created_at ASC').all();
+  const sftpBoxes = db.prepare('SELECT id, label, host, port, username, auth_type, root_path, total_capacity_bytes, color, created_at FROM sftp_storage_boxes ORDER BY created_at ASC').all();
   return { buckets, sftpBoxes };
 }
 
@@ -459,9 +461,12 @@ router.post('/admin/storage/bucket', async (req, res) => {
   const accessKey = String(req.body.access_key || '').trim();
   const secretKey = String(req.body.secret_key || '').trim();
   const forcePathStyle = req.body.force_path_style === 'on' || req.body.force_path_style === '1';
+  const totalCapacityGb = Number(req.body.total_capacity_gb);
+  const totalCapacityBytes = totalCapacityGb > 0 ? Math.round(totalCapacityGb * 1024 * 1024 * 1024) : null;
+  const color = STORAGE_COLORS.includes(req.body.color) ? req.body.color : 'sky';
 
   if (!label || !endpoint || !bucketName || !accessKey || !secretKey) {
-    return res.status(400).render('admin-storage', { ...loadStorageLists(), addResult: { ok: false, message: 'All fields except region are required.' } });
+    return res.status(400).render('admin-storage', { ...loadStorageLists(), addResult: { ok: false, message: 'All fields except region and total capacity are required.' } });
   }
 
   // Tested before saving, so a typo in the endpoint or a bad key doesn't
@@ -481,10 +486,97 @@ router.post('/admin/storage/bucket', async (req, res) => {
   }
 
   db.prepare(
-    'INSERT INTO storage_buckets (label, endpoint, region, bucket_name, access_key_encrypted, secret_key_encrypted, force_path_style) VALUES (?, ?, ?, ?, ?, ?, ?)'
-  ).run(label, endpoint, region, bucketName, testBucket.access_key_encrypted, testBucket.secret_key_encrypted, testBucket.force_path_style);
+    'INSERT INTO storage_buckets (label, endpoint, region, bucket_name, access_key_encrypted, secret_key_encrypted, force_path_style, total_capacity_bytes, color) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  ).run(label, endpoint, region, bucketName, testBucket.access_key_encrypted, testBucket.secret_key_encrypted, testBucket.force_path_style, totalCapacityBytes, color);
 
   res.render('admin-storage', { ...loadStorageLists(), addResult: { ok: true, message: `${label} connected successfully.` } });
+});
+
+router.post('/admin/storage/bucket/:id/update', async (req, res) => {
+  const existing = db.prepare('SELECT * FROM storage_buckets WHERE id = ?').get(req.params.id);
+  if (!existing) return res.status(404).json({ ok: false, message: 'Bucket not found.' });
+
+  const label = String(req.body.label || '').trim();
+  const endpoint = String(req.body.endpoint || '').trim();
+  const region = String(req.body.region || '').trim() || 'auto';
+  const bucketName = String(req.body.bucket_name || '').trim();
+  const accessKey = String(req.body.access_key || '').trim();
+  const secretKey = String(req.body.secret_key || '').trim();
+  const forcePathStyle = req.body.force_path_style === 'on' || req.body.force_path_style === '1';
+  const totalCapacityGb = Number(req.body.total_capacity_gb);
+  const totalCapacityBytes = totalCapacityGb > 0 ? Math.round(totalCapacityGb * 1024 * 1024 * 1024) : null;
+  const color = STORAGE_COLORS.includes(req.body.color) ? req.body.color : existing.color;
+
+  if (!label || !endpoint || !bucketName) {
+    return res.status(400).json({ ok: false, message: 'Label, endpoint, and bucket name are required.' });
+  }
+
+  // Credentials are optional on edit - blank means "keep the existing
+  // ones" rather than forcing them to be re-entered every time just to
+  // change the display name or color.
+  const accessKeyEncrypted = accessKey ? encrypt(accessKey) : existing.access_key_encrypted;
+  const secretKeyEncrypted = secretKey ? encrypt(secretKey) : existing.secret_key_encrypted;
+
+  const testBucket = {
+    endpoint,
+    region,
+    bucket_name: bucketName,
+    access_key_encrypted: accessKeyEncrypted,
+    secret_key_encrypted: secretKeyEncrypted,
+    force_path_style: forcePathStyle ? 1 : 0,
+  };
+  const testResult = await s3.testConnection(testBucket);
+  if (!testResult.ok) {
+    return res.status(400).json({ ok: false, message: 'Could not connect: ' + testResult.message });
+  }
+
+  db.prepare(
+    'UPDATE storage_buckets SET label = ?, endpoint = ?, region = ?, bucket_name = ?, access_key_encrypted = ?, secret_key_encrypted = ?, force_path_style = ?, total_capacity_bytes = ?, color = ? WHERE id = ?'
+  ).run(label, endpoint, region, bucketName, accessKeyEncrypted, secretKeyEncrypted, testBucket.force_path_style, totalCapacityBytes, color, req.params.id);
+
+  res.json({ ok: true });
+});
+
+router.post('/admin/storage/bucket/:id/bulk-delete', async (req, res) => {
+  const bucket = db.prepare('SELECT * FROM storage_buckets WHERE id = ?').get(req.params.id);
+  if (!bucket) return res.status(404).json({ ok: false, message: 'Bucket not found.' });
+  const keys = Array.isArray(req.body.keys) ? req.body.keys : [req.body.keys].filter(Boolean);
+  if (keys.length === 0) return res.status(400).json({ ok: false, message: 'Nothing selected.' });
+
+  const failed = [];
+  for (const key of keys) {
+    try {
+      await s3.deleteObject(bucket, key);
+    } catch (err) {
+      failed.push(key);
+    }
+  }
+
+  if (failed.length > 0) return res.status(500).json({ ok: false, message: `${failed.length} of ${keys.length} item(s) could not be deleted.`, failed });
+  res.json({ ok: true, deleted: keys.length });
+});
+
+router.post('/admin/storage/bucket/:id/bulk-move', async (req, res) => {
+  const bucket = db.prepare('SELECT * FROM storage_buckets WHERE id = ?').get(req.params.id);
+  if (!bucket) return res.status(404).json({ ok: false, message: 'Bucket not found.' });
+  const keys = Array.isArray(req.body.keys) ? req.body.keys : [req.body.keys].filter(Boolean);
+  const destination = String(req.body.destination || '').trim();
+  if (keys.length === 0) return res.status(400).json({ ok: false, message: 'Nothing selected.' });
+  if (!destination) return res.status(400).json({ ok: false, message: 'Destination folder is required.' });
+
+  const destPrefix = destination.endsWith('/') ? destination : destination + '/';
+  const failed = [];
+  for (const key of keys) {
+    const filename = key.split('/').pop();
+    try {
+      await s3.renameObject(bucket, key, destPrefix + filename);
+    } catch (err) {
+      failed.push(key);
+    }
+  }
+
+  if (failed.length > 0) return res.status(500).json({ ok: false, message: `${failed.length} of ${keys.length} item(s) could not be moved.`, failed });
+  res.json({ ok: true, moved: keys.length });
 });
 
 router.post('/admin/storage/bucket/:id/delete', (req, res) => {
@@ -493,7 +585,7 @@ router.post('/admin/storage/bucket/:id/delete', (req, res) => {
 });
 
 router.get('/admin/storage/bucket/:id', (req, res) => {
-  const bucket = db.prepare('SELECT id, label, endpoint, region, bucket_name, created_at FROM storage_buckets WHERE id = ?').get(req.params.id);
+  const bucket = db.prepare('SELECT id, label, endpoint, region, bucket_name, total_capacity_bytes, color, created_at FROM storage_buckets WHERE id = ?').get(req.params.id);
   if (!bucket) return res.status(404).render('error', { message: 'Bucket not found.' });
   res.render('admin-storage-detail', { item: bucket, type: 'bucket' });
 });
@@ -516,12 +608,17 @@ router.get('/admin/storage/bucket/:id/stats', async (req, res) => {
 
   try {
     const stats = await s3.getBucketStats(bucket);
+    const remainingBytes = bucket.total_capacity_bytes ? Math.max(0, bucket.total_capacity_bytes - stats.totalSize) : null;
     res.json({
       ok: true,
       totalSize: stats.totalSize,
       totalSizeFormatted: s3.formatBytes(stats.totalSize),
       totalCount: stats.totalCount,
       isComplete: stats.isComplete,
+      totalCapacityBytes: bucket.total_capacity_bytes,
+      totalCapacityFormatted: bucket.total_capacity_bytes ? s3.formatBytes(bucket.total_capacity_bytes) : null,
+      remainingBytes,
+      remainingFormatted: remainingBytes !== null ? s3.formatBytes(remainingBytes) : null,
     });
   } catch (err) {
     res.status(500).json({ ok: false, message: err.message });
@@ -537,6 +634,21 @@ router.post('/admin/storage/bucket/:id/delete-file', async (req, res) => {
   try {
     await s3.deleteObject(bucket, key);
     res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ ok: false, message: err.message });
+  }
+});
+
+router.post('/admin/storage/bucket/:id/rename-file', async (req, res) => {
+  const bucket = db.prepare('SELECT * FROM storage_buckets WHERE id = ?').get(req.params.id);
+  if (!bucket) return res.status(404).json({ ok: false, message: 'Bucket not found.' });
+  const oldKey = String(req.body.old_key || '');
+  const newKey = String(req.body.new_key || '');
+  if (!oldKey || !newKey) return res.status(400).json({ ok: false, message: 'Both the current and new name are required.' });
+
+  try {
+    await s3.renameObject(bucket, oldKey, newKey);
+    res.json({ ok: true, key: newKey });
   } catch (err) {
     res.status(500).json({ ok: false, message: err.message });
   }
@@ -586,6 +698,9 @@ router.post('/admin/storage/sftp', async (req, res) => {
   const authType = req.body.auth_type === 'key' ? 'key' : 'password';
   const secret = String(req.body.secret || '').trim();
   const rootPath = String(req.body.root_path || '/').trim() || '/';
+  const totalCapacityGb = Number(req.body.total_capacity_gb);
+  const totalCapacityBytes = totalCapacityGb > 0 ? Math.round(totalCapacityGb * 1024 * 1024 * 1024) : null;
+  const color = STORAGE_COLORS.includes(req.body.color) ? req.body.color : 'amber';
 
   if (!label || !host || !username || !secret) {
     return res.status(400).render('admin-storage', { ...loadStorageLists(), addResult: { ok: false, message: 'Label, host, username, and password/key are all required.' } });
@@ -598,10 +713,88 @@ router.post('/admin/storage/sftp', async (req, res) => {
   }
 
   db.prepare(
-    'INSERT INTO sftp_storage_boxes (label, host, port, username, auth_type, secret_encrypted, root_path) VALUES (?, ?, ?, ?, ?, ?, ?)'
-  ).run(label, host, port, username, authType, testBox.secret_encrypted, rootPath);
+    'INSERT INTO sftp_storage_boxes (label, host, port, username, auth_type, secret_encrypted, root_path, total_capacity_bytes, color) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  ).run(label, host, port, username, authType, testBox.secret_encrypted, rootPath, totalCapacityBytes, color);
 
   res.render('admin-storage', { ...loadStorageLists(), addResult: { ok: true, message: `${label} connected successfully.` } });
+});
+
+router.post('/admin/storage/sftp/:id/update', async (req, res) => {
+  const existing = db.prepare('SELECT * FROM sftp_storage_boxes WHERE id = ?').get(req.params.id);
+  if (!existing) return res.status(404).json({ ok: false, message: 'Storage box not found.' });
+
+  const label = String(req.body.label || '').trim();
+  const host = String(req.body.host || '').trim();
+  const port = Number(req.body.port) || 22;
+  const username = String(req.body.username || '').trim();
+  const authType = req.body.auth_type === 'key' ? 'key' : 'password';
+  const secret = String(req.body.secret || '').trim();
+  const rootPath = String(req.body.root_path || '/').trim() || '/';
+  const totalCapacityGb = Number(req.body.total_capacity_gb);
+  const totalCapacityBytes = totalCapacityGb > 0 ? Math.round(totalCapacityGb * 1024 * 1024 * 1024) : null;
+  const color = STORAGE_COLORS.includes(req.body.color) ? req.body.color : existing.color;
+
+  if (!label || !host || !username) {
+    return res.status(400).json({ ok: false, message: 'Label, host, and username are required.' });
+  }
+
+  // Password/key is optional on edit - blank means "keep the existing
+  // secret" rather than forcing a re-entry just to rename or recolor.
+  const secretEncrypted = secret ? encrypt(secret) : existing.secret_encrypted;
+
+  const testBox = { host, port, username, auth_type: authType, secret_encrypted: secretEncrypted, root_path: rootPath };
+  const testResult = await sftpStorage.testConnection(testBox);
+  if (!testResult.ok) {
+    return res.status(400).json({ ok: false, message: 'Could not connect: ' + testResult.message });
+  }
+
+  db.prepare(
+    'UPDATE sftp_storage_boxes SET label = ?, host = ?, port = ?, username = ?, auth_type = ?, secret_encrypted = ?, root_path = ?, total_capacity_bytes = ?, color = ? WHERE id = ?'
+  ).run(label, host, port, username, authType, secretEncrypted, rootPath, totalCapacityBytes, color, req.params.id);
+
+  res.json({ ok: true });
+});
+
+router.post('/admin/storage/sftp/:id/bulk-delete', async (req, res) => {
+  const box = db.prepare('SELECT * FROM sftp_storage_boxes WHERE id = ?').get(req.params.id);
+  if (!box) return res.status(404).json({ ok: false, message: 'Storage box not found.' });
+  const keys = Array.isArray(req.body.keys) ? req.body.keys : [req.body.keys].filter(Boolean);
+  if (keys.length === 0) return res.status(400).json({ ok: false, message: 'Nothing selected.' });
+
+  const failed = [];
+  for (const key of keys) {
+    try {
+      await sftpStorage.deleteObject(box, key);
+    } catch (err) {
+      failed.push(key);
+    }
+  }
+
+  if (failed.length > 0) return res.status(500).json({ ok: false, message: `${failed.length} of ${keys.length} item(s) could not be deleted.`, failed });
+  res.json({ ok: true, deleted: keys.length });
+});
+
+router.post('/admin/storage/sftp/:id/bulk-move', async (req, res) => {
+  const box = db.prepare('SELECT * FROM sftp_storage_boxes WHERE id = ?').get(req.params.id);
+  if (!box) return res.status(404).json({ ok: false, message: 'Storage box not found.' });
+  const keys = Array.isArray(req.body.keys) ? req.body.keys : [req.body.keys].filter(Boolean);
+  const destination = String(req.body.destination || '').trim();
+  if (keys.length === 0) return res.status(400).json({ ok: false, message: 'Nothing selected.' });
+  if (!destination) return res.status(400).json({ ok: false, message: 'Destination folder is required.' });
+
+  const destPrefix = destination.endsWith('/') ? destination : destination + '/';
+  const failed = [];
+  for (const key of keys) {
+    const filename = key.split('/').pop();
+    try {
+      await sftpStorage.renameObject(box, key, destPrefix + filename);
+    } catch (err) {
+      failed.push(key);
+    }
+  }
+
+  if (failed.length > 0) return res.status(500).json({ ok: false, message: `${failed.length} of ${keys.length} item(s) could not be moved.`, failed });
+  res.json({ ok: true, moved: keys.length });
 });
 
 router.post('/admin/storage/sftp/:id/delete', (req, res) => {
@@ -610,7 +803,7 @@ router.post('/admin/storage/sftp/:id/delete', (req, res) => {
 });
 
 router.get('/admin/storage/sftp/:id', (req, res) => {
-  const box = db.prepare('SELECT id, label, host, port, username, root_path, created_at FROM sftp_storage_boxes WHERE id = ?').get(req.params.id);
+  const box = db.prepare('SELECT id, label, host, port, username, root_path, total_capacity_bytes, color, created_at FROM sftp_storage_boxes WHERE id = ?').get(req.params.id);
   if (!box) return res.status(404).render('error', { message: 'Storage box not found.' });
   res.render('admin-storage-detail', { item: box, type: 'sftp' });
 });
@@ -633,12 +826,17 @@ router.get('/admin/storage/sftp/:id/stats', async (req, res) => {
 
   try {
     const stats = await sftpStorage.getBucketStats(box);
+    const remainingBytes = box.total_capacity_bytes ? Math.max(0, box.total_capacity_bytes - stats.totalSize) : null;
     res.json({
       ok: true,
       totalSize: stats.totalSize,
       totalSizeFormatted: s3.formatBytes(stats.totalSize),
       totalCount: stats.totalCount,
       isComplete: stats.isComplete,
+      totalCapacityBytes: box.total_capacity_bytes,
+      totalCapacityFormatted: box.total_capacity_bytes ? s3.formatBytes(box.total_capacity_bytes) : null,
+      remainingBytes,
+      remainingFormatted: remainingBytes !== null ? s3.formatBytes(remainingBytes) : null,
     });
   } catch (err) {
     res.status(500).json({ ok: false, message: err.message });
@@ -654,6 +852,21 @@ router.post('/admin/storage/sftp/:id/delete-file', async (req, res) => {
   try {
     await sftpStorage.deleteObject(box, key);
     res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ ok: false, message: err.message });
+  }
+});
+
+router.post('/admin/storage/sftp/:id/rename-file', async (req, res) => {
+  const box = db.prepare('SELECT * FROM sftp_storage_boxes WHERE id = ?').get(req.params.id);
+  if (!box) return res.status(404).json({ ok: false, message: 'Storage box not found.' });
+  const oldKey = String(req.body.old_key || '');
+  const newKey = String(req.body.new_key || '');
+  if (!oldKey || !newKey) return res.status(400).json({ ok: false, message: 'Both the current and new name are required.' });
+
+  try {
+    await sftpStorage.renameObject(box, oldKey, newKey);
+    res.json({ ok: true, key: newKey });
   } catch (err) {
     res.status(500).json({ ok: false, message: err.message });
   }

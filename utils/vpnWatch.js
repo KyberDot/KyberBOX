@@ -27,10 +27,22 @@
 // exactly the startup period (start time to start+30min, generous for
 // the scripts' own internal retry loops) using `docker logs --since/
 // --until`. That window reliably contains the marker regardless of how
-// much has been logged since. Once a determination is made, subsequent
-// checks are skipped entirely as long as the container hasn't actually
-// restarted, since nothing could have changed - a lighter-weight
-// optimization on top of the real fix, not a substitute for it.
+// much has been logged since - UNLESS Docker's own log rotation has
+// already discarded the log data from that period entirely (e.g.
+// json-file driver with max-size configured), in which case there's no
+// evidence left in Docker at all, and no query, however well-targeted,
+// can recover it.
+//
+// For that case there's a fallback: every one of these scripts exits 1
+// on VPN failure, which under any sane restart policy means the
+// container either stays stopped or keeps restarting - neither of which
+// looks like "currently running, same start time, for a long time". So
+// if a container has been running continuously well past how long these
+// scripts could plausibly still be waiting, and its logs show no
+// evidence either way, it's inferred connected rather than left stuck on
+// unknown forever. This is a best-effort inference for when the real
+// evidence is gone, not a substitute for finding it - the direct log
+// check is always tried first.
 
 const db = require('../db');
 const { runCommand } = require('./ssh');
@@ -40,18 +52,28 @@ const SUCCESS_MARKER = 'VPN tunnel confirmed UP';
 const FAILURE_MARKER = 'VPN connection FAILED';
 const STARTUP_WINDOW_MINUTES = 30;
 
+// Comfortably longer than these scripts' own internal max-wait loops
+// (a few minutes at most) - if a container's been running this long with
+// no failure ever observed, it didn't get here by exiting 1 repeatedly.
+const STABLE_UPTIME_FALLBACK_MINUTES = 20;
+
 function addMinutes(isoString, minutes) {
   const d = new Date(isoString);
   d.setMinutes(d.getMinutes() + minutes);
   return d.toISOString();
 }
 
+function minutesSince(isoString) {
+  return (Date.now() - new Date(isoString).getTime()) / 60000;
+}
+
 async function checkOneContainer(target, watch) {
   const safeName = watch.container_name.replace(/'/g, `'"'"'`);
 
-  const startedResult = await runCommand(target, `docker inspect --format='{{.State.StartedAt}}' '${safeName}' 2>&1`, 15000);
+  const startedResult = await runCommand(target, `docker inspect --format='{{.State.StartedAt}}|{{.State.Running}}' '${safeName}' 2>&1`, 15000);
   if (!startedResult.success) return; // container not found / SSH hiccup - skip, try again next cycle
-  const startedAt = (startedResult.output || '').trim();
+  const [startedAt, runningStr] = (startedResult.output || '').trim().split('|');
+  const isRunning = runningStr === 'true';
 
   const containerRestarted = watch.last_container_start_at !== startedAt;
 
@@ -74,10 +96,17 @@ async function checkOneContainer(target, watch) {
     newStatus = 'failed';
   } else if (output.includes(SUCCESS_MARKER)) {
     newStatus = 'connected';
+  } else if (isRunning && minutesSince(startedAt) >= STABLE_UPTIME_FALLBACK_MINUTES) {
+    // No direct evidence either way, most likely because Docker's own
+    // log retention has already discarded the startup-period logs for a
+    // long-running container - but it's been running continuously for
+    // well longer than the script could still be waiting, with no
+    // failure ever seen, so it's safe to infer success.
+    newStatus = 'connected';
   } else {
-    // Neither marker present in the startup window - either it's still
-    // in progress (if we're checking before the window has closed) or
-    // this container's script never had WAIT_FOR_VPN=true set at all.
+    // Neither marker present in the startup window, and the container
+    // hasn't been running long enough yet for the stable-uptime fallback
+    // to apply - still genuinely unresolved.
     newStatus = 'unknown';
   }
 
