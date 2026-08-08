@@ -330,6 +330,7 @@ ensureColumn('users', 'plex_username', 'plex_username TEXT');
 ensureColumn('users', 'plex_user_id', 'plex_user_id TEXT'); // Plex.tv account id, matched by email - used for Tautulli watch history/now-watching only
 ensureColumn('plan_containers', 'link_url', 'link_url TEXT');
 ensureColumn('vpn_watch_containers', 'last_container_start_at', 'last_container_start_at TEXT');
+ensureColumn('stuck_watch_containers', 'last_container_start_at', 'last_container_start_at TEXT');
 ensureColumn('users', 'plex_link_attempted_at', 'plex_link_attempted_at TEXT');
 ensureColumn('users', 'admin_access_mode', "admin_access_mode TEXT NOT NULL DEFAULT 'full'"); // full | limited - only meaningful when role = 'admin'; limited admins are gated per-page via admin_page_access
 
