@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <% pageTitle = bucket.label %>
+    <%- include('partials/head') %>
+</head>
+<body class="antialiased overflow-x-hidden">
+    <%- include('partials/nav') %>
+
+    <main class="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-10 pb-24">
+        <a href="/admin/buckets" class="text-sky-400 hover:text-sky-300 text-xs mb-4 inline-block"><i class="fas fa-arrow-left mr-1"></i>All Buckets</a>
+        <h1 class="text-2xl sm:text-3xl font-extrabold mb-1"><%= bucket.label %></h1>
+        <p class="text-slate-500 text-xs font-mono mb-8"><%= bucket.bucket_name %> — <%= bucket.endpoint %></p>
+
+        <!-- Storage Stats -->
+        <div class="glass rounded-2xl p-5 sm:p-6 mb-6">
+            <div class="flex items-center justify-between mb-1">
+                <h2 class="text-sm uppercase tracking-widest text-slate-500 font-bold">Storage Stats</h2>
+                <button type="button" onclick="loadStats()" id="statsRefreshBtn" class="text-sky-400 hover:text-sky-300 text-xs">
+                    <i class="fas fa-arrows-rotate mr-1"></i>Calculate
+                </button>
+            </div>
+            <div id="statsContent" class="grid grid-cols-2 gap-4 mt-3">
+                <p class="text-slate-500 text-sm col-span-2">Click Calculate to scan the bucket - this walks every object, so it may take a moment for large buckets.</p>
+            </div>
+        </div>
+
+        <!-- File Browser -->
+        <div class="glass rounded-2xl p-5 sm:p-6">
+            <div class="flex items-center justify-between mb-4 flex-wrap gap-3">
+                <div id="breadcrumb" class="text-sm text-slate-400 min-w-0 flex-1"></div>
+                <div class="flex items-center gap-2 flex-shrink-0">
+                    <button type="button" onclick="document.getElementById('uploadInput').click()" class="btn-outline py-2 px-4 rounded-lg text-xs">
+                        <i class="fas fa-upload mr-1"></i>Upload
+                    </button>
+                    <input type="file" id="uploadInput" class="hidden" onchange="uploadFile(this.files[0])">
+                </div>
+            </div>
+
+            <div id="fileListResult" class="hidden text-sm rounded-xl p-3 mb-3"></div>
+
+            <div id="fileList" class="space-y-1">
+                <p class="text-slate-500 text-sm"><i class="fas fa-circle-notch fa-spin mr-2"></i>Loading…</p>
+            </div>
+
+            <button type="button" id="loadMoreBtn" onclick="loadMore()" class="hidden btn-outline py-2 px-4 rounded-lg text-xs mt-4 w-full">
+                Load More
+            </button>
+        </div>
+    </main>
+
+    <script>
+        const bucketId = <%= bucket.id %>;
+        let currentPrefix = '';
+        let currentToken = null;
+
+        function formatBytes(bytes) {
+            if (!bytes || bytes <= 0) return '0 B';
+            const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
+            const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+            return (bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1) + ' ' + units[i];
+        }
+
+        function showFileListResult(ok, message) {
+            const box = document.getElementById('fileListResult');
+            box.classList.remove('hidden');
+            box.className = 'text-sm rounded-xl p-3 mb-3 ' + (ok ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400' : 'bg-red-500/10 border border-red-500/30 text-red-400');
+            box.textContent = message;
+            showToast(message, ok ? 'success' : 'error');
+        }
+
+        async function loadStats() {
+            const btn = document.getElementById('statsRefreshBtn');
+            const content = document.getElementById('statsContent');
+            const originalHtml = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>Scanning…';
+            content.innerHTML = '<p class="text-slate-500 text-sm col-span-2"><i class="fas fa-circle-notch fa-spin mr-2"></i>Walking every object in the bucket - this can take a while for large buckets…</p>';
+
+            try {
+                const res = await fetch('/admin/buckets/' + bucketId + '/stats');
+                const data = await res.json();
+                if (!data.ok) {
+                    content.innerHTML = '<p class="text-red-400 text-sm col-span-2">' + (data.message || 'Could not load stats.') + '</p>';
+                    return;
+                }
+                content.innerHTML =
+                    '<div><p class="text-slate-500 text-xs uppercase tracking-widest font-semibold mb-1">Total Size</p><p class="text-lg font-bold text-white">' + data.totalSizeFormatted + '</p></div>' +
+                    '<div><p class="text-slate-500 text-xs uppercase tracking-widest font-semibold mb-1">Objects</p><p class="text-lg font-bold text-white">' + data.totalCount.toLocaleString() + '</p></div>' +
+                    (!data.isComplete ? '<p class="text-amber-400 text-xs col-span-2 mt-1"><i class="fas fa-triangle-exclamation mr-1"></i>This bucket is very large - the numbers above are a partial count, not the full total.</p>' : '');
+            } catch (e) {
+                content.innerHTML = '<p class="text-red-400 text-sm col-span-2">Something went wrong sending that request.</p>';
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = originalHtml;
+            }
+        }
+
+        function renderBreadcrumb() {
+            const el = document.getElementById('breadcrumb');
+            const parts = currentPrefix.split('/').filter(Boolean);
+            let html = '<button type="button" onclick="navigateTo(\'\')" class="hover:text-sky-400">Root</button>';
+            let pathSoFar = '';
+            parts.forEach(function (part) {
+                pathSoFar += part + '/';
+                const p = pathSoFar;
+                html += ' <span class="text-slate-600">/</span> <button type="button" onclick="navigateTo(\'' + p + '\')" class="hover:text-sky-400">' + part + '</button>';
+            });
+            el.innerHTML = html;
+        }
+
+        function navigateTo(prefix) {
+            currentPrefix = prefix;
+            currentToken = null;
+            renderBreadcrumb();
+            loadFiles(false);
+        }
+
+        function fileRowHtml(item, isFolder) {
+            if (isFolder) {
+                const name = item.replace(currentPrefix, '').replace(/\/$/, '');
+                return '<div class="flex items-center gap-3 bg-slate-900/40 rounded-xl px-3 py-2.5 text-sm">' +
+                    '<button type="button" onclick="navigateTo(\'' + item + '\')" class="flex items-center gap-2 flex-1 min-w-0 text-left hover:text-sky-400">' +
+                    '<i class="fas fa-folder text-amber-400"></i><span class="truncate">' + name + '</span>' +
+                    '</button>' +
+                    '</div>';
+            }
+            const name = item.key.replace(currentPrefix, '');
+            const safeKey = item.key.replace(/'/g, "\\'");
+            return '<div class="flex items-center gap-3 bg-slate-900/40 rounded-xl px-3 py-2.5 text-sm" data-file-key="' + item.key + '">' +
+                '<i class="fas fa-file text-slate-500 flex-shrink-0"></i>' +
+                '<span class="truncate flex-1 min-w-0">' + name + '</span>' +
+                '<span class="text-slate-500 text-xs flex-shrink-0">' + formatBytes(item.size) + '</span>' +
+                '<button type="button" onclick="downloadFile(\'' + safeKey + '\')" title="Download" class="text-slate-500 hover:text-white w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/5 flex-shrink-0"><i class="fas fa-download text-xs"></i></button>' +
+                '<button type="button" onclick="deleteFile(\'' + safeKey + '\')" title="Delete" class="text-slate-500 hover:text-red-400 w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/5 flex-shrink-0"><i class="fas fa-trash text-xs"></i></button>' +
+                '</div>';
+        }
+
+        async function loadFiles(append) {
+            const list = document.getElementById('fileList');
+            if (!append) list.innerHTML = '<p class="text-slate-500 text-sm"><i class="fas fa-circle-notch fa-spin mr-2"></i>Loading…</p>';
+
+            try {
+                const url = '/admin/buckets/' + bucketId + '/list?prefix=' + encodeURIComponent(currentPrefix) + (currentToken ? '&token=' + encodeURIComponent(currentToken) : '');
+                const res = await fetch(url);
+                const data = await res.json();
+
+                if (!data.ok) {
+                    list.innerHTML = '<p class="text-red-400 text-sm">' + (data.message || 'Could not load files.') + '</p>';
+                    return;
+                }
+
+                const html = data.folders.map(function (f) { return fileRowHtml(f, true); }).join('') +
+                    data.files.map(function (f) { return fileRowHtml(f, false); }).join('');
+
+                if (append) {
+                    list.insertAdjacentHTML('beforeend', html || '');
+                } else {
+                    list.innerHTML = html || '<p class="text-slate-500 text-sm">This folder is empty.</p>';
+                }
+
+                currentToken = data.nextContinuationToken;
+                document.getElementById('loadMoreBtn').classList.toggle('hidden', !data.isTruncated);
+            } catch (e) {
+                list.innerHTML = '<p class="text-red-400 text-sm">Something went wrong loading files.</p>';
+            }
+        }
+
+        function loadMore() {
+            loadFiles(true);
+        }
+
+        async function deleteFile(key) {
+            if (!confirm('Delete "' + key + '"? This cannot be undone.')) return;
+            try {
+                const res = await fetch('/admin/buckets/' + bucketId + '/delete-file', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: 'key=' + encodeURIComponent(key),
+                });
+                const data = await res.json();
+                if (!data.ok) return showFileListResult(false, data.message || 'Could not delete that file.');
+
+                const row = document.querySelector('[data-file-key="' + key + '"]');
+                if (row) row.remove();
+                showToast('File deleted.', 'success');
+            } catch (e) {
+                showFileListResult(false, 'Something went wrong sending that request.');
+            }
+        }
+
+        async function downloadFile(key) {
+            try {
+                const res = await fetch('/admin/buckets/' + bucketId + '/download?key=' + encodeURIComponent(key));
+                const data = await res.json();
+                if (!data.ok) return showFileListResult(false, data.message || 'Could not generate a download link.');
+                window.open(data.url, '_blank');
+            } catch (e) {
+                showFileListResult(false, 'Something went wrong sending that request.');
+            }
+        }
+
+        async function uploadFile(file) {
+            if (!file) return;
+            showToast('Uploading ' + file.name + '…', 'success');
+
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('prefix', currentPrefix);
+
+            try {
+                const res = await fetch('/admin/buckets/' + bucketId + '/upload', { method: 'POST', body: formData });
+                const data = await res.json();
+                if (!data.ok) return showFileListResult(false, data.message || 'Upload failed.');
+                showFileListResult(true, file.name + ' uploaded.');
+                loadFiles(false);
+            } catch (e) {
+                showFileListResult(false, 'Something went wrong sending that request.');
+            } finally {
+                document.getElementById('uploadInput').value = '';
+            }
+        }
+
+        renderBreadcrumb();
+        loadFiles(false);
+    </script>
+</body>
+</html>

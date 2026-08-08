@@ -13,6 +13,18 @@
 // different shells, different final exec targets, different status
 // endpoints - so they're hardcoded rather than per-container
 // configurable, unlike stuck_watch_containers' success_marker.
+//
+// Critically, the marker only ever gets printed ONCE, right at startup -
+// it's never repeated. A chatty container (Decypharr itself, once
+// actually running, is a good example) can easily push that one line out
+// of even a fairly large `docker logs --tail` window within minutes,
+// which would make a naive "re-scan the tail every check" approach
+// eventually and incorrectly report "unknown" for a container that's
+// been fine the whole time. Fixed by tracking each container's observed
+// start time (`docker inspect` State.StartedAt) - once a status has been
+// determined, it's left alone on every subsequent check until the
+// container's start time actually changes (i.e. it restarted), which is
+// the only time the script would run its check again for real.
 
 const db = require('../db');
 const { runCommand } = require('./ssh');
@@ -23,8 +35,24 @@ const FAILURE_MARKER = 'VPN connection FAILED';
 
 async function checkOneContainer(target, watch) {
   const safeName = watch.container_name.replace(/'/g, `'"'"'`);
-  const result = await runCommand(target, `docker logs --tail 20 '${safeName}' 2>&1`, 30000);
-  if (!result.success) return; // couldn't read logs this cycle (container down, SSH hiccup, etc.) - skip rather than guess, try again next cycle
+
+  const startedResult = await runCommand(target, `docker inspect --format='{{.State.StartedAt}}' '${safeName}' 2>&1`, 15000);
+  if (!startedResult.success) return; // container not found / SSH hiccup - skip, try again next cycle
+  const startedAt = (startedResult.output || '').trim();
+
+  const containerRestarted = watch.last_container_start_at !== startedAt;
+
+  // Already have a real determination and the container hasn't restarted
+  // since - nothing new could have happened, since the script only ever
+  // runs its check once per container lifetime. Skip re-scanning logs
+  // entirely rather than risk the marker having scrolled out of view.
+  if (!containerRestarted && (watch.last_status === 'connected' || watch.last_status === 'failed')) {
+    db.prepare(`UPDATE vpn_watch_containers SET last_checked_at = datetime('now') WHERE id = ?`).run(watch.id);
+    return;
+  }
+
+  const result = await runCommand(target, `docker logs --tail 50 '${safeName}' 2>&1`, 30000);
+  if (!result.success) return;
 
   const output = result.output || '';
 
@@ -34,14 +62,15 @@ async function checkOneContainer(target, watch) {
   } else if (output.includes(SUCCESS_MARKER)) {
     newStatus = 'connected';
   } else {
-    // Neither marker present yet - still waiting on the tunnel, or this
-    // container's script never had WAIT_FOR_VPN=true set in the first
-    // place. Either way, not a determination we can act on yet.
+    // Neither marker present yet - still waiting on the tunnel this run,
+    // or this container's script never had WAIT_FOR_VPN=true set at all.
     newStatus = 'unknown';
   }
 
-  const wasAlreadyFailing = watch.last_status === 'failed';
-  db.prepare(`UPDATE vpn_watch_containers SET last_status = ?, last_checked_at = datetime('now') WHERE id = ?`).run(newStatus, watch.id);
+  const wasAlreadyFailing = !containerRestarted && watch.last_status === 'failed';
+  db.prepare(
+    `UPDATE vpn_watch_containers SET last_status = ?, last_container_start_at = ?, last_checked_at = datetime('now') WHERE id = ?`
+  ).run(newStatus, startedAt, watch.id);
 
   // Only alert on the transition INTO failed, not on every check while it
   // stays failed - otherwise a VPN that's been down for a day would mean

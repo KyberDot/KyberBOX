@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <% pageTitle = 'Buckets' %>
+    <%- include('partials/head') %>
+</head>
+<body class="antialiased overflow-x-hidden">
+    <%- include('partials/nav') %>
+
+    <main class="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-10 pb-24">
+        <h1 class="text-2xl sm:text-3xl font-extrabold mb-2">Buckets</h1>
+        <p class="text-slate-400 text-sm mb-8">Connect any S3-compatible object storage - Hetzner Object Storage, AWS S3, Backblaze B2, DigitalOcean Spaces, Cloudflare R2, MinIO, and similar all work the same way. Browse files, check storage usage, and manage contents directly.</p>
+
+        <% if (typeof addResult !== 'undefined' && addResult) { %>
+            <div class="mb-6 px-4 py-3 rounded-xl <%= addResult.ok ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400' : 'bg-red-500/10 border border-red-500/30 text-red-400' %> text-sm">
+                <i class="fas <%= addResult.ok ? 'fa-circle-check' : 'fa-triangle-exclamation' %> mr-2"></i><%= addResult.message %>
+            </div>
+        <% } %>
+
+        <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5 mb-10">
+            <% buckets.forEach(function(b) { %>
+                <a href="/admin/buckets/<%= b.id %>" class="glass rounded-2xl p-5 sm:p-6 hover:bg-white/5 transition block">
+                    <div class="flex items-start justify-between mb-3">
+                        <div class="w-10 h-10 rounded-xl bg-sky-500/10 border border-sky-500/30 flex items-center justify-center">
+                            <i class="fas fa-cloud-arrow-up text-sky-400"></i>
+                        </div>
+                        <form method="POST" action="/admin/buckets/<%= b.id %>/delete" data-ajax-form data-confirm="Remove this bucket connection? This doesn't delete anything in the bucket itself, just disconnects it here." onclick="event.stopPropagation()">
+                            <button type="submit" class="text-slate-500 hover:text-red-400 w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/5">
+                                <i class="fas fa-trash text-xs"></i>
+                            </button>
+                        </form>
+                    </div>
+                    <p class="font-bold text-white text-sm mb-1"><%= b.label %></p>
+                    <p class="text-slate-500 text-xs font-mono truncate"><%= b.bucket_name %></p>
+                    <p class="text-slate-600 text-[10px] font-mono truncate mt-0.5"><%= b.endpoint %></p>
+                </a>
+            <% }); %>
+        </div>
+
+        <div class="glass rounded-2xl sm:rounded-3xl p-5 sm:p-8">
+            <h2 class="text-lg font-bold text-white mb-1"><i class="fas fa-plus mr-2 text-sky-400"></i>Connect a Bucket</h2>
+            <p class="text-slate-400 text-xs mb-4">The connection is tested before saving, so a typo or bad key is caught immediately.</p>
+            <form method="POST" action="/admin/buckets" data-ajax-form class="grid sm:grid-cols-2 gap-3">
+                <input type="text" name="label" required class="input" placeholder="Display name (e.g. Hetzner Backups)">
+                <input type="text" name="bucket_name" required class="input" placeholder="Bucket name">
+                <input type="text" name="endpoint" required class="input sm:col-span-2" placeholder="Endpoint URL (e.g. https://fsn1.your-objectstorage.com)">
+                <input type="text" name="region" class="input" placeholder="Region (optional, e.g. fsn1 - defaults to \"auto\")">
+                <label class="flex items-center gap-2 bg-slate-900/40 rounded-lg px-3 text-xs text-slate-300 cursor-pointer">
+                    <input type="checkbox" name="force_path_style" class="accent-sky-500">
+                    Use path-style URLs (needed for some self-hosted/MinIO setups)
+                </label>
+                <input type="text" name="access_key" required class="input" placeholder="Access key">
+                <input type="password" name="secret_key" required class="input" placeholder="Secret key">
+                <button type="submit" class="btn-primary py-3 rounded-xl text-sm sm:col-span-2">Connect Bucket</button>
+            </form>
+        </div>
+    </main>
+</body>
+</html>

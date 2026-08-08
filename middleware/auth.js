@@ -88,6 +88,7 @@ function pageKeyForPath(path) {
   if (path.startsWith('/admin/health')) return 'health';
   if (path.startsWith('/admin/tickets')) return 'tickets';
   if (path.startsWith('/admin/settings') || path.startsWith('/admin/admins')) return 'settings';
+  if (path.startsWith('/admin/buckets')) return 'buckets';
   return 'overview'; // /admin itself, plus overview-only endpoints like /admin/plex/now-watching-all
 }
 

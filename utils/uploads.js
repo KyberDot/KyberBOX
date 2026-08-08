@@ -27,4 +27,13 @@ const upload = multer({
   },
 });
 
-module.exports = { upload, UPLOADS_DIR };
+// For uploading files into an S3-compatible bucket - memory storage since
+// the file just needs to be streamed to the bucket, never persisted on
+// our own disk, and no MIME restriction since bucket contents can be
+// anything (unlike the branding upload above, which is images only).
+const bucketUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 500 * 1024 * 1024 }, // 500MB per file - generous for typical use, but a hard cap so one upload can't tie up the request indefinitely
+});
+
+module.exports = { upload, bucketUpload, UPLOADS_DIR };

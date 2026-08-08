@@ -14,6 +14,8 @@ const { upload } = require('../utils/uploads');
 const { startReset, endReset, getResetState } = require('../utils/resetLock');
 const { requireFullAdmin } = require('../middleware/auth');
 const { triggerFullReset, getFullResetState } = require('../utils/fullReset');
+const s3 = require('../utils/s3');
+const { bucketUpload } = require('../utils/uploads');
 
 const router = express.Router();
 const brandingUpload = upload.fields([{ name: 'favicon', maxCount: 1 }, { name: 'apple_icon', maxCount: 1 }]);
@@ -436,6 +438,141 @@ router.post('/admin/plans/:id/containers/:containerId/move', (req, res) => {
   res.redirect('/admin/plans');
 });
 
+// ---------- Storage Buckets ----------
+
+function loadBucketsList() {
+  return db.prepare('SELECT id, label, endpoint, region, bucket_name, created_at FROM storage_buckets ORDER BY created_at ASC').all();
+}
+
+router.get('/admin/buckets', (req, res) => {
+  res.render('admin-buckets', { buckets: loadBucketsList(), addResult: null });
+});
+
+router.post('/admin/buckets', async (req, res) => {
+  const label = String(req.body.label || '').trim();
+  const endpoint = String(req.body.endpoint || '').trim();
+  const region = String(req.body.region || '').trim() || 'auto';
+  const bucketName = String(req.body.bucket_name || '').trim();
+  const accessKey = String(req.body.access_key || '').trim();
+  const secretKey = String(req.body.secret_key || '').trim();
+  const forcePathStyle = req.body.force_path_style === 'on' || req.body.force_path_style === '1';
+
+  if (!label || !endpoint || !bucketName || !accessKey || !secretKey) {
+    return res.status(400).render('admin-buckets', { buckets: loadBucketsList(), addResult: { ok: false, message: 'All fields except region are required.' } });
+  }
+
+  // Tested before saving, so a typo in the endpoint or a bad key doesn't
+  // silently get stored as if it worked, only to fail the first time
+  // someone actually tries to browse it.
+  const testBucket = {
+    endpoint,
+    region,
+    bucket_name: bucketName,
+    access_key_encrypted: encrypt(accessKey),
+    secret_key_encrypted: encrypt(secretKey),
+    force_path_style: forcePathStyle ? 1 : 0,
+  };
+  const testResult = await s3.testConnection(testBucket);
+  if (!testResult.ok) {
+    return res.status(400).render('admin-buckets', { buckets: loadBucketsList(), addResult: { ok: false, message: 'Could not connect: ' + testResult.message } });
+  }
+
+  db.prepare(
+    'INSERT INTO storage_buckets (label, endpoint, region, bucket_name, access_key_encrypted, secret_key_encrypted, force_path_style) VALUES (?, ?, ?, ?, ?, ?, ?)'
+  ).run(label, endpoint, region, bucketName, testBucket.access_key_encrypted, testBucket.secret_key_encrypted, testBucket.force_path_style);
+
+  res.render('admin-buckets', { buckets: loadBucketsList(), addResult: { ok: true, message: `${label} connected successfully.` } });
+});
+
+router.post('/admin/buckets/:id/delete', (req, res) => {
+  db.prepare('DELETE FROM storage_buckets WHERE id = ?').run(req.params.id);
+  res.redirect('/admin/buckets');
+});
+
+router.get('/admin/buckets/:id', (req, res) => {
+  const bucket = db.prepare('SELECT id, label, endpoint, region, bucket_name, created_at FROM storage_buckets WHERE id = ?').get(req.params.id);
+  if (!bucket) return res.status(404).render('error', { message: 'Bucket not found.' });
+  res.render('admin-bucket-detail', { bucket });
+});
+
+router.get('/admin/buckets/:id/list', async (req, res) => {
+  const bucket = db.prepare('SELECT * FROM storage_buckets WHERE id = ?').get(req.params.id);
+  if (!bucket) return res.status(404).json({ ok: false, message: 'Bucket not found.' });
+
+  try {
+    const result = await s3.listObjects(bucket, req.query.prefix || '', req.query.token || undefined);
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    res.status(500).json({ ok: false, message: err.message });
+  }
+});
+
+router.get('/admin/buckets/:id/stats', async (req, res) => {
+  const bucket = db.prepare('SELECT * FROM storage_buckets WHERE id = ?').get(req.params.id);
+  if (!bucket) return res.status(404).json({ ok: false, message: 'Bucket not found.' });
+
+  try {
+    const stats = await s3.getBucketStats(bucket);
+    res.json({
+      ok: true,
+      totalSize: stats.totalSize,
+      totalSizeFormatted: s3.formatBytes(stats.totalSize),
+      totalCount: stats.totalCount,
+      isComplete: stats.isComplete,
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, message: err.message });
+  }
+});
+
+router.post('/admin/buckets/:id/delete-file', async (req, res) => {
+  const bucket = db.prepare('SELECT * FROM storage_buckets WHERE id = ?').get(req.params.id);
+  if (!bucket) return res.status(404).json({ ok: false, message: 'Bucket not found.' });
+  const key = String(req.body.key || '');
+  if (!key) return res.status(400).json({ ok: false, message: 'No file specified.' });
+
+  try {
+    await s3.deleteObject(bucket, key);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ ok: false, message: err.message });
+  }
+});
+
+router.get('/admin/buckets/:id/download', async (req, res) => {
+  const bucket = db.prepare('SELECT * FROM storage_buckets WHERE id = ?').get(req.params.id);
+  if (!bucket) return res.status(404).json({ ok: false, message: 'Bucket not found.' });
+  const key = String(req.query.key || '');
+  if (!key) return res.status(400).json({ ok: false, message: 'No file specified.' });
+
+  try {
+    const url = await s3.getDownloadUrl(bucket, key);
+    res.json({ ok: true, url });
+  } catch (err) {
+    res.status(500).json({ ok: false, message: err.message });
+  }
+});
+
+router.post('/admin/buckets/:id/upload', (req, res) => {
+  bucketUpload.single('file')(req, res, async (err) => {
+    if (err) return res.status(400).json({ ok: false, message: err.message });
+
+    const bucket = db.prepare('SELECT * FROM storage_buckets WHERE id = ?').get(req.params.id);
+    if (!bucket) return res.status(404).json({ ok: false, message: 'Bucket not found.' });
+    if (!req.file) return res.status(400).json({ ok: false, message: 'No file provided.' });
+
+    const prefix = String(req.body.prefix || '');
+    const key = prefix + req.file.originalname;
+
+    try {
+      await s3.uploadObject(bucket, key, req.file.buffer, req.file.mimetype);
+      res.json({ ok: true, key });
+    } catch (uploadErr) {
+      res.status(500).json({ ok: false, message: uploadErr.message });
+    }
+  });
+});
+
 // ---------- Users ----------
 
 router.get('/admin/users', async (req, res) => {
@@ -777,7 +914,7 @@ router.get('/admin/settings', (req, res) => {
   res.render('admin-settings', { ...loadSettingsPageData(), saved: null, testResult: null, brandingError: null, adminActionResult: null });
 });
 
-const ADMIN_PAGE_KEYS = ['overview', 'users', 'plans', 'health', 'settings', 'tickets'];
+const ADMIN_PAGE_KEYS = ['overview', 'users', 'plans', 'health', 'settings', 'tickets', 'buckets'];
 
 router.post('/admin/admins/invite', requireFullAdmin, async (req, res) => {
   const name = String(req.body.name || '').trim();

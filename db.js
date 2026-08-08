@@ -84,6 +84,23 @@ CREATE TABLE IF NOT EXISTS vpn_watch_containers (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- S3-compatible object storage connections (Hetzner Object Storage, AWS
+-- S3, Backblaze B2, DigitalOcean Spaces, Cloudflare R2, MinIO, etc. -
+-- anything speaking the standard S3 API) that admins can browse and
+-- manage files within. Credentials encrypted the same way as SSH/SMTP
+-- secrets elsewhere in this app (see utils/crypto.js).
+CREATE TABLE IF NOT EXISTS storage_buckets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  label TEXT NOT NULL,
+  endpoint TEXT NOT NULL,
+  region TEXT NOT NULL DEFAULT 'auto',
+  bucket_name TEXT NOT NULL,
+  access_key_encrypted TEXT NOT NULL,
+  secret_key_encrypted TEXT NOT NULL,
+  force_path_style INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Custom admin-defined actions per health container (e.g. "Reset World
 -- Seed" running a specific docker exec command) - separate from
 -- plan_actions, which are subscriber-facing actions tied to a plan rather
@@ -312,6 +329,7 @@ ensureColumn('users', 'payment_method_id', 'payment_method_id INTEGER REFERENCES
 ensureColumn('users', 'plex_username', 'plex_username TEXT');
 ensureColumn('users', 'plex_user_id', 'plex_user_id TEXT'); // Plex.tv account id, matched by email - used for Tautulli watch history/now-watching only
 ensureColumn('plan_containers', 'link_url', 'link_url TEXT');
+ensureColumn('vpn_watch_containers', 'last_container_start_at', 'last_container_start_at TEXT');
 ensureColumn('users', 'plex_link_attempted_at', 'plex_link_attempted_at TEXT');
 ensureColumn('users', 'admin_access_mode', "admin_access_mode TEXT NOT NULL DEFAULT 'full'"); // full | limited - only meaningful when role = 'admin'; limited admins are gated per-page via admin_page_access
 
