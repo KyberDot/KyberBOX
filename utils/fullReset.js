@@ -7,7 +7,7 @@ const db = require('../db');
 const { runCommand } = require('./ssh');
 const { getAllSettings } = require('./settings');
 const { startReset, endReset, getResetState } = require('./resetLock');
-const { notifyResetStarted } = require('./mailer');
+const { notifyResetStarted, notifyAutoResetStarted } = require('./mailer');
 
 let fullResetState = { running: false, lastResult: null };
 
@@ -60,7 +60,15 @@ function triggerFullReset(source, adminUserId) {
          )`
     )
     .all();
-  notifyResetStarted(allActiveSubscribers);
+  // Automated triggers (source starts with "Auto:") get a distinct email
+  // explaining the system itself detected and is fixing an issue - a
+  // manual reset email here would be confusing since nobody actually
+  // clicked anything.
+  if (source.startsWith('Auto:')) {
+    notifyAutoResetStarted(allActiveSubscribers);
+  } else {
+    notifyResetStarted(allActiveSubscribers);
+  }
 
   runCommand(target, command, 15 * 60 * 1000)
     .then((result) => {

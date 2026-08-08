@@ -90,4 +90,22 @@ async function notifyResetStarted(recipients) {
   ).catch(() => {}); // best-effort - never let a mail hiccup affect the reset itself
 }
 
-module.exports = { sendMail, isConfigured, getTransporter, notifyResetStarted };
+async function notifyAutoResetStarted(recipients) {
+  if (!recipients || recipients.length === 0) return;
+
+  await Promise.all(
+    recipients.map((person) =>
+      sendMail({
+        to: person.email,
+        subject: 'Automatic Server Reset In Progress',
+        bodyHtml: `
+          <p>Hi ${person.name},</p>
+          <p>Our monitoring detected an issue with one of the services and is automatically restarting the affected systems to fix it. Services may be briefly interrupted while this completes.</p>
+          <p>We expect to resume within <strong>5–15 minutes</strong>. No action is needed on your end. Apologies for the inconvenience.</p>
+        `,
+      })
+    )
+  ).catch(() => {});
+}
+
+module.exports = { sendMail, isConfigured, getTransporter, notifyResetStarted, notifyAutoResetStarted };
