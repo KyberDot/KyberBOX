@@ -125,7 +125,11 @@
                             <div class="grid sm:grid-cols-2 gap-2">
                                 <% pv.containers.forEach(function(c) { %>
                                     <div class="flex items-center justify-between bg-slate-900/40 rounded-xl px-4 py-3" data-container-name="<%= c.container_name %>">
-                                        <span class="text-sm text-slate-300"><%= c.label %></span>
+                                        <% if (c.link_url) { %>
+                                            <a href="<%= c.link_url %>" target="_blank" rel="noopener noreferrer" class="text-sm text-slate-300 hover:text-sky-400 flex items-center gap-1.5"><%= c.label %> <i class="fas fa-arrow-up-right-from-square text-[10px] text-slate-500"></i></a>
+                                        <% } else { %>
+                                            <span class="text-sm text-slate-300"><%= c.label %></span>
+                                        <% } %>
                                         <span class="badge badge-suspended" data-status-pill><i class="fas fa-circle-notch fa-spin"></i> checking</span>
                                     </div>
                                 <% }); %>
@@ -231,7 +235,11 @@
                                         <div class="grid sm:grid-cols-2 gap-2">
                                             <% extra.containers.forEach(function(c) { %>
                                                 <div class="flex items-center justify-between bg-slate-900/40 rounded-xl px-4 py-3" data-container-name="<%= c.container_name %>">
-                                                    <span class="text-sm text-slate-300"><%= c.label %></span>
+                                                    <% if (c.link_url) { %>
+                                                        <a href="<%= c.link_url %>" target="_blank" rel="noopener noreferrer" class="text-sm text-slate-300 hover:text-sky-400 flex items-center gap-1.5"><%= c.label %> <i class="fas fa-arrow-up-right-from-square text-[10px] text-slate-500"></i></a>
+                                                    <% } else { %>
+                                                        <span class="text-sm text-slate-300"><%= c.label %></span>
+                                                    <% } %>
                                                     <span class="badge badge-suspended" data-status-pill><i class="fas fa-circle-notch fa-spin"></i> checking</span>
                                                 </div>
                                             <% }); %>

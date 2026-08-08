@@ -173,12 +173,92 @@
 
             <div class="mt-6 pt-6 border-t border-white/5">
                 <h3 class="text-sm font-bold text-white mb-1"><i class="fas fa-eye mr-2 text-sky-400"></i>Stuck-Mount Watchdog</h3>
-                <p class="text-slate-400 text-xs mb-3">If set, checks this container's recent startup logs every few minutes for a script stuck waiting on the same step (e.g. mounts never coming up) and automatically runs a Full Reset if it's been stuck for ~15 minutes straight. Built for scripts like the Plex mount-checker that print repeated "⏳ waiting..." lines while a dependency is down. Leave blank to disable.</p>
-                <form method="POST" action="/admin/settings/stuck-watch" data-ajax-form class="flex flex-wrap gap-3">
-                    <input type="text" name="container_name" class="input flex-1 min-w-[200px]" placeholder="Exact container name (e.g. plex)" value="<%= settings.stuck_watch_container_name %>">
-                    <button type="submit" class="btn-primary px-6 py-3 rounded-xl text-sm">Save</button>
-                </form>
+                <p class="text-slate-400 text-xs mb-4">Checks a container's recent startup logs every few minutes for a script stuck waiting on the same step (e.g. mounts never coming up) and automatically runs a Full Reset if it's been stuck for ~15 minutes straight. Built for mount-checker scripts that print repeated "⏳ waiting..." lines while a dependency is down, followed by a distinct line once everything's actually up. Add one watch per container.</p>
+
+                <div class="space-y-2 mb-4">
+                    <% stuckWatches.forEach(function(w) { %>
+                        <div class="flex items-center justify-between gap-3 bg-slate-900/40 rounded-xl px-3 py-2.5 text-xs">
+                            <span class="min-w-0">
+                                <span class="text-white font-semibold"><%= w.service_label %></span>
+                                <span class="text-slate-500 ml-2 font-mono"><%= w.container_name %></span>
+                                <% if (w.last_status === 'ok') { %>
+                                    <span class="badge badge-active ml-2">ok</span>
+                                <% } else if (w.last_status === 'waiting') { %>
+                                    <span class="badge badge-suspended ml-2">stuck <%= w.consecutive_stuck_checks %>/3</span>
+                                <% } else { %>
+                                    <span class="badge badge-closed ml-2">unknown</span>
+                                <% } %>
+                            </span>
+                            <form method="POST" action="/admin/settings/stuck-watch/<%= w.id %>/delete" data-ajax-form>
+                                <button type="submit" class="text-red-400 hover:text-red-300 flex-shrink-0"><i class="fas fa-trash"></i></button>
+                            </form>
+                        </div>
+                    <% }); %>
+                    <% if (stuckWatches.length === 0) { %>
+                        <p class="text-slate-500 text-sm">No containers being watched yet.</p>
+                    <% } %>
+                </div>
+
+                <details data-ajax-key="stuck-watch-add">
+                    <summary class="cursor-pointer text-sky-400 text-xs font-semibold uppercase tracking-wide">Add a Watch</summary>
+                    <form method="POST" action="/admin/settings/stuck-watch" data-ajax-form class="grid sm:grid-cols-2 gap-3 mt-3">
+                        <select name="preset" class="input" onchange="
+                            const marker = document.getElementById('stuckWatchMarker');
+                            const label = document.getElementById('stuckWatchLabel');
+                            if (this.value === 'plex') { marker.value = 'Starting Plex Media Server'; label.value = 'Plex'; }
+                            else if (this.value === 'jellyfin') { marker.value = 'Starting Jellyfin Media Server'; label.value = 'Jellyfin'; }
+                            else { marker.value = ''; label.value = ''; }
+                        ">
+                            <option value="custom">Custom / Other</option>
+                            <option value="plex">Plex (mount-checker script)</option>
+                            <option value="jellyfin">Jellyfin (mount-checker script)</option>
+                        </select>
+                        <input type="text" name="container_name" required class="input" placeholder="Exact container name (e.g. plex)">
+                        <input type="text" name="service_label" id="stuckWatchLabel" required class="input" placeholder="Display name (e.g. Plex)">
+                        <input type="text" name="success_marker" id="stuckWatchMarker" required class="input sm:col-span-2" placeholder="Exact line the script prints once healthy (e.g. Starting Plex Media Server)">
+                        <button type="submit" class="btn-primary py-3 rounded-xl text-sm sm:col-span-2">Add Watch</button>
+                    </form>
+                </details>
             </div>
+        </div>
+
+        <!-- VPN Guard Watchdog -->
+        <div class="glass rounded-2xl sm:rounded-3xl p-5 sm:p-8 mb-8">
+            <h3 class="text-sm font-bold text-white mb-1"><i class="fas fa-shield-halved mr-2 text-sky-400"></i>VPN Guard Watchdog</h3>
+            <p class="text-slate-400 text-xs mb-4">For containers that run a VPN-check script before launching their real service, refusing to start until a VPN tunnel is confirmed up. Adds a live status tag on the Health page - green once connected, red if the container reports the VPN failed. A failure emails every admin account once (not repeatedly while it stays down).</p>
+
+            <div class="space-y-2 mb-4">
+                <% vpnWatches.forEach(function(w) { %>
+                    <div class="flex items-center justify-between gap-3 bg-slate-900/40 rounded-xl px-3 py-2.5 text-xs">
+                        <span class="min-w-0">
+                            <span class="text-white font-semibold"><%= w.service_label %></span>
+                            <span class="text-slate-500 ml-2 font-mono"><%= w.container_name %></span>
+                            <% if (w.last_status === 'connected') { %>
+                                <span class="badge badge-active ml-2">connected</span>
+                            <% } else if (w.last_status === 'failed') { %>
+                                <span class="badge badge-expired ml-2">failed</span>
+                            <% } else { %>
+                                <span class="badge badge-closed ml-2">unknown</span>
+                            <% } %>
+                        </span>
+                        <form method="POST" action="/admin/settings/vpn-watch/<%= w.id %>/delete" data-ajax-form>
+                            <button type="submit" class="text-red-400 hover:text-red-300 flex-shrink-0"><i class="fas fa-trash"></i></button>
+                        </form>
+                    </div>
+                <% }); %>
+                <% if (vpnWatches.length === 0) { %>
+                    <p class="text-slate-500 text-sm">No containers being watched yet.</p>
+                <% } %>
+            </div>
+
+            <details data-ajax-key="vpn-watch-add">
+                <summary class="cursor-pointer text-sky-400 text-xs font-semibold uppercase tracking-wide">Add a Watch</summary>
+                <form method="POST" action="/admin/settings/vpn-watch" data-ajax-form class="grid sm:grid-cols-2 gap-3 mt-3">
+                    <input type="text" name="container_name" required class="input" placeholder="Exact container name (e.g. decypharr)">
+                    <input type="text" name="service_label" required class="input" placeholder="Display name (e.g. Decypharr)">
+                    <button type="submit" class="btn-primary py-3 rounded-xl text-sm sm:col-span-2">Add Watch</button>
+                </form>
+            </details>
         </div>
 
         <!-- Payment Methods -->

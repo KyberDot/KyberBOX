@@ -6,6 +6,7 @@
 
 const { applyAutoRenewals, applyManualExpirations, applyExpiryWarnings } = require('./renewals');
 const { checkStuckWatch } = require('./stuckWatch');
+const { checkVpnWatch } = require('./vpnWatch');
 
 const INTERVAL_MS = 5 * 60 * 1000; // every 5 minutes
 
@@ -27,6 +28,12 @@ async function runMaintenanceCycle() {
     await checkStuckWatch();
   } catch (err) {
     console.error('[scheduler] stuck-watch check failed:', err.message);
+  }
+
+  try {
+    await checkVpnWatch();
+  } catch (err) {
+    console.error('[scheduler] vpn-watch check failed:', err.message);
   }
 }
 

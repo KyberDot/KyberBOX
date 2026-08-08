@@ -95,8 +95,9 @@
                     <% } %>
 
                     <div class="w-full min-w-0">
-                        <% if (c.container_name === stuckWatchContainerName) { %>
-                            <i class="fas fa-eye text-sky-400 text-[10px] mr-1 <%= stuckWatchState.last_status === 'waiting' ? 'animate-pulse' : '' %>" title="Watched for stuck startup (status: <%= stuckWatchState.last_status %><%= stuckWatchState.last_status === 'waiting' ? ', ' + stuckWatchState.consecutive_stuck_checks + '/3 stuck checks' : '' %>)"></i>
+                        <% var stuckWatch = stuckWatchByContainer[c.container_name]; %>
+                        <% if (stuckWatch) { %>
+                            <i class="fas fa-eye text-sky-400 text-[10px] mr-1 <%= stuckWatch.last_status === 'waiting' ? 'animate-pulse' : '' %>" title="Watched for stuck startup (<%= stuckWatch.service_label %> - status: <%= stuckWatch.last_status %><%= stuckWatch.last_status === 'waiting' ? ', ' + stuckWatch.consecutive_stuck_checks + '/3 stuck checks' : '' %>)"></i>
                         <% } %>
                         <% if (c.link_url) { %>
                             <a href="<%= c.link_url %>" target="_blank" rel="noopener noreferrer" class="font-semibold text-white text-xs truncate hover:text-sky-400"><%= c.label %></a>
@@ -107,6 +108,17 @@
                     </div>
 
                     <span class="badge badge-suspended text-[10px] px-2 py-0.5" data-status-pill><i class="fas fa-circle-notch fa-spin"></i> checking</span>
+
+                    <% var vpnWatch = vpnWatchByContainer[c.container_name]; %>
+                    <% if (vpnWatch) { %>
+                        <% if (vpnWatch.last_status === 'connected') { %>
+                            <span class="badge badge-active text-[10px] px-2 py-0.5"><i class="fas fa-shield-halved"></i> VPN Active</span>
+                        <% } else if (vpnWatch.last_status === 'failed') { %>
+                            <span class="badge badge-expired text-[10px] px-2 py-0.5"><i class="fas fa-shield-halved"></i> VPN Failed</span>
+                        <% } else { %>
+                            <span class="badge badge-closed text-[10px] px-2 py-0.5"><i class="fas fa-shield-halved"></i> VPN Unknown</span>
+                        <% } %>
+                    <% } %>
 
                     <div class="flex items-center gap-1.5 flex-wrap justify-center w-full">
                         <button class="btn-outline flex-1 py-1.5 rounded-lg text-[11px]" data-health-btn data-health-action="stop" data-health-id="<%= c.id %>" data-health-label="<%= c.label %>" title="Stop">

@@ -90,8 +90,10 @@ async function notifyResetStarted(recipients) {
   ).catch(() => {}); // best-effort - never let a mail hiccup affect the reset itself
 }
 
-async function notifyAutoResetStarted(recipients) {
+async function notifyAutoResetStarted(recipients, serviceLabel) {
   if (!recipients || recipients.length === 0) return;
+
+  const serviceMention = serviceLabel ? `with <strong>${serviceLabel}</strong>` : 'with one of the services';
 
   await Promise.all(
     recipients.map((person) =>
@@ -100,7 +102,7 @@ async function notifyAutoResetStarted(recipients) {
         subject: 'Automatic Server Reset In Progress',
         bodyHtml: `
           <p>Hi ${person.name},</p>
-          <p>Our monitoring detected an issue with one of the services and is automatically restarting the affected systems to fix it. Services may be briefly interrupted while this completes.</p>
+          <p>Our monitoring detected an issue ${serviceMention} and is automatically restarting the affected systems to fix it. Services may be briefly interrupted while this completes.</p>
           <p>We expect to resume within <strong>5–15 minutes</strong>. No action is needed on your end. Apologies for the inconvenience.</p>
         `,
       })
@@ -108,4 +110,22 @@ async function notifyAutoResetStarted(recipients) {
   ).catch(() => {});
 }
 
-module.exports = { sendMail, isConfigured, getTransporter, notifyResetStarted, notifyAutoResetStarted };
+async function notifyAdminVpnFailure(admins, serviceLabel, containerName) {
+  if (!admins || admins.length === 0) return;
+
+  await Promise.all(
+    admins.map((admin) =>
+      sendMail({
+        to: admin.email,
+        subject: `VPN Guard Failure: ${serviceLabel}`,
+        bodyHtml: `
+          <p>Hi ${admin.name},</p>
+          <p><strong>${serviceLabel}</strong> (container: <code>${containerName}</code>) reported a VPN connection failure and refused to start its service. It will keep retrying based on its restart policy, but the VPN tunnel itself may need attention.</p>
+          <p>Check the container's logs or the Health page for more detail.</p>
+        `,
+      })
+    )
+  ).catch(() => {});
+}
+
+module.exports = { sendMail, isConfigured, getTransporter, notifyResetStarted, notifyAutoResetStarted, notifyAdminVpnFailure };

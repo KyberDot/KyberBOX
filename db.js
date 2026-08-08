@@ -33,6 +33,10 @@ CREATE TABLE IF NOT EXISTS admin_page_access (
 -- consecutive checks in a row have found it stuck on the same step, and
 -- when a reset was last auto-triggered because of it. Single row (id=1)
 -- since only one container can be watched at a time.
+-- Deprecated as of multi-container watching - superseded by
+-- stuck_watch_containers below. Kept only so an existing single-container
+-- setup can be migrated forward (see the migration block further down)
+-- rather than silently losing it on upgrade.
 CREATE TABLE IF NOT EXISTS stuck_watch_state (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   consecutive_stuck_checks INTEGER NOT NULL DEFAULT 0,
@@ -42,6 +46,43 @@ CREATE TABLE IF NOT EXISTS stuck_watch_state (
   last_reset_triggered_at TEXT
 );
 INSERT OR IGNORE INTO stuck_watch_state (id) VALUES (1);
+
+-- One row per container being watched for the "stuck waiting on
+-- mounts/backends" pattern (see utils/stuckWatch.js). success_marker is
+-- the exact line the container's script prints once it's actually
+-- healthy and past the waiting loop - different per service (e.g. Plex's
+-- script prints "Starting Plex Media Server", Jellyfin's prints "Starting
+-- Jellyfin Media Server"), so each watch tracks its own.
+CREATE TABLE IF NOT EXISTS stuck_watch_containers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  container_name TEXT NOT NULL UNIQUE,
+  service_label TEXT NOT NULL,
+  success_marker TEXT NOT NULL,
+  consecutive_stuck_checks INTEGER NOT NULL DEFAULT 0,
+  last_signature TEXT,
+  last_status TEXT NOT NULL DEFAULT 'unknown',
+  last_checked_at TEXT,
+  last_reset_triggered_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- One row per container being watched for the VPN-guard pattern (see
+-- utils/vpnWatch.js): scripts that refuse to start their real service
+-- until a VPN tunnel is confirmed up, printing one of two fixed lines
+-- either way. Unlike stuck_watch_containers, this is a one-shot
+-- pass/fail determination each check, not a multi-check "same step
+-- repeating" pattern - the markers are identical across every VPN-guard
+-- script variant seen so far, so they're hardcoded rather than
+-- per-container configurable.
+CREATE TABLE IF NOT EXISTS vpn_watch_containers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  container_name TEXT NOT NULL UNIQUE,
+  service_label TEXT NOT NULL,
+  last_status TEXT NOT NULL DEFAULT 'unknown', -- unknown | connected | failed
+  last_checked_at TEXT,
+  last_alert_sent_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 
 -- Custom admin-defined actions per health container (e.g. "Reset World
 -- Seed" running a specific docker exec command) - separate from
@@ -270,6 +311,7 @@ ensureColumn('subscriptions', 'auto_granted_via_plan_id', 'auto_granted_via_plan
 ensureColumn('users', 'payment_method_id', 'payment_method_id INTEGER REFERENCES payment_methods(id)');
 ensureColumn('users', 'plex_username', 'plex_username TEXT');
 ensureColumn('users', 'plex_user_id', 'plex_user_id TEXT'); // Plex.tv account id, matched by email - used for Tautulli watch history/now-watching only
+ensureColumn('plan_containers', 'link_url', 'link_url TEXT');
 ensureColumn('users', 'plex_link_attempted_at', 'plex_link_attempted_at TEXT');
 ensureColumn('users', 'admin_access_mode', "admin_access_mode TEXT NOT NULL DEFAULT 'full'"); // full | limited - only meaningful when role = 'admin'; limited admins are gated per-page via admin_page_access
 
@@ -294,6 +336,43 @@ function backfillActionOrder(table, groupColumn) {
 backfillActionOrder('plan_actions', 'plan_id');
 backfillActionOrder('admin_container_actions', 'container_id');
 backfillActionOrder('plan_containers', 'plan_id');
+
+// One-time migration: the stuck-mount watchdog used to support only a
+// single hardcoded-to-Plex container (settings key
+// stuck_watch_container_name + the single-row stuck_watch_state table).
+// If that old setup has a value and hasn't been migrated yet, carry it
+// forward into the new multi-container table - including its
+// accumulated state, so an in-progress stuck streak isn't silently reset
+// to zero on upgrade. Runs on every boot but is a no-op after the first,
+// since it only acts when the old setting still has a value.
+(function migrateStuckWatchToMultiContainer() {
+  const oldContainerName = db.prepare("SELECT value FROM settings WHERE key = 'stuck_watch_container_name'").get()?.value;
+  if (!oldContainerName) return;
+
+  const alreadyMigrated = db.prepare('SELECT 1 FROM stuck_watch_containers WHERE container_name = ?').get(oldContainerName);
+  if (!alreadyMigrated) {
+    const oldState = db.prepare('SELECT * FROM stuck_watch_state WHERE id = 1').get();
+    db.prepare(
+      `INSERT INTO stuck_watch_containers
+         (container_name, service_label, success_marker, consecutive_stuck_checks, last_signature, last_status, last_checked_at, last_reset_triggered_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      oldContainerName,
+      'Plex', // the old single-container watcher was always hardcoded to Plex's marker specifically
+      'Starting Plex Media Server',
+      oldState?.consecutive_stuck_checks || 0,
+      oldState?.last_signature || null,
+      oldState?.last_status || 'unknown',
+      oldState?.last_checked_at || null,
+      oldState?.last_reset_triggered_at || null
+    );
+  }
+
+  // Clear the old setting so it's unambiguous going forward that
+  // stuck_watch_containers is the single source of truth.
+  db.prepare("DELETE FROM settings WHERE key = 'stuck_watch_container_name'").run();
+})();
+
 ensureColumn('subscriptions', 'renewal_mode', "renewal_mode TEXT NOT NULL DEFAULT 'manual'"); // auto | manual | expired
 ensureColumn('subscriptions', 'expiry_warning_sent_at', 'expiry_warning_sent_at TEXT');
 ensureColumn('tickets', 'plan_id', 'plan_id INTEGER REFERENCES plans(id)'); // set for plan-specific tickets, e.g. a Minecraft world seed reset request

@@ -20,7 +20,11 @@ function getFullResetState() {
 // full-access admin account so the FK constraint is satisfied and there's
 // still a sensible "on behalf of whom" trail, rather than requiring a
 // schema change to make the column nullable for this one case.
-function triggerFullReset(source, adminUserId) {
+// serviceLabel is optional context for the auto-reset email specifically
+// (e.g. "Plex", "Jellyfin") - passed explicitly by callers that know it,
+// rather than parsed back out of the human-readable source string, which
+// would be fragile if that wording ever changes.
+function triggerFullReset(source, adminUserId, serviceLabel) {
   const globalState = getResetState();
   if (globalState.active) {
     return { ok: false, message: `A reset is already in progress (${globalState.source || 'another action'}) - wait for it to finish first.` };
@@ -65,7 +69,7 @@ function triggerFullReset(source, adminUserId) {
   // manual reset email here would be confusing since nobody actually
   // clicked anything.
   if (source.startsWith('Auto:')) {
-    notifyAutoResetStarted(allActiveSubscribers);
+    notifyAutoResetStarted(allActiveSubscribers, serviceLabel);
   } else {
     notifyResetStarted(allActiveSubscribers);
   }

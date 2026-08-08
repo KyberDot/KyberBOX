@@ -103,7 +103,10 @@ function loadSettingsPageData() {
   });
   admins.forEach((a) => { a.pages = accessByAdmin[a.id] || []; });
 
-  return { settings, healthSsh, paymentMethods, admins };
+  const stuckWatches = db.prepare('SELECT * FROM stuck_watch_containers ORDER BY created_at ASC').all();
+  const vpnWatches = db.prepare('SELECT * FROM vpn_watch_containers ORDER BY created_at ASC').all();
+
+  return { settings, healthSsh, paymentMethods, admins, stuckWatches, vpnWatches };
 }
 
 router.get('/admin', (req, res) => {
@@ -370,6 +373,7 @@ router.post('/admin/plans/:id/actions/:actionId/move', (req, res) => {
 router.post('/admin/plans/:id/containers', (req, res) => {
   const containerName = String(req.body.container_name || '').trim();
   const label = String(req.body.label || containerName).trim();
+  const linkUrl = String(req.body.link_url || '').trim();
 
   if (!containerName) return res.status(400).render('error', { message: 'Missing required fields - please fill in everything marked required and try again.' });
   if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(containerName)) {
@@ -377,11 +381,33 @@ router.post('/admin/plans/:id/containers', (req, res) => {
   }
 
   const maxOrder = db.prepare('SELECT MAX(sort_order) AS m FROM plan_containers WHERE plan_id = ?').get(req.params.id).m || 0;
-  db.prepare('INSERT INTO plan_containers (plan_id, container_name, label, sort_order) VALUES (?, ?, ?, ?)').run(
+  db.prepare('INSERT INTO plan_containers (plan_id, container_name, label, sort_order, link_url) VALUES (?, ?, ?, ?, ?)').run(
     req.params.id,
     containerName,
     label,
-    maxOrder + 1
+    maxOrder + 1,
+    linkUrl || null
+  );
+
+  res.redirect('/admin/plans');
+});
+
+router.post('/admin/plans/:id/containers/:containerId/update', (req, res) => {
+  const containerName = String(req.body.container_name || '').trim();
+  const label = String(req.body.label || containerName).trim();
+  const linkUrl = String(req.body.link_url || '').trim();
+
+  if (!containerName) return res.status(400).render('error', { message: 'Missing required fields - please fill in everything marked required and try again.' });
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(containerName)) {
+    return res.status(400).render('error', { message: 'Container name can only contain letters, numbers, dots, dashes, and underscores.' });
+  }
+
+  db.prepare('UPDATE plan_containers SET container_name = ?, label = ?, link_url = ? WHERE id = ? AND plan_id = ?').run(
+    containerName,
+    label,
+    linkUrl || null,
+    req.params.containerId,
+    req.params.id
   );
 
   res.redirect('/admin/plans');
@@ -937,16 +963,63 @@ router.post('/admin/settings/health-ssh', (req, res) => {
 
 router.post('/admin/settings/stuck-watch', (req, res) => {
   const containerName = String(req.body.container_name || '').trim();
-  setSetting('stuck_watch_container_name', containerName);
+  const serviceLabel = String(req.body.service_label || '').trim();
+  const successMarker = String(req.body.success_marker || '').trim();
 
-  // A changed container means whatever the old one was mid-way through
-  // tracking no longer applies to the new one - clear the streak rather
-  // than let a stale count from a totally different container carry over.
-  db.prepare(
-    `UPDATE stuck_watch_state SET consecutive_stuck_checks = 0, last_signature = NULL, last_status = 'unknown' WHERE id = 1`
-  ).run();
+  if (!containerName || !serviceLabel || !successMarker) {
+    return res.status(400).render('admin-settings', {
+      ...loadSettingsPageData(),
+      saved: null,
+      testResult: null,
+      brandingError: null,
+      adminActionResult: { ok: false, message: 'Container name, display name, and success marker are all required.' },
+    });
+  }
 
+  try {
+    db.prepare('INSERT INTO stuck_watch_containers (container_name, service_label, success_marker) VALUES (?, ?, ?)').run(
+      containerName,
+      serviceLabel,
+      successMarker
+    );
+    res.render('admin-settings', { ...loadSettingsPageData(), saved: 'stuck-watch', testResult: null, brandingError: null });
+  } catch (err) {
+    const message = err.message.includes('UNIQUE') ? `${containerName} is already being watched.` : 'Could not add that watch.';
+    res.status(400).render('admin-settings', { ...loadSettingsPageData(), saved: null, testResult: null, brandingError: null, adminActionResult: { ok: false, message } });
+  }
+});
+
+router.post('/admin/settings/stuck-watch/:id/delete', (req, res) => {
+  db.prepare('DELETE FROM stuck_watch_containers WHERE id = ?').run(req.params.id);
   res.render('admin-settings', { ...loadSettingsPageData(), saved: 'stuck-watch', testResult: null, brandingError: null });
+});
+
+router.post('/admin/settings/vpn-watch', (req, res) => {
+  const containerName = String(req.body.container_name || '').trim();
+  const serviceLabel = String(req.body.service_label || '').trim();
+
+  if (!containerName || !serviceLabel) {
+    return res.status(400).render('admin-settings', {
+      ...loadSettingsPageData(),
+      saved: null,
+      testResult: null,
+      brandingError: null,
+      adminActionResult: { ok: false, message: 'Container name and display name are both required.' },
+    });
+  }
+
+  try {
+    db.prepare('INSERT INTO vpn_watch_containers (container_name, service_label) VALUES (?, ?)').run(containerName, serviceLabel);
+    res.render('admin-settings', { ...loadSettingsPageData(), saved: 'vpn-watch', testResult: null, brandingError: null });
+  } catch (err) {
+    const message = err.message.includes('UNIQUE') ? `${containerName} is already being watched.` : 'Could not add that watch.';
+    res.status(400).render('admin-settings', { ...loadSettingsPageData(), saved: null, testResult: null, brandingError: null, adminActionResult: { ok: false, message } });
+  }
+});
+
+router.post('/admin/settings/vpn-watch/:id/delete', (req, res) => {
+  db.prepare('DELETE FROM vpn_watch_containers WHERE id = ?').run(req.params.id);
+  res.render('admin-settings', { ...loadSettingsPageData(), saved: 'vpn-watch', testResult: null, brandingError: null });
 });
 
 router.post('/admin/settings/payment-methods', (req, res) => {
@@ -996,10 +1069,13 @@ router.get('/admin/health', (req, res) => {
   });
   containers.forEach((c) => { c.customActions = customActionsByContainer[c.id] || []; });
 
-  const stuckWatchContainerName = getAllSettings().stuck_watch_container_name || null;
-  const stuckWatchState = db.prepare('SELECT * FROM stuck_watch_state WHERE id = 1').get();
+  const stuckWatchByContainer = {};
+  db.prepare('SELECT * FROM stuck_watch_containers').all().forEach((w) => { stuckWatchByContainer[w.container_name] = w; });
 
-  res.render('admin-health', { sshConfigured, containers, recentLog, stuckWatchContainerName, stuckWatchState });
+  const vpnWatchByContainer = {};
+  db.prepare('SELECT * FROM vpn_watch_containers').all().forEach((w) => { vpnWatchByContainer[w.container_name] = w; });
+
+  res.render('admin-health', { sshConfigured, containers, recentLog, stuckWatchByContainer, vpnWatchByContainer });
 });
 
 router.post('/admin/health/containers', (req, res) => {

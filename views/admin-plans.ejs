@@ -208,23 +208,37 @@
                         <summary class="cursor-pointer text-sky-400 text-xs font-semibold uppercase tracking-wide">Container Health (shown to subscribers)</summary>
                         <div class="mt-3 space-y-2 mb-3">
                             <% (containersByPlan[plan.id] || []).forEach(function(c, containerIndex) { %>
-                                <div class="flex items-center justify-between text-xs text-slate-400 bg-slate-900/40 rounded-lg px-3 py-2 gap-2">
-                                    <span class="truncate"><strong class="text-white"><%= c.label %></strong> — container: <span class="font-mono"><%= c.container_name %></span></span>
-                                    <div class="flex items-center gap-0.5 flex-shrink-0">
-                                        <form method="POST" action="/admin/plans/<%= plan.id %>/containers/<%= c.id %>/move" data-ajax-form>
-                                            <input type="hidden" name="direction" value="up">
-                                            <button type="submit" class="w-6 h-6 rounded-lg text-slate-400 hover:text-white hover:bg-white/5" title="Move earlier" <%= containerIndex === 0 ? 'disabled style=opacity:0.3' : '' %>>
-                                                <i class="fas fa-arrow-up"></i>
-                                            </button>
-                                        </form>
-                                        <form method="POST" action="/admin/plans/<%= plan.id %>/containers/<%= c.id %>/move" data-ajax-form>
-                                            <input type="hidden" name="direction" value="down">
-                                            <button type="submit" class="w-6 h-6 rounded-lg text-slate-400 hover:text-white hover:bg-white/5" title="Move later" <%= containerIndex === (containersByPlan[plan.id] || []).length - 1 ? 'disabled style=opacity:0.3' : '' %>>
-                                                <i class="fas fa-arrow-down"></i>
-                                            </button>
-                                        </form>
-                                        <form method="POST" action="/admin/plans/<%= plan.id %>/containers/<%= c.id %>/delete" data-ajax-form>
-                                            <button type="submit" class="text-red-400 hover:text-red-300 px-1"><i class="fas fa-trash"></i></button>
+                                <div class="bg-slate-900/40 rounded-lg px-3 py-2">
+                                    <div class="flex items-center justify-between text-xs text-slate-400 gap-2">
+                                        <span class="truncate">
+                                            <% if (c.link_url) { %><i class="fas fa-arrow-up-right-from-square text-sky-400 mr-1" title="Links to <%= c.link_url %>"></i><% } %>
+                                            <strong class="text-white"><%= c.label %></strong> — container: <span class="font-mono"><%= c.container_name %></span>
+                                        </span>
+                                        <div class="flex items-center gap-0.5 flex-shrink-0">
+                                            <form method="POST" action="/admin/plans/<%= plan.id %>/containers/<%= c.id %>/move" data-ajax-form>
+                                                <input type="hidden" name="direction" value="up">
+                                                <button type="submit" class="w-6 h-6 rounded-lg text-slate-400 hover:text-white hover:bg-white/5" title="Move earlier" <%= containerIndex === 0 ? 'disabled style=opacity:0.3' : '' %>>
+                                                    <i class="fas fa-arrow-up"></i>
+                                                </button>
+                                            </form>
+                                            <form method="POST" action="/admin/plans/<%= plan.id %>/containers/<%= c.id %>/move" data-ajax-form>
+                                                <input type="hidden" name="direction" value="down">
+                                                <button type="submit" class="w-6 h-6 rounded-lg text-slate-400 hover:text-white hover:bg-white/5" title="Move later" <%= containerIndex === (containersByPlan[plan.id] || []).length - 1 ? 'disabled style=opacity:0.3' : '' %>>
+                                                    <i class="fas fa-arrow-down"></i>
+                                                </button>
+                                            </form>
+                                            <button type="button" class="text-sky-400 hover:text-sky-300 px-1" data-toggle-target="plan-container-<%= c.id %>-edit"><i class="fas fa-pen"></i></button>
+                                            <form method="POST" action="/admin/plans/<%= plan.id %>/containers/<%= c.id %>/delete" data-ajax-form>
+                                                <button type="submit" class="text-red-400 hover:text-red-300 px-1"><i class="fas fa-trash"></i></button>
+                                            </form>
+                                        </div>
+                                    </div>
+                                    <div class="hidden mt-2 pt-2 border-t border-white/5" data-toggle-key="plan-container-<%= c.id %>-edit">
+                                        <form method="POST" action="/admin/plans/<%= plan.id %>/containers/<%= c.id %>/update" data-ajax-form class="grid sm:grid-cols-3 gap-2">
+                                            <input type="text" name="label" required class="input text-xs" placeholder="Display label" value="<%= c.label %>">
+                                            <input type="text" name="container_name" required class="input text-xs" placeholder="Container name" value="<%= c.container_name %>">
+                                            <input type="url" name="link_url" class="input text-xs" placeholder="Link URL (optional)" value="<%= c.link_url || '' %>">
+                                            <button type="submit" class="btn-primary py-2 rounded-lg text-xs sm:col-span-3">Save Changes</button>
                                         </form>
                                     </div>
                                 </div>
@@ -233,7 +247,8 @@
                         <form method="POST" action="/admin/plans/<%= plan.id %>/containers" data-ajax-form class="grid sm:grid-cols-3 gap-3">
                             <input type="text" name="label" required class="input" placeholder="Display label (e.g. Plex Server)">
                             <input type="text" name="container_name" required class="input" placeholder="Exact container name (e.g. plex)">
-                            <button type="submit" class="btn-primary py-3 rounded-xl text-sm">Add Container</button>
+                            <input type="url" name="link_url" class="input sm:col-span-3" placeholder="Link URL (optional, e.g. https://plex.example.com)">
+                            <button type="submit" class="btn-primary py-3 rounded-xl text-sm sm:col-span-3">Add Container</button>
                         </form>
                     </details>
 
