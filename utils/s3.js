@@ -125,6 +125,45 @@ async function renameObject(bucket, oldKey, newKey) {
   await client.send(new DeleteObjectCommand({ Bucket: bucket.bucket_name, Key: oldKey }));
 }
 
+// S3 "folders" are just key prefixes - there's no real directory object
+// to operate on, so both delete and move first need every object under
+// that prefix listed out, recursively (a nested prefix's contents are
+// included automatically since this lists everything sharing the prefix,
+// not just one level).
+async function listAllKeysUnderPrefix(bucket, prefix) {
+  const client = getClient(bucket);
+  const keys = [];
+  let continuationToken;
+  do {
+    const result = await client.send(
+      new ListObjectsV2Command({ Bucket: bucket.bucket_name, Prefix: prefix, MaxKeys: 1000, ContinuationToken: continuationToken })
+    );
+    (result.Contents || []).forEach((obj) => {
+      if (obj.Key !== prefix) keys.push(obj.Key); // exclude the zero-byte folder-marker object itself, if present
+    });
+    continuationToken = result.NextContinuationToken;
+  } while (continuationToken);
+  return keys;
+}
+
+async function deleteFolder(bucket, prefix) {
+  const keys = await listAllKeysUnderPrefix(bucket, prefix);
+  for (const key of keys) {
+    await deleteObject(bucket, key);
+  }
+  return keys.length;
+}
+
+async function moveFolder(bucket, oldPrefix, newPrefix) {
+  const normalizedNewPrefix = newPrefix.endsWith('/') ? newPrefix : newPrefix + '/';
+  const keys = await listAllKeysUnderPrefix(bucket, oldPrefix);
+  for (const key of keys) {
+    const relativePath = key.slice(oldPrefix.length);
+    await renameObject(bucket, key, normalizedNewPrefix + relativePath);
+  }
+  return keys.length;
+}
+
 async function uploadObject(bucket, key, buffer, contentType) {
   const client = getClient(bucket);
   await client.send(
@@ -154,4 +193,4 @@ function formatBytes(bytes) {
   return (bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1) + ' ' + units[i];
 }
 
-module.exports = { testConnection, listObjects, getBucketStats, deleteObject, renameObject, uploadObject, getDownloadUrl, formatBytes };
+module.exports = { testConnection, listObjects, getBucketStats, deleteObject, renameObject, deleteFolder, moveFolder, uploadObject, getDownloadUrl, formatBytes };

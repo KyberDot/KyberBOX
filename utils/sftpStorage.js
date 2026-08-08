@@ -166,12 +166,71 @@ async function deleteObject(box, key) {
 
 // SFTP has a native rename operation that handles both a same-folder
 // rename and a cross-folder move identically - just a different
-// destination path either way.
+// destination path either way. It also works directly on directories,
+// unlike delete, so moving a folder needs no recursion at all - this
+// same function is reused for that case too.
 async function renameObject(box, oldKey, newKey) {
   return withSftp(box, (sftp) => {
     return new Promise((resolve, reject) => {
       sftp.rename(oldKey, newKey, (err) => (err ? reject(err) : resolve()));
     });
+  });
+}
+
+// Unlike rename, SFTP's rmdir only works on an already-empty directory -
+// there's no single "delete this folder and everything in it" operation.
+// This walks the tree collecting every file and subdirectory first, then
+// removes all files, then removes directories deepest-first (a
+// directory can't be removed while it still contains a subdirectory).
+async function deleteFolder(box, dirPath) {
+  return withSftp(box, async (sftp) => {
+    const readdirAsync = (path) => new Promise((resolve, reject) => sftp.readdir(path, (err, list) => (err ? reject(err) : resolve(list))));
+    const unlinkAsync = (path) => new Promise((resolve, reject) => sftp.unlink(path, (err) => (err ? reject(err) : resolve())));
+    const rmdirAsync = (path) => new Promise((resolve, reject) => sftp.rmdir(path, (err) => (err ? reject(err) : resolve())));
+
+    const files = [];
+    const dirs = [dirPath]; // the target directory itself gets removed last
+    const queue = [dirPath];
+
+    while (queue.length > 0) {
+      const current = queue.shift();
+      let list;
+      try {
+        list = await readdirAsync(current);
+      } catch (err) {
+        continue; // permission error or similar on one subdirectory - skip it rather than fail the whole delete
+      }
+
+      list.forEach((entry) => {
+        const isDir = (entry.attrs.mode & 0o170000) === 0o040000;
+        const fullPath = joinPath(current, entry.filename);
+        if (isDir) {
+          dirs.push(fullPath);
+          queue.push(fullPath);
+        } else {
+          files.push(fullPath);
+        }
+      });
+    }
+
+    for (const file of files) {
+      await unlinkAsync(file);
+    }
+
+    // Deepest directories first - a shallower directory can't be removed
+    // while a deeper one inside it still exists. Trailing slashes are
+    // stripped before comparing depth, since dirPath (the target being
+    // deleted) may be passed in with one while its collected
+    // subdirectories never have one - left unstripped, that extra
+    // segment would make the target look as deep as its own children
+    // and get removed before them, failing because it isn't empty yet.
+    const depthOf = (path) => path.replace(/\/+$/, '').split('/').length;
+    const sortedDirs = dirs.slice().sort((a, b) => depthOf(b) - depthOf(a));
+    for (const dir of sortedDirs) {
+      await rmdirAsync(dir);
+    }
+
+    return files.length;
   });
 }
 
@@ -202,4 +261,4 @@ async function downloadObject(box, key) {
   });
 }
 
-module.exports = { testConnection, listObjects, getBucketStats, deleteObject, renameObject, uploadObject, downloadObject };
+module.exports = { testConnection, listObjects, getBucketStats, deleteObject, renameObject, deleteFolder, uploadObject, downloadObject };

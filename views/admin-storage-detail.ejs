@@ -91,7 +91,7 @@
                         <i class="fas fa-xmark"></i>
                     </button>
                 </div>
-                <p class="text-slate-400 text-xs mb-4">Moves <span id="bulkMoveCount"></span> item(s) into the folder path below.</p>
+                <p class="text-slate-400 text-xs mb-4" id="bulkMoveDescription">Moves <span id="bulkMoveCount"></span> item(s) into the folder path below.</p>
                 <form onsubmit="submitBulkMove(event)" class="grid gap-3">
                     <input type="text" id="bulkMoveInput" required class="input font-mono text-xs" placeholder="Destination folder path">
                     <button type="submit" class="btn-primary py-3 rounded-xl text-sm">Move</button>
@@ -275,11 +275,18 @@
         function fileRowHtml(pathOrItem, isFolder) {
             if (isFolder) {
                 const name = displayName(pathOrItem).replace(/\/$/, '');
-                // Folders aren't part of multi-select (bulk delete/move
-                // operate on individual files - recursively deleting or
-                // moving a whole folder's contents is a bigger operation
-                // left to the existing per-folder rename/delete instead),
-                // so they keep their normal controls even in select mode.
+                const isSelected = selectedKeys.has(pathOrItem);
+
+                if (selectMode) {
+                    return '<div onclick="toggleFileSelected(' + jsStr(pathOrItem) + ')" class="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm cursor-pointer transition ' + (isSelected ? 'bg-sky-500/15 border border-sky-500/40' : 'bg-slate-900/40 border border-transparent hover:bg-white/5') + '">' +
+                        '<span class="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center border-2 ' + (isSelected ? 'bg-sky-500 border-sky-500' : 'border-slate-600') + '">' +
+                        (isSelected ? '<i class="fas fa-check text-[10px] text-[#0b0f1a]"></i>' : '') +
+                        '</span>' +
+                        '<i class="fas fa-folder text-amber-400 flex-shrink-0"></i>' +
+                        '<span class="truncate flex-1 min-w-0">' + name + '</span>' +
+                        '</div>';
+                }
+
                 return '<div class="flex items-center gap-3 bg-slate-900/40 rounded-xl px-3 py-2.5 text-sm">' +
                     '<button type="button" onclick="navigateTo(' + jsStr(pathOrItem) + ')" class="flex items-center gap-2 flex-1 min-w-0 text-left hover:text-sky-400">' +
                     '<i class="fas fa-folder text-amber-400"></i><span class="truncate">' + name + '</span>' +
@@ -418,7 +425,11 @@
         async function bulkDelete() {
             const keys = Array.from(selectedKeys);
             if (keys.length === 0) return;
-            if (!confirm('Delete ' + keys.length + ' item(s)? This cannot be undone.')) return;
+            const folderCount = keys.filter(function (k) { return k.endsWith('/'); }).length;
+            const warning = folderCount > 0
+                ? 'Delete ' + keys.length + ' item(s), including ' + folderCount + ' folder(s)? Folders are deleted along with everything inside them, recursively. This cannot be undone.'
+                : 'Delete ' + keys.length + ' item(s)? This cannot be undone.';
+            if (!confirm(warning)) return;
 
             try {
                 const params = new URLSearchParams();
@@ -441,7 +452,12 @@
         }
 
         function openBulkMove() {
-            document.getElementById('bulkMoveCount').textContent = selectedKeys.size;
+            const keys = Array.from(selectedKeys);
+            const folderCount = keys.filter(function (k) { return k.endsWith('/'); }).length;
+            document.getElementById('bulkMoveCount').textContent = keys.length;
+            document.getElementById('bulkMoveDescription').textContent = folderCount > 0
+                ? 'Moves ' + keys.length + ' item(s) into the folder path below. Folder(s) are moved along with everything inside them.'
+                : 'Moves ' + keys.length + ' item(s) into the folder path below.';
             document.getElementById('bulkMoveInput').value = currentPrefix;
             openModal('bulkMoveModal');
         }
@@ -478,10 +494,18 @@
         function bulkDownload() {
             const keys = Array.from(selectedKeys);
             if (keys.length === 0) return;
+            const fileKeys = keys.filter(function (k) { return !k.endsWith('/'); });
+            const folderCount = keys.length - fileKeys.length;
+
+            if (folderCount > 0) {
+                showToast(folderCount + ' folder(s) skipped - only individual files can be downloaded.', 'error');
+            }
+            if (fileKeys.length === 0) return;
+
             // Staggered rather than simultaneous - firing many downloads
             // in the same tick tends to get most of them blocked as
             // popups by the browser.
-            keys.forEach(function (key, i) {
+            fileKeys.forEach(function (key, i) {
                 setTimeout(function () { downloadFile(key); }, i * 400);
             });
         }

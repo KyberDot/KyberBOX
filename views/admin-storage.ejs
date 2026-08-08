@@ -212,7 +212,9 @@
                     <select name="auth_type" class="input" onchange="
                         const isKey = this.value === 'key';
                         document.getElementById('editSftpPasswordInput').classList.toggle('hidden', isKey);
+                        document.getElementById('editSftpPasswordInput').disabled = isKey;
                         document.getElementById('editSftpKeyInput').classList.toggle('hidden', !isKey);
+                        document.getElementById('editSftpKeyInput').disabled = !isKey;
                     ">
                         <option value="password">Password</option>
                         <option value="key">Private Key</option>
@@ -320,7 +322,9 @@
             formField(form, 'total_capacity_gb').value = item.total_capacity_bytes ? (item.total_capacity_bytes / (1024 * 1024 * 1024)).toFixed(2) : '';
             formField(form, 'secret').value = '';
             document.getElementById('editSftpPasswordInput').classList.toggle('hidden', item.auth_type === 'key');
+            document.getElementById('editSftpPasswordInput').disabled = item.auth_type === 'key';
             document.getElementById('editSftpKeyInput').classList.toggle('hidden', item.auth_type !== 'key');
+            document.getElementById('editSftpKeyInput').disabled = item.auth_type !== 'key';
             renderColorPicker('editSftp', item.color || 'amber');
             openModal('editSftpModal');
         }

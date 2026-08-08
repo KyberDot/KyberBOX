@@ -443,6 +443,17 @@ router.post('/admin/plans/:id/containers/:containerId/move', (req, res) => {
 
 const STORAGE_COLORS = ['sky', 'amber', 'emerald', 'violet', 'rose', 'cyan', 'fuchsia', 'lime'];
 
+// Guards against a field arriving as an array when only a single value
+// was ever intended (e.g. two same-named inputs both submitted because a
+// disabled-toggle didn't apply) - String(['', '']) silently produces the
+// non-empty string "," rather than throwing, which is exactly the kind
+// of bug that can overwrite a working credential with garbage. This
+// takes the first genuinely non-empty entry instead of joining them.
+function singleFieldValue(value) {
+  if (Array.isArray(value)) return value.find((v) => v && String(v).trim()) || '';
+  return value;
+}
+
 function loadStorageLists() {
   const buckets = db.prepare('SELECT id, label, endpoint, region, bucket_name, force_path_style, total_capacity_bytes, color, created_at FROM storage_buckets ORDER BY created_at ASC').all();
   const sftpBoxes = db.prepare('SELECT id, label, host, port, username, auth_type, root_path, total_capacity_bytes, color, created_at FROM sftp_storage_boxes ORDER BY created_at ASC').all();
@@ -546,7 +557,11 @@ router.post('/admin/storage/bucket/:id/bulk-delete', async (req, res) => {
   const failed = [];
   for (const key of keys) {
     try {
-      await s3.deleteObject(bucket, key);
+      if (key.endsWith('/')) {
+        await s3.deleteFolder(bucket, key);
+      } else {
+        await s3.deleteObject(bucket, key);
+      }
     } catch (err) {
       failed.push(key);
     }
@@ -567,9 +582,18 @@ router.post('/admin/storage/bucket/:id/bulk-move', async (req, res) => {
   const destPrefix = destination.endsWith('/') ? destination : destination + '/';
   const failed = [];
   for (const key of keys) {
-    const filename = key.split('/').pop();
     try {
-      await s3.renameObject(bucket, key, destPrefix + filename);
+      if (key.endsWith('/')) {
+        // A moved folder keeps its own name as a subfolder of the
+        // destination, rather than dumping its contents flat into
+        // whatever's already there - matching how a normal file manager
+        // handles dragging a folder into another folder.
+        const name = key.replace(/\/+$/, '').split('/').pop();
+        await s3.moveFolder(bucket, key, destPrefix + name);
+      } else {
+        const filename = key.split('/').pop();
+        await s3.renameObject(bucket, key, destPrefix + filename);
+      }
     } catch (err) {
       failed.push(key);
     }
@@ -696,7 +720,7 @@ router.post('/admin/storage/sftp', async (req, res) => {
   const port = Number(req.body.port) || 22;
   const username = String(req.body.username || '').trim();
   const authType = req.body.auth_type === 'key' ? 'key' : 'password';
-  const secret = String(req.body.secret || '').trim();
+  const secret = String(singleFieldValue(req.body.secret) || '').trim();
   const rootPath = String(req.body.root_path || '/').trim() || '/';
   const totalCapacityGb = Number(req.body.total_capacity_gb);
   const totalCapacityBytes = totalCapacityGb > 0 ? Math.round(totalCapacityGb * 1024 * 1024 * 1024) : null;
@@ -728,7 +752,7 @@ router.post('/admin/storage/sftp/:id/update', async (req, res) => {
   const port = Number(req.body.port) || 22;
   const username = String(req.body.username || '').trim();
   const authType = req.body.auth_type === 'key' ? 'key' : 'password';
-  const secret = String(req.body.secret || '').trim();
+  const secret = String(singleFieldValue(req.body.secret) || '').trim();
   const rootPath = String(req.body.root_path || '/').trim() || '/';
   const totalCapacityGb = Number(req.body.total_capacity_gb);
   const totalCapacityBytes = totalCapacityGb > 0 ? Math.round(totalCapacityGb * 1024 * 1024 * 1024) : null;
@@ -764,7 +788,11 @@ router.post('/admin/storage/sftp/:id/bulk-delete', async (req, res) => {
   const failed = [];
   for (const key of keys) {
     try {
-      await sftpStorage.deleteObject(box, key);
+      if (key.endsWith('/')) {
+        await sftpStorage.deleteFolder(box, key);
+      } else {
+        await sftpStorage.deleteObject(box, key);
+      }
     } catch (err) {
       failed.push(key);
     }
@@ -785,9 +813,18 @@ router.post('/admin/storage/sftp/:id/bulk-move', async (req, res) => {
   const destPrefix = destination.endsWith('/') ? destination : destination + '/';
   const failed = [];
   for (const key of keys) {
-    const filename = key.split('/').pop();
     try {
-      await sftpStorage.renameObject(box, key, destPrefix + filename);
+      if (key.endsWith('/')) {
+        // SFTP's rename works natively on directories - a moved folder
+        // keeps its own name as a subfolder of the destination, matching
+        // how a normal file manager handles this, rather than merging
+        // its contents flat into whatever's already there.
+        const name = key.replace(/\/+$/, '').split('/').pop();
+        await sftpStorage.renameObject(box, key, destPrefix + name);
+      } else {
+        const filename = key.split('/').pop();
+        await sftpStorage.renameObject(box, key, destPrefix + filename);
+      }
     } catch (err) {
       failed.push(key);
     }
