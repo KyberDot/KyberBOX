@@ -1,0 +1,25 @@
+<% if (typeof deathCounterPlayers !== 'undefined' && deathCounterPlayers.length > 0) { %>
+    <div class="mb-6 rounded-2xl p-4 sm:p-5 bg-gradient-to-br from-red-950/50 via-slate-900/60 to-slate-900/60 border border-red-500/25">
+        <div class="flex items-center gap-2 mb-4">
+            <div class="w-8 h-8 rounded-lg bg-red-500/15 border border-red-500/30 flex items-center justify-center flex-shrink-0">
+                <i class="fas fa-skull text-red-400 text-sm"></i>
+            </div>
+            <p class="text-sm font-bold text-white truncate"><%= deathCounterTitle && deathCounterTitle.trim() ? deathCounterTitle : 'Death Counter' %></p>
+        </div>
+        <div class="space-y-1.5">
+            <% deathCounterPlayers.forEach(function(p, i) { %>
+                <% var isTop = i === 0 && p.death_count > 0; %>
+                <div class="flex items-center gap-3 rounded-xl px-3 py-2.5 <%= isTop ? 'bg-red-500/10 border border-red-500/30' : 'bg-slate-900/40' %>">
+                    <span class="w-6 text-center text-xs font-bold flex-shrink-0 <%= isTop ? 'text-red-400' : 'text-slate-500' %>">
+                        <% if (isTop) { %><i class="fas fa-crown"></i><% } else { %>#<%= i + 1 %><% } %>
+                    </span>
+                    <span class="text-sm text-slate-200 truncate flex-1 min-w-0"><%= p.player_name %></span>
+                    <span class="flex items-center gap-1.5 flex-shrink-0">
+                        <span class="text-lg font-extrabold <%= isTop ? 'text-red-400' : 'text-white' %>"><%= p.death_count %></span>
+                        <i class="fas fa-skull-crossbones text-xs <%= isTop ? 'text-red-400' : 'text-slate-600' %>"></i>
+                    </span>
+                </div>
+            <% }); %>
+        </div>
+    </div>
+<% } %>

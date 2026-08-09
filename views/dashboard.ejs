@@ -146,6 +146,7 @@
                                 <% } %>
                             </button>
                         </div>
+                        <%- include('partials/death-counter', { deathCounterPlayers: pv.deathCounterPlayers, deathCounterTitle: pv.plan.death_counter_title }) %>
                     <% } %>
 
                     <!-- Actions -->
@@ -254,6 +255,9 @@
                                             <span class="badge badge-suspended ml-2"><i class="fas fa-hourglass-half"></i> Pending</span>
                                         <% } %>
                                     </button>
+                                    <div class="mt-4">
+                                        <%- include('partials/death-counter', { deathCounterPlayers: extra.deathCounterPlayers, deathCounterTitle: extra.plan.death_counter_title }) %>
+                                    </div>
                                 <% } %>
                             </div>
                         <% }); %>

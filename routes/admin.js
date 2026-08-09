@@ -49,7 +49,12 @@ function loadPlans() {
     subscriberCountByPlan[row.plan_id] = row.count;
   });
 
-  return { plans, sshByPlan, actionsByPlan, containersByPlan, subscriberCountByPlan };
+  const deathCounterPlayersByPlan = {};
+  db.prepare('SELECT * FROM plan_death_counter_players ORDER BY death_count DESC, player_name ASC').all().forEach((p) => {
+    (deathCounterPlayersByPlan[p.plan_id] = deathCounterPlayersByPlan[p.plan_id] || []).push(p);
+  });
+
+  return { plans, sshByPlan, actionsByPlan, containersByPlan, subscriberCountByPlan, deathCounterPlayersByPlan };
 }
 
 function loadUsersPageData() {
@@ -439,7 +444,47 @@ router.post('/admin/plans/:id/containers/:containerId/move', (req, res) => {
   res.redirect('/admin/plans');
 });
 
-// ---------- Storage (S3 Buckets + SFTP Storage Boxes) ----------
+// ---------- Minecraft Death Counter ----------
+
+router.post('/admin/plans/:id/death-counter/title', (req, res) => {
+  const title = String(req.body.death_counter_title || '').trim();
+  db.prepare('UPDATE plans SET death_counter_title = ? WHERE id = ?').run(title || null, req.params.id);
+  res.redirect('/admin/plans');
+});
+
+router.post('/admin/plans/:id/death-counter/players', (req, res) => {
+  const playerName = String(req.body.player_name || '').trim();
+  if (!playerName) return res.redirect('/admin/plans');
+  db.prepare('INSERT INTO plan_death_counter_players (plan_id, player_name, death_count) VALUES (?, ?, 0)').run(req.params.id, playerName);
+  res.redirect('/admin/plans');
+});
+
+router.post('/admin/plans/:id/death-counter/players/:playerId/increment', (req, res) => {
+  db.prepare('UPDATE plan_death_counter_players SET death_count = death_count + 1 WHERE id = ? AND plan_id = ?').run(req.params.playerId, req.params.id);
+  res.redirect('/admin/plans');
+});
+
+router.post('/admin/plans/:id/death-counter/players/:playerId/decrement', (req, res) => {
+  // Deaths can't go negative - clamps at 0 rather than allowing an
+  // accidental extra click to wrap into a nonsensical negative count.
+  db.prepare('UPDATE plan_death_counter_players SET death_count = MAX(0, death_count - 1) WHERE id = ? AND plan_id = ?').run(req.params.playerId, req.params.id);
+  res.redirect('/admin/plans');
+});
+
+router.post('/admin/plans/:id/death-counter/players/:playerId/update', (req, res) => {
+  const playerName = String(req.body.player_name || '').trim();
+  const deathCount = Math.max(0, parseInt(req.body.death_count, 10) || 0);
+  if (!playerName) return res.redirect('/admin/plans');
+  db.prepare('UPDATE plan_death_counter_players SET player_name = ?, death_count = ? WHERE id = ? AND plan_id = ?').run(playerName, deathCount, req.params.playerId, req.params.id);
+  res.redirect('/admin/plans');
+});
+
+router.post('/admin/plans/:id/death-counter/players/:playerId/delete', (req, res) => {
+  db.prepare('DELETE FROM plan_death_counter_players WHERE id = ? AND plan_id = ?').run(req.params.playerId, req.params.id);
+  res.redirect('/admin/plans');
+});
+
+
 
 const STORAGE_COLORS = ['sky', 'amber', 'emerald', 'violet', 'rose', 'cyan', 'fuchsia', 'lime'];
 

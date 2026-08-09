@@ -42,6 +42,10 @@ function buildPlanView(subscription, userId) {
     .prepare('SELECT * FROM plan_containers WHERE plan_id = ? ORDER BY sort_order ASC, id ASC')
     .all(plan.id);
 
+  const deathCounterPlayers = plan.service === 'minecraft'
+    ? db.prepare('SELECT * FROM plan_death_counter_players WHERE plan_id = ? ORDER BY death_count DESC, player_name ASC').all(plan.id)
+    : [];
+
   const actionsWithCooldown = actions.map((action) => {
     const lastRun = db
       .prepare('SELECT * FROM action_log WHERE user_id = ? AND plan_action_id = ? ORDER BY requested_at DESC LIMIT 1')
@@ -64,6 +68,7 @@ function buildPlanView(subscription, userId) {
     actions: actionsWithCooldown,
     containers,
     hasPendingSeedReset,
+    deathCounterPlayers,
   };
 }
 

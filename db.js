@@ -119,6 +119,20 @@ CREATE TABLE IF NOT EXISTS sftp_storage_boxes (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Player death counts for the Minecraft death counter widget shown to
+-- subscribers on plans with service = 'minecraft'. Admin adds player
+-- names and updates counts manually - there's no live in-game tracking,
+-- this is purely admin-maintained. The counter's display title lives on
+-- plans.death_counter_title (see ensureColumn below) rather than a
+-- separate table, since it's always exactly one title per plan.
+CREATE TABLE IF NOT EXISTS plan_death_counter_players (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  plan_id INTEGER NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+  player_name TEXT NOT NULL,
+  death_count INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Custom admin-defined actions per health container (e.g. "Reset World
 -- Seed" running a specific docker exec command) - separate from
 -- plan_actions, which are subscriber-facing actions tied to a plan rather
@@ -353,6 +367,7 @@ ensureColumn('storage_buckets', 'total_capacity_bytes', 'total_capacity_bytes IN
 ensureColumn('sftp_storage_boxes', 'total_capacity_bytes', 'total_capacity_bytes INTEGER');
 ensureColumn('storage_buckets', 'color', "color TEXT NOT NULL DEFAULT 'sky'");
 ensureColumn('sftp_storage_boxes', 'color', "color TEXT NOT NULL DEFAULT 'amber'");
+ensureColumn('plans', 'death_counter_title', 'death_counter_title TEXT');
 ensureColumn('users', 'plex_link_attempted_at', 'plex_link_attempted_at TEXT');
 ensureColumn('users', 'admin_access_mode', "admin_access_mode TEXT NOT NULL DEFAULT 'full'"); // full | limited - only meaningful when role = 'admin'; limited admins are gated per-page via admin_page_access
 
