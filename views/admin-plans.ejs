@@ -205,7 +205,7 @@
                     </details>
 
                     <% if (plan.service === 'minecraft') { %>
-                        <details data-ajax-key="plan-<%= plan.id %>-deaths">
+                        <details class="mb-3" data-ajax-key="plan-<%= plan.id %>-deaths">
                             <summary class="cursor-pointer text-sky-400 text-xs font-semibold uppercase tracking-wide"><i class="fas fa-skull mr-1"></i>Death Counter (shown to subscribers)</summary>
                             <form method="POST" action="/admin/plans/<%= plan.id %>/death-counter/title" data-ajax-form class="flex gap-2 mt-3 mb-3">
                                 <input type="text" name="death_counter_title" class="input flex-1 text-xs" placeholder="Display title (e.g. Wall of Shame, Death Counter)" value="<%= plan.death_counter_title || '' %>">
