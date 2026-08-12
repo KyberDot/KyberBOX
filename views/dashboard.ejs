@@ -146,7 +146,7 @@
                                 <% } %>
                             </button>
                         </div>
-                        <%- include('partials/death-counter', { deathCounterPlayers: pv.deathCounterPlayers, deathCounterTitle: pv.plan.death_counter_title }) %>
+                        <%- include('partials/death-counter', { deathCounterPlayers: pv.deathCounterPlayers, deathCounterTitle: pv.plan.death_counter_title, runTimerElapsedSeconds: pv.runTimerElapsedSeconds, runTimerStatus: pv.plan.run_timer_status }) %>
                     <% } %>
 
                     <!-- Actions -->
@@ -256,7 +256,7 @@
                                         <% } %>
                                     </button>
                                     <div class="mt-4">
-                                        <%- include('partials/death-counter', { deathCounterPlayers: extra.deathCounterPlayers, deathCounterTitle: extra.plan.death_counter_title }) %>
+                                        <%- include('partials/death-counter', { deathCounterPlayers: extra.deathCounterPlayers, deathCounterTitle: extra.plan.death_counter_title, runTimerElapsedSeconds: extra.runTimerElapsedSeconds, runTimerStatus: extra.plan.run_timer_status }) %>
                                     </div>
                                 <% } %>
                             </div>
@@ -283,6 +283,31 @@
     </div>
 
     <script>
+        // ---------- Run Timer (live ticking display) ----------
+        function formatElapsed(totalSeconds) {
+            const s = Math.max(0, totalSeconds);
+            const days = Math.floor(s / 86400);
+            const hours = Math.floor((s % 86400) / 3600);
+            const minutes = Math.floor((s % 3600) / 60);
+            const secs = s % 60;
+            const pad = (n) => String(n).padStart(2, '0');
+            return (days > 0 ? days + 'd ' : '') + pad(hours) + ':' + pad(minutes) + ':' + pad(secs);
+        }
+
+        function tickRunTimers() {
+            document.querySelectorAll('[data-run-timer-display]').forEach(function (el) {
+                let elapsed = parseInt(el.getAttribute('data-elapsed'), 10) || 0;
+                if (el.getAttribute('data-status') === 'running') {
+                    elapsed += 1;
+                    el.setAttribute('data-elapsed', elapsed);
+                }
+                el.textContent = formatElapsed(elapsed);
+            });
+        }
+
+        tickRunTimers();
+        setInterval(tickRunTimers, 1000);
+
         // ---------- Minecraft World Seed Reset request ----------
         async function requestSeedReset(planId, alreadyPending) {
             if (alreadyPending) {

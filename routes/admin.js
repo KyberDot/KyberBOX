@@ -15,6 +15,7 @@ const { startReset, endReset, getResetState } = require('../utils/resetLock');
 const { requireFullAdmin } = require('../middleware/auth');
 const { triggerFullReset, getFullResetState } = require('../utils/fullReset');
 const s3 = require('../utils/s3');
+const { computeElapsedSeconds, startTimer, stopTimer, restartTimer, resetIfLinkedContainerAction } = require('../utils/runTimer');
 const sftpStorage = require('../utils/sftpStorage');
 const { bucketUpload } = require('../utils/uploads');
 
@@ -28,6 +29,7 @@ function generateTempPassword() {
 
 function loadPlans() {
   const plans = db.prepare('SELECT * FROM plans ORDER BY created_at ASC').all();
+  plans.forEach((p) => { p.runTimerElapsedSeconds = computeElapsedSeconds(p); });
 
   const sshByPlan = {};
   db.prepare('SELECT plan_id, host, port, username, auth_type FROM plan_ssh').all().forEach((s) => {
@@ -54,7 +56,14 @@ function loadPlans() {
     (deathCounterPlayersByPlan[p.plan_id] = deathCounterPlayersByPlan[p.plan_id] || []).push(p);
   });
 
-  return { plans, sshByPlan, actionsByPlan, containersByPlan, subscriberCountByPlan, deathCounterPlayersByPlan };
+  const allContainerActions = db.prepare(
+    `SELECT aca.id, aca.label, ahc.label AS container_label
+     FROM admin_container_actions aca
+     JOIN admin_health_containers ahc ON ahc.id = aca.container_id
+     ORDER BY ahc.label ASC, aca.sort_order ASC`
+  ).all();
+
+  return { plans, sshByPlan, actionsByPlan, containersByPlan, subscriberCountByPlan, deathCounterPlayersByPlan, allContainerActions };
 }
 
 function loadUsersPageData() {
@@ -481,6 +490,46 @@ router.post('/admin/plans/:id/death-counter/players/:playerId/update', (req, res
 
 router.post('/admin/plans/:id/death-counter/players/:playerId/delete', (req, res) => {
   db.prepare('DELETE FROM plan_death_counter_players WHERE id = ? AND plan_id = ?').run(req.params.playerId, req.params.id);
+  res.redirect('/admin/plans');
+});
+
+router.post('/admin/plans/:id/run-timer/link', (req, res) => {
+  const actionId = req.body.action_id ? Number(req.body.action_id) : null;
+  // Only actually link if the action genuinely belongs to this plan -
+  // otherwise a stray/forged id could point the timer at another plan's
+  // action entirely.
+  if (actionId) {
+    const action = db.prepare('SELECT id FROM plan_actions WHERE id = ? AND plan_id = ?').get(actionId, req.params.id);
+    if (!action) return res.redirect('/admin/plans');
+  }
+  db.prepare('UPDATE plans SET run_timer_linked_action_id = ? WHERE id = ?').run(actionId, req.params.id);
+  res.redirect('/admin/plans');
+});
+
+router.post('/admin/plans/:id/run-timer/link-container-action', (req, res) => {
+  const actionId = req.body.container_action_id ? Number(req.body.container_action_id) : null;
+  // Container actions aren't scoped to a plan the way plan_actions are -
+  // just confirm the id genuinely exists rather than checking ownership.
+  if (actionId) {
+    const action = db.prepare('SELECT id FROM admin_container_actions WHERE id = ?').get(actionId);
+    if (!action) return res.redirect('/admin/plans');
+  }
+  db.prepare('UPDATE plans SET run_timer_linked_container_action_id = ? WHERE id = ?').run(actionId, req.params.id);
+  res.redirect('/admin/plans');
+});
+
+router.post('/admin/plans/:id/run-timer/start', (req, res) => {
+  startTimer(req.params.id);
+  res.redirect('/admin/plans');
+});
+
+router.post('/admin/plans/:id/run-timer/stop', (req, res) => {
+  stopTimer(req.params.id);
+  res.redirect('/admin/plans');
+});
+
+router.post('/admin/plans/:id/run-timer/restart', (req, res) => {
+  restartTimer(req.params.id);
   res.redirect('/admin/plans');
 });
 
@@ -2053,6 +2102,10 @@ router.post('/admin/health/containers/:id/actions/:actionId/run', async (req, re
   db.prepare(
     'INSERT INTO admin_health_log (admin_user_id, container_name, action, success, output) VALUES (?, ?, ?, ?, ?)'
   ).run(req.user.id, container.container_name, `custom: ${action.label}`, result.success ? 1 : 0, result.output);
+
+  if (result.success) {
+    resetIfLinkedContainerAction(action.id);
+  }
 
   res.json({
     ok: result.success,

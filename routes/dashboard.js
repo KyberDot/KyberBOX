@@ -6,6 +6,7 @@ const { notifyResetStarted, sendMail } = require('../utils/mailer');
 const { getWatchHistory, getNowWatching, getGeoLookup, fetchPosterImage } = require('../utils/tautulli');
 const { getAllSettings, getSiteBaseUrl } = require('../utils/settings');
 const { formatUK } = require('../utils/time');
+const { resetIfLinkedAction, computeElapsedSeconds } = require('../utils/runTimer');
 
 const router = express.Router();
 
@@ -45,6 +46,7 @@ function buildPlanView(subscription, userId) {
   const deathCounterPlayers = plan.service === 'minecraft'
     ? db.prepare('SELECT * FROM plan_death_counter_players WHERE plan_id = ? ORDER BY death_count DESC, player_name ASC').all(plan.id)
     : [];
+  const runTimerElapsedSeconds = plan.service === 'minecraft' ? computeElapsedSeconds(plan) : 0;
 
   const actionsWithCooldown = actions.map((action) => {
     const lastRun = db
@@ -69,6 +71,7 @@ function buildPlanView(subscription, userId) {
     containers,
     hasPendingSeedReset,
     deathCounterPlayers,
+    runTimerElapsedSeconds,
   };
 }
 
@@ -256,6 +259,9 @@ router.post('/dashboard/actions/:actionId/run', async (req, res) => {
           result.output,
           info.lastInsertRowid
         );
+        if (result.success) {
+          resetIfLinkedAction(action.plan_id, action.id);
+        }
         dangerActionState[key] = {
           running: false,
           lastResult: {
@@ -287,6 +293,10 @@ router.post('/dashboard/actions/:actionId/run', async (req, res) => {
     result.success ? 1 : 0,
     result.output
   );
+
+  if (result.success) {
+    resetIfLinkedAction(action.plan_id, action.id);
+  }
 
   res.json({
     ok: result.success,

@@ -245,6 +245,50 @@
                                 <input type="text" name="player_name" required class="input flex-1 text-xs" placeholder="Player name">
                                 <button type="submit" class="btn-primary px-4 py-2 rounded-lg text-xs">Add Player</button>
                             </form>
+
+                            <div class="mt-4 pt-4 border-t border-white/5">
+                                <p class="text-xs uppercase tracking-widest text-slate-500 font-bold mb-2"><i class="fas fa-stopwatch mr-1"></i>Run Timer</p>
+                                <p class="text-slate-400 text-xs mb-3">Tracks time since the last world reset. Link a manual action below to reset it automatically whenever that action succeeds, or control it manually.</p>
+
+                                <div class="flex items-center justify-between bg-slate-900/40 rounded-lg px-3 py-3 mb-3">
+                                    <span class="text-2xl font-mono font-bold text-white" data-run-timer-display data-elapsed="<%= plan.runTimerElapsedSeconds %>" data-status="<%= plan.run_timer_status %>">00:00:00</span>
+                                    <span class="badge <%= plan.run_timer_status === 'running' ? 'badge-active' : 'badge-closed' %>" data-run-timer-badge><%= plan.run_timer_status === 'running' ? 'Running' : 'Stopped' %></span>
+                                </div>
+
+                                <div class="flex gap-2 mb-3">
+                                    <form method="POST" action="/admin/plans/<%= plan.id %>/run-timer/start" data-ajax-form class="flex-1">
+                                        <button type="submit" class="w-full btn-outline py-2 rounded-lg text-xs"><i class="fas fa-play mr-1"></i>Start</button>
+                                    </form>
+                                    <form method="POST" action="/admin/plans/<%= plan.id %>/run-timer/stop" data-ajax-form class="flex-1">
+                                        <button type="submit" class="w-full btn-outline py-2 rounded-lg text-xs"><i class="fas fa-pause mr-1"></i>Stop</button>
+                                    </form>
+                                    <form method="POST" action="/admin/plans/<%= plan.id %>/run-timer/restart" data-ajax-form class="flex-1">
+                                        <button type="submit" class="w-full btn-outline py-2 rounded-lg text-xs"><i class="fas fa-rotate-right mr-1"></i>Restart</button>
+                                    </form>
+                                </div>
+
+                                <p class="text-slate-500 text-xs mb-1">Reset when a subscriber runs a manual action:</p>
+                                <form method="POST" action="/admin/plans/<%= plan.id %>/run-timer/link" data-ajax-form class="flex gap-2 mb-3">
+                                    <select name="action_id" class="input flex-1 text-xs">
+                                        <option value="">No linked action (manual control only)</option>
+                                        <% (actionsByPlan[plan.id] || []).forEach(function(a) { %>
+                                            <option value="<%= a.id %>" <%= plan.run_timer_linked_action_id === a.id ? 'selected' : '' %>><%= a.label %></option>
+                                        <% }); %>
+                                    </select>
+                                    <button type="submit" class="btn-outline px-4 py-2 rounded-lg text-xs whitespace-nowrap">Save Link</button>
+                                </form>
+
+                                <p class="text-slate-500 text-xs mb-1">Reset when admin runs a Health page container action:</p>
+                                <form method="POST" action="/admin/plans/<%= plan.id %>/run-timer/link-container-action" data-ajax-form class="flex gap-2">
+                                    <select name="container_action_id" class="input flex-1 text-xs">
+                                        <option value="">No linked container action</option>
+                                        <% allContainerActions.forEach(function(a) { %>
+                                            <option value="<%= a.id %>" <%= plan.run_timer_linked_container_action_id === a.id ? 'selected' : '' %>><%= a.container_label %>: <%= a.label %></option>
+                                        <% }); %>
+                                    </select>
+                                    <button type="submit" class="btn-outline px-4 py-2 rounded-lg text-xs whitespace-nowrap">Save Link</button>
+                                </form>
+                            </div>
                         </details>
                     <% } %>
 
@@ -359,5 +403,31 @@
             </div>
         </div>
     </main>
+
+    <script>
+        function formatElapsed(totalSeconds) {
+            const s = Math.max(0, totalSeconds);
+            const days = Math.floor(s / 86400);
+            const hours = Math.floor((s % 86400) / 3600);
+            const minutes = Math.floor((s % 3600) / 60);
+            const secs = s % 60;
+            const pad = (n) => String(n).padStart(2, '0');
+            return (days > 0 ? days + 'd ' : '') + pad(hours) + ':' + pad(minutes) + ':' + pad(secs);
+        }
+
+        function tickRunTimers() {
+            document.querySelectorAll('[data-run-timer-display]').forEach(function (el) {
+                let elapsed = parseInt(el.getAttribute('data-elapsed'), 10) || 0;
+                if (el.getAttribute('data-status') === 'running') {
+                    elapsed += 1;
+                    el.setAttribute('data-elapsed', elapsed);
+                }
+                el.textContent = formatElapsed(elapsed);
+            });
+        }
+
+        tickRunTimers();
+        setInterval(tickRunTimers, 1000);
+    </script>
 </body>
 </html>
