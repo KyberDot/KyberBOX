@@ -195,6 +195,29 @@
                         <p class="text-slate-500 text-xs mt-2">Manage the list of payment methods from <a href="/admin/settings" class="text-sky-400 hover:text-sky-300">Settings</a>.</p>
                     </details>
 
+                    <% if ((actionsByUser[u.id] || []).length > 0) { %>
+                        <details class="mb-2" data-ajax-key="user-<%= u.id %>-actions">
+                            <summary class="cursor-pointer text-sky-400 text-xs font-semibold uppercase tracking-wide">Action Buttons Access</summary>
+                            <p class="text-slate-500 text-xs mt-3 mb-2">Actions are enabled for this user automatically whenever a plan is assigned - toggle off here to disable a specific action for this user only, without affecting anyone else on the same plan.</p>
+                            <div class="space-y-1.5">
+                                <% (actionsByUser[u.id] || []).forEach(function(action) { %>
+                                    <div class="flex items-center justify-between bg-slate-900/40 rounded-lg px-3 py-2 gap-2">
+                                        <span class="text-xs text-slate-300 truncate">
+                                            <i class="fas <%= action.icon %> mr-1.5 <%= action.style === 'danger' ? 'text-red-400' : 'text-sky-400' %>"></i><%= action.label %>
+                                            <span class="text-slate-600 ml-1">(<%= action.plan_display_name %>)</span>
+                                            <% if (!action.enabled) { %><span class="badge badge-closed ml-1">plan-disabled</span><% } %>
+                                        </span>
+                                        <form method="POST" action="/admin/users/<%= u.id %>/actions/<%= action.id %>/toggle-enabled" data-ajax-form class="flex-shrink-0">
+                                            <button type="submit" class="w-6 h-6 rounded-lg <%= action.disabledForUser ? 'text-slate-500 hover:text-white' : 'text-emerald-400 hover:text-emerald-300' %> hover:bg-white/5" title="<%= action.disabledForUser ? 'Enable for this user' : 'Disable for this user' %>">
+                                                <i class="fas <%= action.disabledForUser ? 'fa-toggle-off' : 'fa-toggle-on' %>"></i>
+                                            </button>
+                                        </form>
+                                    </div>
+                                <% }); %>
+                            </div>
+                        </details>
+                    <% } %>
+
                     <details class="mb-2" data-ajax-key="user-<%= u.id %>-plex">
                         <summary class="cursor-pointer text-sky-400 text-xs font-semibold uppercase tracking-wide">Plex Username (Watch History)</summary>
                         <p class="text-slate-500 text-xs mt-3">This fills in on its own once they accept their Plex invite — no need to set it by hand. The field below is only for manual overrides in edge cases.</p>

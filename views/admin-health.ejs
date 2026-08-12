@@ -158,6 +158,7 @@
 
                     <div class="hidden w-full flex flex-col gap-3 mt-1 pt-2 border-t border-white/5" data-toggle-key="container-<%= c.id %>-edit" data-no-preserve>
                         <form method="POST" action="/admin/health/containers/<%= c.id %>/update" enctype="multipart/form-data" data-ajax-form class="w-full flex flex-col gap-2 text-left">
+                            <input type="text" name="container_name" required value="<%= c.container_name %>" class="input text-[11px] px-2 py-1.5 font-mono" placeholder="Docker container name">
                             <input type="text" name="label" required value="<%= c.label %>" class="input text-[11px] px-2 py-1.5" placeholder="Label">
                             <input type="url" name="link_url" value="<%= c.link_url || '' %>" class="input text-[11px] px-2 py-1.5" placeholder="Link (optional, e.g. https://plex.example.com)">
                             <select name="logo_bg" class="input text-[11px] px-2 py-1.5">
@@ -186,7 +187,7 @@
         <p id="containerSearchEmpty" class="hidden text-slate-500 text-sm mb-6">No containers match your search.</p>
 
         <!-- Recent actions -->
-        <h2 class="text-sm uppercase tracking-widest text-slate-500 font-bold mb-4">Recent Stop/Restart Requests</h2>
+        <h2 class="text-sm uppercase tracking-widest text-slate-500 font-bold mb-4">Recent Action Requests</h2>
         <div class="glass rounded-2xl overflow-x-auto">
             <% if (recentLog.length === 0) { %>
                 <p class="text-slate-500 text-sm p-6">No requests yet.</p>

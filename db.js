@@ -207,6 +207,21 @@ CREATE TABLE IF NOT EXISTS plan_actions (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Per-user override on top of a plan action's own enabled flag. Deliberately
+-- has no "enabled" column of its own - a row existing means "this admin has
+-- disabled this specific action for this specific user"; no row means the
+-- action follows its normal (enabled) default. This is what makes "actions
+-- are automatically enabled when a plan is newly added" work for free -
+-- assigning a subscription never needs to insert anything here, there's
+-- simply nothing to override yet.
+CREATE TABLE IF NOT EXISTS user_disabled_actions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  plan_action_id INTEGER NOT NULL REFERENCES plan_actions(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(user_id, plan_action_id)
+);
+
 -- Containers whose live health/status is shown to subscribers on a plan's
 -- dashboard card (e.g. the "plex" container from the compose stack).
 CREATE TABLE IF NOT EXISTS plan_containers (
@@ -368,6 +383,7 @@ ensureColumn('sftp_storage_boxes', 'total_capacity_bytes', 'total_capacity_bytes
 ensureColumn('storage_buckets', 'color', "color TEXT NOT NULL DEFAULT 'sky'");
 ensureColumn('sftp_storage_boxes', 'color', "color TEXT NOT NULL DEFAULT 'amber'");
 ensureColumn('plans', 'death_counter_title', 'death_counter_title TEXT');
+ensureColumn('plans', 'death_counter_enabled', 'death_counter_enabled INTEGER NOT NULL DEFAULT 1');
 ensureColumn('plans', 'run_timer_linked_action_id', 'run_timer_linked_action_id INTEGER REFERENCES plan_actions(id) ON DELETE SET NULL');
 ensureColumn('plans', 'run_timer_linked_container_action_id', 'run_timer_linked_container_action_id INTEGER REFERENCES admin_container_actions(id) ON DELETE SET NULL');
 ensureColumn('plans', 'bosses_beaten_enabled', 'bosses_beaten_enabled INTEGER NOT NULL DEFAULT 0');
@@ -375,6 +391,7 @@ ensureColumn('plans', 'boss_elder_guardian_beaten', 'boss_elder_guardian_beaten 
 ensureColumn('plans', 'boss_ender_dragon_beaten', 'boss_ender_dragon_beaten INTEGER NOT NULL DEFAULT 0');
 ensureColumn('plans', 'boss_warden_beaten', 'boss_warden_beaten INTEGER NOT NULL DEFAULT 0');
 ensureColumn('plans', 'boss_wither_beaten', 'boss_wither_beaten INTEGER NOT NULL DEFAULT 0');
+ensureColumn('plan_actions', 'enabled', 'enabled INTEGER NOT NULL DEFAULT 1');
 ensureColumn('plans', 'run_timer_status', "run_timer_status TEXT NOT NULL DEFAULT 'stopped'");
 ensureColumn('plans', 'run_timer_started_at', 'run_timer_started_at TEXT');
 ensureColumn('plans', 'run_timer_accumulated_seconds', 'run_timer_accumulated_seconds INTEGER NOT NULL DEFAULT 0');

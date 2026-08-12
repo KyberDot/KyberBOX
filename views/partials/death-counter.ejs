@@ -1,5 +1,5 @@
 <%
-  var hasDeathCounter = typeof deathCounterPlayers !== 'undefined' && deathCounterPlayers.length > 0;
+  var hasDeathCounter = typeof deathCounterPlayers !== 'undefined' && deathCounterPlayers.length > 0 && (typeof plan === 'undefined' || plan.death_counter_enabled);
   var hasBosses = typeof plan !== 'undefined' && plan.bosses_beaten_enabled;
 %>
 <% if (hasDeathCounter || hasBosses) { %>
@@ -35,7 +35,12 @@
 
         <% if (hasBosses) { %>
             <div class="<%= hasDeathCounter ? 'mt-4 pt-4 border-t border-white/10' : '' %>">
-                <p class="text-xs uppercase tracking-widest text-amber-300/80 font-bold mb-3"><i class="fas fa-crown mr-1.5"></i>Bosses Beaten</p>
+                <div class="flex items-center gap-2 mb-3">
+                    <div class="w-8 h-8 rounded-lg bg-amber-500/15 border border-amber-500/30 flex items-center justify-center flex-shrink-0">
+                        <i class="fas fa-crown text-amber-400 text-sm"></i>
+                    </div>
+                    <p class="text-sm font-bold text-white truncate">Bosses Beaten</p>
+                </div>
                 <div class="grid grid-cols-4 gap-2.5">
                     <% BOSSES.forEach(function(boss) { %>
                         <% var beaten = plan['boss_' + boss.key + '_beaten']; %>

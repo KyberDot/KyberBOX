@@ -61,7 +61,9 @@ function buildPlanView(subscription, userId) {
       if (next > Date.now()) nextAllowedAt = new Date(next).toISOString();
     }
 
-    return { ...action, nextAllowedAt };
+    const disabledForUser = !!db.prepare('SELECT 1 FROM user_disabled_actions WHERE user_id = ? AND plan_action_id = ?').get(userId, action.id);
+
+    return { ...action, nextAllowedAt, disabledForUser };
   });
 
   return {
@@ -178,6 +180,15 @@ router.post('/dashboard/actions/:actionId/run', async (req, res) => {
       ok: false,
       message: `This plan is currently in scheduled maintenance. Actions are unavailable until it's resolved.`,
     });
+  }
+
+  if (!action.enabled) {
+    return res.status(423).json({ ok: false, message: `"${action.label}" has been disabled by an admin and is currently unavailable.` });
+  }
+
+  const disabledForThisUser = db.prepare('SELECT 1 FROM user_disabled_actions WHERE user_id = ? AND plan_action_id = ?').get(req.user.id, action.id);
+  if (disabledForThisUser) {
+    return res.status(423).json({ ok: false, message: `"${action.label}" has been disabled for your account and is currently unavailable.` });
   }
 
   const globalResetState = getResetState();

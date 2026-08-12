@@ -138,8 +138,8 @@
                     <% } %>
 
                     <% if (pv.plan.service === 'minecraft') { %>
-                        <div class="mb-6">
-                            <button type="button" onclick="requestSeedReset(<%= pv.plan.id %>, <%= pv.hasPendingSeedReset %>)" class="px-5 py-3 rounded-xl text-sm font-bold bg-gradient-to-r from-violet-500/20 to-fuchsia-500/20 border border-violet-500/40 text-violet-300 hover:from-violet-500/30 hover:to-fuchsia-500/30 hover:border-violet-400/60 hover:text-violet-200 transition-colors">
+                        <div class="mb-6 flex">
+                            <button type="button" onclick="requestSeedReset(<%= pv.plan.id %>, <%= pv.hasPendingSeedReset %>)" class="px-6 py-3 rounded-2xl text-sm font-bold w-full sm:w-auto flex items-center justify-center bg-gradient-to-r from-violet-500/20 to-fuchsia-500/20 border border-violet-500/40 text-violet-300 hover:from-violet-500/30 hover:to-fuchsia-500/30 hover:border-violet-400/60 hover:text-violet-200 transition-colors">
                                 <i class="fas fa-dice mr-2"></i>Request World Seed Reset
                                 <% if (pv.hasPendingSeedReset) { %>
                                     <span class="badge badge-suspended ml-2"><i class="fas fa-hourglass-half"></i> Pending</span>
@@ -153,20 +153,21 @@
                     <% if (pv.actions.length > 0) { %>
                         <div class="flex flex-col sm:flex-row sm:flex-wrap gap-4">
                             <% pv.actions.forEach(function(action) { %>
+                                <% var isDisabled = !action.enabled || action.disabledForUser; %>
                                 <button
-                                    class="<%= action.style === 'danger' ? 'btn-danger' : 'btn-amber' %> px-6 py-3 rounded-2xl text-sm w-full sm:w-auto flex flex-col items-center justify-center gap-1.5"
+                                    class="<%= action.style === 'danger' ? 'btn-danger' : 'btn-amber' %> px-6 py-3 rounded-2xl text-sm w-full sm:w-auto flex flex-col items-center justify-center gap-1.5 <%= isDisabled ? 'opacity-40 grayscale cursor-not-allowed' : '' %>"
                                     data-action-btn
                                     data-action-id="<%= action.id %>"
                                     data-action-label="<%= action.label %>"
                                     data-action-style="<%= action.style || 'warning' %>"
                                     data-cooldown-hours="<%= action.cooldown_hours %>"
-                                    <%= (action.nextAllowedAt || pv.plan.maintenance_mode) ? 'disabled' : '' %>
+                                    <%= (isDisabled || action.nextAllowedAt || pv.plan.maintenance_mode) ? 'disabled' : '' %>
                                 >
                                     <span class="flex items-center">
                                         <i class="fas <%= action.icon %> mr-2"></i>
-                                        <span data-action-btn-label><%= pv.plan.maintenance_mode ? 'Unavailable (Maintenance)' : (action.nextAllowedAt ? action.label + ' Unavailable' : action.label) %></span>
+                                        <span data-action-btn-label><%= isDisabled ? action.label + ' Currently Disabled' : (pv.plan.maintenance_mode ? 'Unavailable (Maintenance)' : (action.nextAllowedAt ? action.label + ' Unavailable' : action.label)) %></span>
                                     </span>
-                                    <% if (!pv.plan.maintenance_mode) { %>
+                                    <% if (!pv.plan.maintenance_mode && !isDisabled) { %>
                                         <span class="countdown-chip <%= action.nextAllowedAt ? '' : 'hidden' %>"
                                               data-cooldown-timer
                                               data-action-id="<%= action.id %>"
@@ -249,12 +250,14 @@
                                 <% } %>
 
                                 <% if (extra.plan.service === 'minecraft') { %>
-                                    <button type="button" onclick="requestSeedReset(<%= extra.plan.id %>, <%= extra.hasPendingSeedReset %>)" class="px-5 py-3 rounded-xl text-sm font-bold bg-gradient-to-r from-violet-500/20 to-fuchsia-500/20 border border-violet-500/40 text-violet-300 hover:from-violet-500/30 hover:to-fuchsia-500/30 hover:border-violet-400/60 hover:text-violet-200 transition-colors">
-                                        <i class="fas fa-dice mr-2"></i>Request World Seed Reset
-                                        <% if (extra.hasPendingSeedReset) { %>
-                                            <span class="badge badge-suspended ml-2"><i class="fas fa-hourglass-half"></i> Pending</span>
-                                        <% } %>
-                                    </button>
+                                    <div class="flex">
+                                        <button type="button" onclick="requestSeedReset(<%= extra.plan.id %>, <%= extra.hasPendingSeedReset %>)" class="px-6 py-3 rounded-2xl text-sm font-bold w-full sm:w-auto flex items-center justify-center bg-gradient-to-r from-violet-500/20 to-fuchsia-500/20 border border-violet-500/40 text-violet-300 hover:from-violet-500/30 hover:to-fuchsia-500/30 hover:border-violet-400/60 hover:text-violet-200 transition-colors">
+                                            <i class="fas fa-dice mr-2"></i>Request World Seed Reset
+                                            <% if (extra.hasPendingSeedReset) { %>
+                                                <span class="badge badge-suspended ml-2"><i class="fas fa-hourglass-half"></i> Pending</span>
+                                            <% } %>
+                                        </button>
+                                    </div>
                                     <div class="mt-4">
                                         <%- include('partials/death-counter', { deathCounterPlayers: extra.deathCounterPlayers, deathCounterTitle: extra.plan.death_counter_title, runTimerElapsedSeconds: extra.runTimerElapsedSeconds, runTimerStatus: extra.plan.run_timer_status, plan: extra.plan, BOSSES: BOSSES }) %>
                                     </div>

@@ -95,6 +95,29 @@ function loadUsersPageData() {
   const plans = db.prepare('SELECT * FROM plans ORDER BY name ASC').all();
   const paymentMethods = db.prepare('SELECT * FROM payment_methods ORDER BY name ASC').all();
 
+  // Every action available to a user through their active subscriptions,
+  // regardless of the action's own plan-wide enabled flag - admin needs
+  // to see and manage the per-user override independently of that.
+  const actionsByUser = {};
+  db.prepare(
+    `SELECT pa.*, s.user_id, p.name AS plan_display_name
+     FROM plan_actions pa
+     JOIN plans p ON p.id = pa.plan_id
+     JOIN subscriptions s ON s.plan_id = pa.plan_id AND s.status = 'active'
+     ORDER BY p.name ASC, pa.sort_order ASC, pa.id ASC`
+  ).all().forEach((a) => {
+    (actionsByUser[a.user_id] = actionsByUser[a.user_id] || []).push(a);
+  });
+
+  const disabledActionIdsByUser = {};
+  db.prepare('SELECT user_id, plan_action_id FROM user_disabled_actions').all().forEach((row) => {
+    (disabledActionIdsByUser[row.user_id] = disabledActionIdsByUser[row.user_id] || []).push(row.plan_action_id);
+  });
+  Object.keys(actionsByUser).forEach((userId) => {
+    const disabledIds = disabledActionIdsByUser[userId] || [];
+    actionsByUser[userId].forEach((a) => { a.disabledForUser = disabledIds.includes(a.id); });
+  });
+
   // "Approved" once we've matched their Plex account (used to show/lookup
   // their watch history via Tautulli); "Pending" if they're on a Plex
   // plan but haven't been matched yet; null if Plex isn't relevant to
@@ -106,7 +129,7 @@ function loadUsersPageData() {
     u.plexStatus = u.plex_username ? 'approved' : (onPlexPlan ? 'pending' : null);
   });
 
-  return { users, subsByUser, plans, paymentMethods };
+  return { users, subsByUser, plans, paymentMethods, actionsByUser };
 }
 
 function loadSettingsPageData() {
@@ -370,6 +393,11 @@ router.post('/admin/plans/:id/actions/:actionId/delete', (req, res) => {
   res.redirect('/admin/plans');
 });
 
+router.post('/admin/plans/:id/actions/:actionId/toggle-enabled', (req, res) => {
+  db.prepare('UPDATE plan_actions SET enabled = NOT enabled WHERE id = ? AND plan_id = ?').run(req.params.actionId, req.params.id);
+  res.redirect('/admin/plans');
+});
+
 router.post('/admin/plans/:id/actions/:actionId/move', (req, res) => {
   const direction = req.body.direction === 'up' ? 'up' : 'down';
   const actions = db.prepare('SELECT * FROM plan_actions WHERE plan_id = ? ORDER BY sort_order ASC, id ASC').all(req.params.id);
@@ -455,6 +483,11 @@ router.post('/admin/plans/:id/containers/:containerId/move', (req, res) => {
 });
 
 // ---------- Minecraft Death Counter ----------
+
+router.post('/admin/plans/:id/death-counter/toggle-enabled', (req, res) => {
+  db.prepare('UPDATE plans SET death_counter_enabled = NOT death_counter_enabled WHERE id = ?').run(req.params.id);
+  res.redirect('/admin/plans');
+});
 
 router.post('/admin/plans/:id/death-counter/title', (req, res) => {
   const title = String(req.body.death_counter_title || '').trim();
@@ -1229,6 +1262,19 @@ router.post('/admin/users/:id/plex-username', (req, res) => {
   res.redirect('/admin/users');
 });
 
+router.post('/admin/users/:id/actions/:actionId/toggle-enabled', (req, res) => {
+  const existing = db.prepare('SELECT id FROM user_disabled_actions WHERE user_id = ? AND plan_action_id = ?').get(req.params.id, req.params.actionId);
+  if (existing) {
+    // A row already exists (action is currently disabled for this user) -
+    // removing it restores the default enabled state, rather than the
+    // table ever needing an explicit "enabled" row for anyone.
+    db.prepare('DELETE FROM user_disabled_actions WHERE id = ?').run(existing.id);
+  } else {
+    db.prepare('INSERT INTO user_disabled_actions (user_id, plan_action_id) VALUES (?, ?)').run(req.params.id, req.params.actionId);
+  }
+  res.redirect('/admin/users');
+});
+
 // Lets admin view any subscriber's Plex activity directly from Admin →
 // Users, without needing to be that subscriber - same underlying Tautulli
 // calls the subscriber's own dashboard/watch-history pages use, just
@@ -1726,14 +1772,19 @@ router.post('/admin/health/containers/:id/update', (req, res) => {
   containerLogoUpload(req, res, (err) => {
     if (err) return res.status(400).render('error', { message: err.message });
 
+    const containerName = String(req.body.container_name || '').trim();
     const label = String(req.body.label || '').trim();
     const linkUrl = String(req.body.link_url || '').trim() || null;
     const logoBg = ['default', 'white', 'none'].includes(req.body.logo_bg) ? req.body.logo_bg : 'default';
 
-    if (!label) return res.status(400).render('error', { message: 'Missing required fields - please fill in everything marked required and try again.' });
+    if (!label || !containerName) return res.status(400).render('error', { message: 'Missing required fields - please fill in everything marked required and try again.' });
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(containerName)) {
+      return res.status(400).render('error', { message: 'Container name can only contain letters, numbers, dots, dashes, and underscores.' });
+    }
 
     if (req.file) {
-      db.prepare('UPDATE admin_health_containers SET label = ?, link_url = ?, logo_bg = ?, logo_path = ? WHERE id = ?').run(
+      db.prepare('UPDATE admin_health_containers SET container_name = ?, label = ?, link_url = ?, logo_bg = ?, logo_path = ? WHERE id = ?').run(
+        containerName,
         label,
         linkUrl,
         logoBg,
@@ -1741,7 +1792,8 @@ router.post('/admin/health/containers/:id/update', (req, res) => {
         req.params.id
       );
     } else {
-      db.prepare('UPDATE admin_health_containers SET label = ?, link_url = ?, logo_bg = ? WHERE id = ?').run(
+      db.prepare('UPDATE admin_health_containers SET container_name = ?, label = ?, link_url = ?, logo_bg = ? WHERE id = ?').run(
+        containerName,
         label,
         linkUrl,
         logoBg,
