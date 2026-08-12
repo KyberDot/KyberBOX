@@ -6,9 +6,9 @@
             </div>
             <p class="text-sm font-bold text-white truncate"><%= deathCounterTitle && deathCounterTitle.trim() ? deathCounterTitle : 'Death Counter' %></p>
         </div>
-        <div class="flex items-center justify-between bg-slate-900/40 rounded-xl px-3 py-2.5 mb-4">
-            <span class="text-xs text-slate-400 uppercase tracking-wide font-semibold"><i class="fas fa-stopwatch mr-1.5"></i>Run Time</span>
-            <span class="text-base font-mono font-bold text-white" data-run-timer-display data-elapsed="<%= typeof runTimerElapsedSeconds !== 'undefined' ? runTimerElapsedSeconds : 0 %>" data-status="<%= typeof runTimerStatus !== 'undefined' ? runTimerStatus : 'stopped' %>">00:00:00</span>
+        <div class="flex items-center justify-between bg-amber-500/10 border border-amber-500/25 rounded-xl px-3 py-2.5 mb-4">
+            <span class="text-xs text-amber-300/90 uppercase tracking-wide font-semibold"><i class="fas fa-stopwatch mr-1.5"></i>Current Seed Run Time</span>
+            <span class="text-base font-mono font-bold text-amber-300" data-run-timer-display data-elapsed="<%= typeof runTimerElapsedSeconds !== 'undefined' ? runTimerElapsedSeconds : 0 %>" data-status="<%= typeof runTimerStatus !== 'undefined' ? runTimerStatus : 'stopped' %>">00:00:00</span>
         </div>
         <div class="space-y-1.5">
             <% deathCounterPlayers.forEach(function(p, i) { %>
