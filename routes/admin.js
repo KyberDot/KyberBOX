@@ -16,6 +16,7 @@ const { requireFullAdmin } = require('../middleware/auth');
 const { triggerFullReset, getFullResetState } = require('../utils/fullReset');
 const s3 = require('../utils/s3');
 const { computeElapsedSeconds, startTimer, stopTimer, restartTimer, resetIfLinkedContainerAction } = require('../utils/runTimer');
+const { BOSSES, columnForBossKey } = require('../utils/bosses');
 const sftpStorage = require('../utils/sftpStorage');
 const { bucketUpload } = require('../utils/uploads');
 
@@ -63,7 +64,7 @@ function loadPlans() {
      ORDER BY ahc.label ASC, aca.sort_order ASC`
   ).all();
 
-  return { plans, sshByPlan, actionsByPlan, containersByPlan, subscriberCountByPlan, deathCounterPlayersByPlan, allContainerActions };
+  return { plans, sshByPlan, actionsByPlan, containersByPlan, subscriberCountByPlan, deathCounterPlayersByPlan, allContainerActions, BOSSES };
 }
 
 function loadUsersPageData() {
@@ -530,6 +531,21 @@ router.post('/admin/plans/:id/run-timer/stop', (req, res) => {
 
 router.post('/admin/plans/:id/run-timer/restart', (req, res) => {
   restartTimer(req.params.id);
+  res.redirect('/admin/plans');
+});
+
+router.post('/admin/plans/:id/bosses/toggle-enabled', (req, res) => {
+  db.prepare('UPDATE plans SET bosses_beaten_enabled = NOT bosses_beaten_enabled WHERE id = ?').run(req.params.id);
+  res.redirect('/admin/plans');
+});
+
+router.post('/admin/plans/:id/bosses/:bossKey/toggle', (req, res) => {
+  const column = columnForBossKey(req.params.bossKey);
+  if (!column) return res.redirect('/admin/plans'); // unrecognized key - ignore rather than error, since this can only happen from a tampered request anyway
+  // Column name comes from the fixed whitelist above, never from request
+  // input directly, so this interpolation is safe despite not being a
+  // bound parameter - SQL doesn't support parameterizing column names.
+  db.prepare(`UPDATE plans SET ${column} = NOT ${column} WHERE id = ?`).run(req.params.id);
   res.redirect('/admin/plans');
 });
 

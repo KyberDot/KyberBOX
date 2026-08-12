@@ -146,7 +146,7 @@
                                 <% } %>
                             </button>
                         </div>
-                        <%- include('partials/death-counter', { deathCounterPlayers: pv.deathCounterPlayers, deathCounterTitle: pv.plan.death_counter_title, runTimerElapsedSeconds: pv.runTimerElapsedSeconds, runTimerStatus: pv.plan.run_timer_status }) %>
+                        <%- include('partials/death-counter', { deathCounterPlayers: pv.deathCounterPlayers, deathCounterTitle: pv.plan.death_counter_title, runTimerElapsedSeconds: pv.runTimerElapsedSeconds, runTimerStatus: pv.plan.run_timer_status, plan: pv.plan, BOSSES: BOSSES }) %>
                     <% } %>
 
                     <!-- Actions -->
@@ -256,7 +256,7 @@
                                         <% } %>
                                     </button>
                                     <div class="mt-4">
-                                        <%- include('partials/death-counter', { deathCounterPlayers: extra.deathCounterPlayers, deathCounterTitle: extra.plan.death_counter_title, runTimerElapsedSeconds: extra.runTimerElapsedSeconds, runTimerStatus: extra.plan.run_timer_status }) %>
+                                        <%- include('partials/death-counter', { deathCounterPlayers: extra.deathCounterPlayers, deathCounterTitle: extra.plan.death_counter_title, runTimerElapsedSeconds: extra.runTimerElapsedSeconds, runTimerStatus: extra.plan.run_timer_status, plan: extra.plan, BOSSES: BOSSES }) %>
                                     </div>
                                 <% } %>
                             </div>

@@ -7,6 +7,7 @@ const { getWatchHistory, getNowWatching, getGeoLookup, fetchPosterImage } = requ
 const { getAllSettings, getSiteBaseUrl } = require('../utils/settings');
 const { formatUK } = require('../utils/time');
 const { resetIfLinkedAction, computeElapsedSeconds } = require('../utils/runTimer');
+const { BOSSES } = require('../utils/bosses');
 
 const router = express.Router();
 
@@ -127,6 +128,7 @@ router.get('/dashboard', (req, res) => {
     planViews,
     legacySubscriptions,
     paymentMethodName: userRecord ? userRecord.payment_method_name : null,
+    BOSSES,
   });
 });
 

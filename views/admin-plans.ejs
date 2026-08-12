@@ -289,6 +289,27 @@
                                     <button type="submit" class="btn-outline px-4 py-2 rounded-lg text-xs whitespace-nowrap">Save Link</button>
                                 </form>
                             </div>
+
+                            <div class="mt-4 pt-4 border-t border-white/5">
+                                <div class="flex items-center justify-between mb-3">
+                                    <p class="text-xs uppercase tracking-widest text-slate-500 font-bold"><i class="fas fa-crown mr-1"></i>Bosses Beaten</p>
+                                    <form method="POST" action="/admin/plans/<%= plan.id %>/bosses/toggle-enabled" data-ajax-form>
+                                        <button type="submit" class="badge <%= plan.bosses_beaten_enabled ? 'badge-active' : 'badge-closed' %>"><%= plan.bosses_beaten_enabled ? 'Enabled' : 'Disabled' %> - tap to toggle</button>
+                                    </form>
+                                </div>
+                                <p class="text-slate-400 text-xs mb-3">Shown to subscribers under the death counter when enabled. Tap an icon to mark it beaten or not.</p>
+                                <div class="grid grid-cols-4 gap-2">
+                                    <% BOSSES.forEach(function(boss) { %>
+                                        <% var beaten = plan['boss_' + boss.key + '_beaten']; %>
+                                        <form method="POST" action="/admin/plans/<%= plan.id %>/bosses/<%= boss.key %>/toggle" data-ajax-form>
+                                            <button type="submit" class="w-full flex flex-col items-center gap-1.5 rounded-xl p-2 <%= beaten ? 'bg-amber-500/10 border border-amber-500/30' : 'bg-slate-900/40 border border-transparent' %>" title="<%= boss.label %> - <%= beaten ? 'Beaten' : 'Not beaten' %>">
+                                                <img src="<%= boss.image %>" alt="<%= boss.label %>" class="w-10 h-10 rounded-lg <%= beaten ? '' : 'grayscale opacity-40' %>">
+                                                <span class="text-[10px] text-center truncate w-full <%= beaten ? 'text-amber-300' : 'text-slate-500' %>"><%= boss.label %></span>
+                                            </button>
+                                        </form>
+                                    <% }); %>
+                                </div>
+                            </div>
                         </details>
                     <% } %>
 

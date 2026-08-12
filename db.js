@@ -370,6 +370,11 @@ ensureColumn('sftp_storage_boxes', 'color', "color TEXT NOT NULL DEFAULT 'amber'
 ensureColumn('plans', 'death_counter_title', 'death_counter_title TEXT');
 ensureColumn('plans', 'run_timer_linked_action_id', 'run_timer_linked_action_id INTEGER REFERENCES plan_actions(id) ON DELETE SET NULL');
 ensureColumn('plans', 'run_timer_linked_container_action_id', 'run_timer_linked_container_action_id INTEGER REFERENCES admin_container_actions(id) ON DELETE SET NULL');
+ensureColumn('plans', 'bosses_beaten_enabled', 'bosses_beaten_enabled INTEGER NOT NULL DEFAULT 0');
+ensureColumn('plans', 'boss_elder_guardian_beaten', 'boss_elder_guardian_beaten INTEGER NOT NULL DEFAULT 0');
+ensureColumn('plans', 'boss_ender_dragon_beaten', 'boss_ender_dragon_beaten INTEGER NOT NULL DEFAULT 0');
+ensureColumn('plans', 'boss_warden_beaten', 'boss_warden_beaten INTEGER NOT NULL DEFAULT 0');
+ensureColumn('plans', 'boss_wither_beaten', 'boss_wither_beaten INTEGER NOT NULL DEFAULT 0');
 ensureColumn('plans', 'run_timer_status', "run_timer_status TEXT NOT NULL DEFAULT 'stopped'");
 ensureColumn('plans', 'run_timer_started_at', 'run_timer_started_at TEXT');
 ensureColumn('plans', 'run_timer_accumulated_seconds', 'run_timer_accumulated_seconds INTEGER NOT NULL DEFAULT 0');
