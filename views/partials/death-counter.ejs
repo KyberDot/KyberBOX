@@ -1,4 +1,8 @@
-<% if (typeof deathCounterPlayers !== 'undefined' && deathCounterPlayers.length > 0) { %>
+<%
+  var hasDeathCounter = typeof deathCounterPlayers !== 'undefined' && deathCounterPlayers.length > 0;
+  var hasBosses = typeof plan !== 'undefined' && plan.bosses_beaten_enabled;
+%>
+<% if (hasDeathCounter || hasBosses) { %>
     <div class="mb-6 rounded-2xl p-4 sm:p-5 bg-gradient-to-br from-red-950/50 via-slate-900/60 to-slate-900/60 border border-red-500/25">
         <div class="flex items-center gap-2 mb-4">
             <div class="w-8 h-8 rounded-lg bg-red-500/15 border border-red-500/30 flex items-center justify-center flex-shrink-0">
@@ -6,46 +10,44 @@
             </div>
             <p class="text-sm font-bold text-white truncate"><%= deathCounterTitle && deathCounterTitle.trim() ? deathCounterTitle : 'Death Counter' %></p>
         </div>
-        <div class="flex items-center justify-between bg-amber-500/10 border border-amber-500/25 rounded-xl px-3 py-2.5 mb-4">
-            <span class="text-xs text-amber-300/90 uppercase tracking-wide font-semibold"><i class="fas fa-stopwatch mr-1.5"></i>Current Seed Timer</span>
-            <span class="text-base font-mono font-bold text-amber-300" data-run-timer-display data-elapsed="<%= typeof runTimerElapsedSeconds !== 'undefined' ? runTimerElapsedSeconds : 0 %>" data-status="<%= typeof runTimerStatus !== 'undefined' ? runTimerStatus : 'stopped' %>">00:00:00</span>
-        </div>
-        <div class="space-y-1.5">
-            <% deathCounterPlayers.forEach(function(p, i) { %>
-                <% var isTop = i === 0 && p.death_count > 0; %>
-                <div class="flex items-center gap-3 rounded-xl px-3 py-2.5 <%= isTop ? 'bg-red-500/10 border border-red-500/30' : 'bg-slate-900/40' %>">
-                    <span class="w-6 text-center text-xs font-bold flex-shrink-0 <%= isTop ? 'text-red-400' : 'text-slate-500' %>">
-                        <% if (isTop) { %><i class="fas fa-crown"></i><% } else { %>#<%= i + 1 %><% } %>
-                    </span>
-                    <span class="text-sm text-slate-200 truncate flex-1 min-w-0"><%= p.player_name %></span>
-                    <span class="flex items-center gap-1.5 flex-shrink-0">
-                        <span class="text-lg font-extrabold <%= isTop ? 'text-red-400' : 'text-white' %>"><%= p.death_count %></span>
-                        <i class="fas fa-skull-crossbones text-xs <%= isTop ? 'text-red-400' : 'text-slate-600' %>"></i>
-                    </span>
-                </div>
-            <% }); %>
-        </div>
-    </div>
-<% } %>
 
-<% if (typeof plan !== 'undefined' && plan.bosses_beaten_enabled) { %>
-    <div class="mb-6 rounded-2xl p-4 sm:p-5 bg-gradient-to-br from-amber-950/40 via-slate-900/60 to-slate-900/60 border border-amber-500/25">
-        <div class="flex items-center gap-2 mb-4">
-            <div class="w-8 h-8 rounded-lg bg-amber-500/15 border border-amber-500/30 flex items-center justify-center flex-shrink-0">
-                <i class="fas fa-crown text-amber-400 text-sm"></i>
+        <% if (hasDeathCounter) { %>
+            <div class="flex items-center justify-between bg-amber-500/10 border border-amber-500/25 rounded-xl px-3 py-2.5 mb-4">
+                <span class="text-xs text-amber-300/90 uppercase tracking-wide font-semibold"><i class="fas fa-stopwatch mr-1.5"></i>Current Seed Timer</span>
+                <span class="text-base font-mono font-bold text-amber-300" data-run-timer-display data-elapsed="<%= typeof runTimerElapsedSeconds !== 'undefined' ? runTimerElapsedSeconds : 0 %>" data-status="<%= typeof runTimerStatus !== 'undefined' ? runTimerStatus : 'stopped' %>">00:00:00</span>
             </div>
-            <p class="text-sm font-bold text-white truncate">Bosses Beaten</p>
-        </div>
-        <div class="grid grid-cols-4 gap-2.5">
-            <% BOSSES.forEach(function(boss) { %>
-                <% var beaten = plan['boss_' + boss.key + '_beaten']; %>
-                <div class="flex flex-col items-center gap-1.5" title="<%= boss.label %> - <%= beaten ? 'Beaten' : 'Not beaten yet' %>">
-                    <div class="w-14 h-14 rounded-xl flex items-center justify-center <%= beaten ? 'bg-amber-500/15 border border-amber-500/40' : 'bg-slate-900/50 border border-white/5' %>">
-                        <img src="<%= boss.image %>" alt="<%= boss.label %>" class="w-11 h-11 rounded-lg transition-all <%= beaten ? 'drop-shadow-[0_0_8px_rgba(245,158,11,0.6)]' : 'grayscale opacity-30' %>">
+            <div class="space-y-1.5">
+                <% deathCounterPlayers.forEach(function(p, i) { %>
+                    <% var isTop = i === 0 && p.death_count > 0; %>
+                    <div class="flex items-center gap-3 rounded-xl px-3 py-2.5 <%= isTop ? 'bg-red-500/10 border border-red-500/30' : 'bg-slate-900/40' %>">
+                        <span class="w-6 text-center text-xs font-bold flex-shrink-0 <%= isTop ? 'text-red-400' : 'text-slate-500' %>">
+                            <% if (isTop) { %><i class="fas fa-crown"></i><% } else { %>#<%= i + 1 %><% } %>
+                        </span>
+                        <span class="text-sm text-slate-200 truncate flex-1 min-w-0"><%= p.player_name %></span>
+                        <span class="flex items-center gap-1.5 flex-shrink-0">
+                            <span class="text-lg font-extrabold <%= isTop ? 'text-red-400' : 'text-white' %>"><%= p.death_count %></span>
+                            <i class="fas fa-skull-crossbones text-xs <%= isTop ? 'text-red-400' : 'text-slate-600' %>"></i>
+                        </span>
                     </div>
-                    <span class="text-[10px] text-center truncate w-full <%= beaten ? 'text-amber-300 font-semibold' : 'text-slate-600' %>"><%= boss.label %></span>
+                <% }); %>
+            </div>
+        <% } %>
+
+        <% if (hasBosses) { %>
+            <div class="<%= hasDeathCounter ? 'mt-4 pt-4 border-t border-white/10' : '' %>">
+                <p class="text-xs uppercase tracking-widest text-amber-300/80 font-bold mb-3"><i class="fas fa-crown mr-1.5"></i>Bosses Beaten</p>
+                <div class="grid grid-cols-4 gap-2.5">
+                    <% BOSSES.forEach(function(boss) { %>
+                        <% var beaten = plan['boss_' + boss.key + '_beaten']; %>
+                        <div class="flex flex-col items-center gap-1.5" title="<%= boss.label %> - <%= beaten ? 'Beaten' : 'Not beaten yet' %>">
+                            <div class="w-14 h-14 rounded-xl flex items-center justify-center <%= beaten ? 'bg-amber-500/15 border border-amber-500/40' : 'bg-slate-900/50 border border-white/5' %>">
+                                <img src="<%= boss.image %>" alt="<%= boss.label %>" class="w-11 h-11 rounded-lg transition-all <%= beaten ? 'drop-shadow-[0_0_8px_rgba(245,158,11,0.6)]' : 'grayscale opacity-30' %>">
+                            </div>
+                            <span class="text-[10px] text-center truncate w-full <%= beaten ? 'text-amber-300 font-semibold' : 'text-slate-600' %>"><%= boss.label %></span>
+                        </div>
+                    <% }); %>
                 </div>
-            <% }); %>
-        </div>
+            </div>
+        <% } %>
     </div>
 <% } %>
