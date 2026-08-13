@@ -111,6 +111,7 @@ CREATE TABLE IF NOT EXISTS admin_providers (
   host TEXT,
   port INTEGER,
   link TEXT, -- default website link, used when no custom_link is set
+  plan_name TEXT, -- admin-set label shown as a metric, e.g. "Unlimited" or "Premium 30-day"
   plan_status TEXT NOT NULL DEFAULT 'unset', -- unset | date | lifetime | free | billed | inactive | balance_gb | balance_tb
   tracking_value TEXT, -- expiry date string, or numeric balance, depending on plan_status
   custom_link TEXT,
@@ -434,6 +435,7 @@ ensureColumn('plans', 'boss_warden_beaten', 'boss_warden_beaten INTEGER NOT NULL
 ensureColumn('plans', 'boss_wither_beaten', 'boss_wither_beaten INTEGER NOT NULL DEFAULT 0');
 ensureColumn('plan_actions', 'enabled', 'enabled INTEGER NOT NULL DEFAULT 1');
 ensureColumn('user_disabled_actions', 'enabled', 'enabled INTEGER NOT NULL DEFAULT 0');
+ensureColumn('admin_providers', 'plan_name', 'plan_name TEXT');
 ensureColumn('plans', 'run_timer_status', "run_timer_status TEXT NOT NULL DEFAULT 'stopped'");
 ensureColumn('plans', 'run_timer_started_at', 'run_timer_started_at TEXT');
 ensureColumn('plans', 'run_timer_accumulated_seconds', 'run_timer_accumulated_seconds INTEGER NOT NULL DEFAULT 0');

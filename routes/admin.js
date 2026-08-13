@@ -2448,10 +2448,11 @@ router.post('/admin/providers/:id/tracking', (req, res) => {
   const planStatus = PROVIDER_PLAN_STATUSES.includes(req.body.plan_status) ? req.body.plan_status : 'unset';
   const trackingValue = String(req.body.tracking_value || '').trim() || null;
   const customLink = String(req.body.custom_link || '').trim() || null;
+  const planName = String(req.body.plan_name || '').trim() || null;
   const notes = String(req.body.notes || '').trim() || null;
 
-  db.prepare('UPDATE admin_providers SET plan_status = ?, tracking_value = ?, custom_link = ?, notes = ? WHERE id = ?').run(
-    planStatus, trackingValue, customLink, notes, req.params.id
+  db.prepare('UPDATE admin_providers SET plan_status = ?, tracking_value = ?, custom_link = ?, plan_name = ?, notes = ? WHERE id = ?').run(
+    planStatus, trackingValue, customLink, planName, notes, req.params.id
   );
 
   res.redirect('/admin/providers');

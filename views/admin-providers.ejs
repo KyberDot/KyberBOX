@@ -10,9 +10,14 @@
     <main class="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-10 pb-24">
         <div class="flex items-start justify-between gap-4 mb-2">
             <h1 class="text-2xl sm:text-3xl font-extrabold">Providers</h1>
-            <button type="button" onclick="openAddProvider()" title="Add Provider" class="w-10 h-10 flex items-center justify-center rounded-xl btn-outline flex-shrink-0">
-                <i class="fas fa-plus"></i>
-            </button>
+            <div class="flex items-center gap-2 flex-shrink-0">
+                <button type="button" onclick="fetchProviderStatuses(true)" id="refreshStatusBtn" title="Refresh all statuses" class="w-10 h-10 flex items-center justify-center rounded-xl btn-outline">
+                    <i class="fas fa-rotate"></i>
+                </button>
+                <button type="button" onclick="openAddProvider()" title="Add Provider" class="w-10 h-10 flex items-center justify-center rounded-xl btn-outline">
+                    <i class="fas fa-plus"></i>
+                </button>
+            </div>
         </div>
         <p class="text-slate-400 text-sm mb-8">Track uptime and account status for debrid services, Usenet providers, indexers, and anything else worth keeping an eye on. Group providers however makes sense to you - each group becomes its own section below.</p>
 
@@ -25,52 +30,66 @@
 
         <% Object.keys(groups).forEach(function(groupLabel) { %>
             <div class="mb-10">
-                <h2 class="text-sm uppercase tracking-widest text-slate-500 font-bold mb-4"><%= groupLabel %></h2>
+                <div class="flex items-center gap-3 mb-4">
+                    <h2 class="text-xs font-mono uppercase tracking-[0.2em] text-sky-400/70 font-bold flex-shrink-0"><%= groupLabel %></h2>
+                    <div class="flex-1 h-px bg-white/10"></div>
+                </div>
                 <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
                     <% groups[groupLabel].forEach(function(p, idx) { %>
-                        <div class="glass rounded-2xl p-5 sm:p-6" id="provider-card-<%= p.id %>">
-                            <div class="flex items-start justify-between mb-3 gap-2">
-                                <a href="<%= p.custom_link || p.link || '#' %>" target="_blank" class="flex items-center gap-3 min-w-0 hover:opacity-80 transition">
-                                    <span class="text-2xl flex-shrink-0"><%= p.icon %></span>
-                                    <div class="min-w-0">
-                                        <p class="font-bold text-white text-sm truncate"><%= p.name %></p>
-                                        <% if (p.type_label) { %><p class="text-slate-500 text-xs truncate"><%= p.type_label %></p><% } %>
+                        <div class="glass rounded-2xl overflow-hidden relative" id="provider-card-<%= p.id %>">
+                            <div class="h-[3px] w-full" id="provider-accent-<%= p.id %>" style="background: <%= p.check_type === 'none' ? '#334155' : '#475569' %>;"></div>
+                            <div class="p-5">
+                                <div class="flex items-start justify-between gap-2 mb-3">
+                                    <a href="<%= p.custom_link || p.link || '#' %>" target="_blank" class="flex items-center gap-3 min-w-0 hover:opacity-75 transition">
+                                        <span class="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-lg flex-shrink-0"><%= p.icon %></span>
+                                        <div class="min-w-0">
+                                            <p class="font-extrabold text-white text-sm uppercase tracking-wide truncate"><%= p.name %></p>
+                                            <% if (p.type_label) { %><p class="font-mono text-[10px] text-sky-400/60 uppercase tracking-wider truncate mt-0.5"><%= p.type_label %></p><% } %>
+                                        </div>
+                                    </a>
+                                    <div class="flex items-center gap-0.5 flex-shrink-0">
+                                        <form method="POST" action="/admin/providers/<%= p.id %>/move" data-ajax-form>
+                                            <input type="hidden" name="direction" value="up">
+                                            <button type="submit" class="w-6 h-6 rounded-lg text-slate-500 hover:text-white hover:bg-white/5" title="Move earlier" <%= idx === 0 ? 'disabled style=opacity:0.3' : '' %>><i class="fas fa-arrow-up text-xs"></i></button>
+                                        </form>
+                                        <form method="POST" action="/admin/providers/<%= p.id %>/move" data-ajax-form>
+                                            <input type="hidden" name="direction" value="down">
+                                            <button type="submit" class="w-6 h-6 rounded-lg text-slate-500 hover:text-white hover:bg-white/5" title="Move later" <%= idx === groups[groupLabel].length - 1 ? 'disabled style=opacity:0.3' : '' %>><i class="fas fa-arrow-down text-xs"></i></button>
+                                        </form>
+                                        <button type="button" onclick="openEditProvider(<%= p.id %>)" title="Edit" class="text-slate-500 hover:text-white w-6 h-6 flex items-center justify-center rounded-lg hover:bg-white/5"><i class="fas fa-pen text-xs"></i></button>
+                                        <form method="POST" action="/admin/providers/<%= p.id %>/delete" data-ajax-form data-confirm="Remove &quot;<%= p.name %>&quot;? This can't be undone.">
+                                            <button type="submit" class="text-slate-500 hover:text-red-400 w-6 h-6 flex items-center justify-center rounded-lg hover:bg-white/5"><i class="fas fa-trash text-xs"></i></button>
+                                        </form>
                                     </div>
-                                </a>
-                                <div class="flex items-center gap-0.5 flex-shrink-0">
-                                    <form method="POST" action="/admin/providers/<%= p.id %>/move" data-ajax-form>
-                                        <input type="hidden" name="direction" value="up">
-                                        <button type="submit" class="w-6 h-6 rounded-lg text-slate-500 hover:text-white hover:bg-white/5" title="Move earlier" <%= idx === 0 ? 'disabled style=opacity:0.3' : '' %>><i class="fas fa-arrow-up text-xs"></i></button>
-                                    </form>
-                                    <form method="POST" action="/admin/providers/<%= p.id %>/move" data-ajax-form>
-                                        <input type="hidden" name="direction" value="down">
-                                        <button type="submit" class="w-6 h-6 rounded-lg text-slate-500 hover:text-white hover:bg-white/5" title="Move later" <%= idx === groups[groupLabel].length - 1 ? 'disabled style=opacity:0.3' : '' %>><i class="fas fa-arrow-down text-xs"></i></button>
-                                    </form>
-                                    <button type="button" onclick="openEditProvider(<%= p.id %>)" title="Edit" class="text-slate-500 hover:text-white w-6 h-6 flex items-center justify-center rounded-lg hover:bg-white/5"><i class="fas fa-pen text-xs"></i></button>
-                                    <form method="POST" action="/admin/providers/<%= p.id %>/delete" data-ajax-form data-confirm="Remove &quot;<%= p.name %>&quot;? This can't be undone.">
-                                        <button type="submit" class="text-slate-500 hover:text-red-400 w-6 h-6 flex items-center justify-center rounded-lg hover:bg-white/5"><i class="fas fa-trash text-xs"></i></button>
-                                    </form>
                                 </div>
-                            </div>
 
-                            <div class="flex items-center justify-between gap-2 mb-3">
-                                <% if (p.check_type !== 'none') { %>
-                                    <span class="badge badge-closed text-[10px]" id="provider-status-<%= p.id %>"><i class="fas fa-circle-notch fa-spin mr-1"></i>checking</span>
-                                <% } else { %>
-                                    <span></span>
+                                <div class="flex items-center justify-between gap-2 mb-3">
+                                    <% if (p.check_type !== 'none') { %>
+                                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-slate-600 text-slate-400 font-mono text-[10px] uppercase tracking-wider font-bold" id="provider-status-<%= p.id %>">
+                                            <span class="w-1.5 h-1.5 rounded-full bg-slate-500 flex-shrink-0" id="provider-status-dot-<%= p.id %>"></span>checking
+                                        </span>
+                                    <% } else { %>
+                                        <span></span>
+                                    <% } %>
+                                    <% var toneBorder = { active: 'border-emerald-500 text-emerald-400', warning: 'border-amber-500 text-amber-400', inactive: 'border-red-500 text-red-400', lifetime: 'border-sky-500 text-sky-400', unset: 'border-slate-700 border-dashed text-slate-500' }[p.tracking.tone]; %>
+                                    <button type="button" onclick="openTrackingModal(<%= p.id %>)" class="px-2.5 py-1 rounded-md border font-mono text-[10px] uppercase tracking-wider font-bold hover:opacity-75 transition <%= toneBorder %>">
+                                        <%= p.tracking.label %>
+                                    </button>
+                                </div>
+
+                                <div class="space-y-1 font-mono text-[11px]" id="provider-metrics-<%= p.id %>"></div>
+                                <% if (p.plan_name) { %>
+                                    <div class="flex items-center justify-between font-mono text-[11px] mt-1"><span class="text-slate-500">Plan</span><span class="text-slate-300"><%= p.plan_name %></span></div>
                                 <% } %>
-                                <button type="button" onclick="openTrackingModal(<%= p.id %>)" class="badge <%= { active: 'badge-active', warning: 'badge-suspended', inactive: 'badge-expired', lifetime: 'badge-answered', unset: 'badge-closed' }[p.tracking.tone] %> text-[10px]">
-                                    <%= p.tracking.label %>
-                                </button>
+                                <% if (p.notes) { %><p class="text-slate-500 text-xs mt-2 pt-2 border-t border-white/5"><%= p.notes %></p><% } %>
                             </div>
-
-                            <div class="space-y-1 text-xs" id="provider-metrics-<%= p.id %>"></div>
-                            <% if (p.notes) { %><p class="text-slate-500 text-xs mt-2"><%= p.notes %></p><% } %>
                         </div>
                     <% }); %>
                 </div>
             </div>
         <% }); %>
+
+        <script type="application/json" id="providers-data"><%- JSON.stringify(providers) %></script>
     </main>
 
     <!-- Add Provider Modal -->
@@ -172,6 +191,10 @@
                     <input type="text" name="tracking_value" id="trackingValueInput" class="input w-full">
                 </div>
                 <div>
+                    <label class="text-xs text-slate-500 mb-1 block">Plan name (shown as a metric, e.g. "Unlimited")</label>
+                    <input type="text" name="plan_name" class="input w-full">
+                </div>
+                <div>
                     <label class="text-xs text-slate-500 mb-1 block">Custom link (overrides the default website link)</label>
                     <input type="url" name="custom_link" class="input w-full" placeholder="https://...">
                 </div>
@@ -185,7 +208,11 @@
     </div>
 
     <script>
-        const PROVIDERS_DATA = <%- JSON.stringify(providers) %>;
+        function getProvidersData() {
+            const el = document.getElementById('providers-data');
+            if (!el) return [];
+            try { return JSON.parse(el.textContent); } catch (e) { return []; }
+        }
 
         function formField(form, name) {
             return form.querySelector('[name="' + name + '"]');
@@ -228,7 +255,7 @@
         }
 
         function openEditProvider(id) {
-            const p = PROVIDERS_DATA.find(function (x) { return x.id === id; });
+            const p = getProvidersData().find(function (x) { return x.id === id; });
             if (!p) return;
             const form = document.getElementById('editProviderForm');
             form.action = '/admin/providers/' + id + '/update';
@@ -248,12 +275,13 @@
         }
 
         function openTrackingModal(id) {
-            const p = PROVIDERS_DATA.find(function (x) { return x.id === id; });
+            const p = getProvidersData().find(function (x) { return x.id === id; });
             if (!p) return;
             const form = document.getElementById('trackingForm');
             form.action = '/admin/providers/' + id + '/tracking';
             formField(form, 'plan_status').value = p.plan_status || 'unset';
             formField(form, 'tracking_value').value = p.tracking_value || '';
+            formField(form, 'plan_name').value = p.plan_name || '';
             formField(form, 'custom_link').value = p.custom_link || '';
             formField(form, 'notes').value = p.notes || '';
             toggleTrackingValueField();
@@ -267,9 +295,12 @@
             return 'text-red-400';
         }
 
-        function statusBadgeClass(status) {
-            return { online: 'badge-active', offline: 'badge-expired', degraded: 'badge-suspended', unknown: 'badge-closed' }[status] || 'badge-closed';
-        }
+        const STATUS_STYLE = {
+            online:   { border: 'border-emerald-500 text-emerald-400', dot: 'bg-emerald-400', accent: '#34d399', pulse: true },
+            offline:  { border: 'border-red-500 text-red-400',         dot: 'bg-red-400',      accent: '#f87171', pulse: false },
+            degraded: { border: 'border-amber-500 text-amber-400',     dot: 'bg-amber-400',    accent: '#fbbf24', pulse: false },
+            unknown:  { border: 'border-slate-600 text-slate-400',     dot: 'bg-slate-500',    accent: '#64748b', pulse: false },
+        };
 
         function renderMetrics(data) {
             if (!data) return '';
@@ -280,11 +311,18 @@
             if (data.host) rows.push(['Host', data.host, 'text-slate-300']);
             if (data.error) rows.push(['Error', data.error, 'text-red-400']);
             return rows.map(function (r) {
-                return '<div class="flex items-center justify-between"><span class="text-slate-500">' + r[0] + '</span><span class="font-mono ' + r[2] + '">' + r[1] + '</span></div>';
+                return '<div class="flex items-center justify-between"><span class="text-slate-500">' + r[0] + '</span><span class="' + r[2] + '">' + r[1] + '</span></div>';
             }).join('');
         }
 
-        async function fetchProviderStatuses() {
+        let statusFetchInFlight = false;
+
+        async function fetchProviderStatuses(manual) {
+            if (statusFetchInFlight) return; // avoid piling up overlapping requests if triggered rapidly
+            statusFetchInFlight = true;
+            const btn = document.getElementById('refreshStatusBtn');
+            if (manual && btn) btn.querySelector('i').classList.add('fa-spin');
+
             try {
                 const res = await fetch('/admin/providers/status');
                 const data = await res.json();
@@ -292,20 +330,37 @@
                 Object.keys(data.results).forEach(function (id) {
                     const result = data.results[id];
                     const badge = document.getElementById('provider-status-' + id);
+                    const dot = document.getElementById('provider-status-dot-' + id);
+                    const accent = document.getElementById('provider-accent-' + id);
                     const metrics = document.getElementById('provider-metrics-' + id);
-                    if (badge && result) {
-                        const isUnconfigured = result.status === 'unknown' && result.error && /configured/i.test(result.error);
-                        badge.className = 'badge ' + statusBadgeClass(result.status) + ' text-[10px]';
-                        badge.textContent = isUnconfigured ? 'n/a' : result.status;
+                    if (!result) return;
+
+                    const isUnconfigured = result.status === 'unknown' && result.error && /configured/i.test(result.error);
+                    const style = STATUS_STYLE[result.status] || STATUS_STYLE.unknown;
+
+                    if (badge) {
+                        badge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border font-mono text-[10px] uppercase tracking-wider font-bold ' + style.border;
+                        badge.lastChild.textContent = isUnconfigured ? 'n/a' : result.status;
                     }
-                    if (metrics && result) {
-                        metrics.innerHTML = renderMetrics(result);
-                    }
+                    if (dot) dot.className = 'w-1.5 h-1.5 rounded-full flex-shrink-0 ' + style.dot + (style.pulse ? ' animate-pulse' : '');
+                    if (accent) accent.style.background = style.accent;
+                    if (metrics) metrics.innerHTML = renderMetrics(isUnconfigured ? null : result);
                 });
             } catch (e) {
-                // Silent - the "checking" badges just stay as-is until the next attempt.
+                // Silent - badges just keep their last known state until the next attempt.
+            } finally {
+                statusFetchInFlight = false;
+                if (manual && btn) btn.querySelector('i').classList.remove('fa-spin');
             }
         }
+
+        // The ajax form handler only swaps the contents of <main> and never
+        // re-runs this <script> block, so without this listener a freshly
+        // added/edited provider's "checking" badge would sit there until
+        // the next scheduled 60s poll - which reads as "stuck forever" to
+        // anyone who (reasonably) doesn't wait a full minute before
+        // reaching for a manual page refresh.
+        document.addEventListener('main:updated', function () { fetchProviderStatuses(); });
 
         fetchProviderStatuses();
         setInterval(fetchProviderStatuses, 60000);
