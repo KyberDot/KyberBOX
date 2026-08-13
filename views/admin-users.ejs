@@ -198,18 +198,21 @@
                     <% if ((actionsByUser[u.id] || []).length > 0) { %>
                         <details class="mb-2" data-ajax-key="user-<%= u.id %>-actions">
                             <summary class="cursor-pointer text-sky-400 text-xs font-semibold uppercase tracking-wide">Action Buttons Access</summary>
-                            <p class="text-slate-500 text-xs mt-3 mb-2">Actions are enabled for this user automatically whenever a plan is assigned - toggle off here to disable a specific action for this user only, without affecting anyone else on the same plan.</p>
+                            <p class="text-slate-500 text-xs mt-3 mb-2">Actions are enabled for this user automatically whenever a plan is assigned. Toggling here creates a per-user exception - overriding a disabled plan action just for this user, or disabling one just for them even though it's plan-enabled - independent of anyone else on the same plan. Changing an action's plan-wide state clears any exception here, so it doesn't linger unnoticed.</p>
                             <div class="space-y-1.5">
                                 <% (actionsByUser[u.id] || []).forEach(function(action) { %>
+                                    <% var wouldForceEnablePlanDisabled = !action.hasOverride && !action.enabled; %>
                                     <div class="flex items-center justify-between bg-slate-900/40 rounded-lg px-3 py-2 gap-2">
                                         <span class="text-xs text-slate-300 truncate">
                                             <i class="fas <%= action.icon %> mr-1.5 <%= action.style === 'danger' ? 'text-red-400' : 'text-sky-400' %>"></i><%= action.label %>
                                             <span class="text-slate-600 ml-1">(<%= action.plan_display_name %>)</span>
                                             <% if (!action.enabled) { %><span class="badge badge-closed ml-1">plan-disabled</span><% } %>
+                                            <% if (action.hasOverride) { %><span class="badge badge-answered ml-1">user override: <%= action.overrideEnabled ? 'force enabled' : 'force disabled' %></span><% } %>
                                         </span>
-                                        <form method="POST" action="/admin/users/<%= u.id %>/actions/<%= action.id %>/toggle-enabled" data-ajax-form class="flex-shrink-0">
-                                            <button type="submit" class="w-6 h-6 rounded-lg <%= action.disabledForUser ? 'text-slate-500 hover:text-white' : 'text-emerald-400 hover:text-emerald-300' %> hover:bg-white/5" title="<%= action.disabledForUser ? 'Enable for this user' : 'Disable for this user' %>">
-                                                <i class="fas <%= action.disabledForUser ? 'fa-toggle-off' : 'fa-toggle-on' %>"></i>
+                                        <form method="POST" action="/admin/users/<%= u.id %>/actions/<%= action.id %>/toggle-enabled" data-ajax-form class="flex-shrink-0"
+                                              <% if (wouldForceEnablePlanDisabled) { %>data-confirm="&quot;<%= action.label %>&quot; is currently disabled at the plan level. Enabling it here will override that specifically for <%= u.name %>, letting them use it while everyone else on the plan still can't. Continue?"<% } %>>
+                                            <button type="submit" class="w-6 h-6 rounded-lg <%= action.effectivelyEnabled ? 'text-emerald-400 hover:text-emerald-300' : 'text-slate-500 hover:text-white' %> hover:bg-white/5" title="<%= action.effectivelyEnabled ? 'Disable for this user' : 'Enable for this user' %>">
+                                                <i class="fas <%= action.effectivelyEnabled ? 'fa-toggle-on' : 'fa-toggle-off' %>"></i>
                                             </button>
                                         </form>
                                     </div>

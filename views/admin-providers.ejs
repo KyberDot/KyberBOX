@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <% pageTitle = 'Providers' %>
+    <%- include('partials/head') %>
+</head>
+<body class="antialiased overflow-x-hidden">
+    <%- include('partials/nav') %>
+
+    <main class="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-10 pb-24">
+        <div class="flex items-start justify-between gap-4 mb-2">
+            <h1 class="text-2xl sm:text-3xl font-extrabold">Providers</h1>
+            <button type="button" onclick="openAddProvider()" title="Add Provider" class="w-10 h-10 flex items-center justify-center rounded-xl btn-outline flex-shrink-0">
+                <i class="fas fa-plus"></i>
+            </button>
+        </div>
+        <p class="text-slate-400 text-sm mb-8">Track uptime and account status for debrid services, Usenet providers, indexers, and anything else worth keeping an eye on. Group providers however makes sense to you - each group becomes its own section below.</p>
+
+        <% if (providers.length === 0) { %>
+            <div class="glass rounded-2xl p-8 text-center">
+                <i class="fas fa-plug text-3xl text-slate-600 mb-3"></i>
+                <p class="text-slate-400 text-sm">No providers added yet. Use the <i class="fas fa-plus mx-1"></i> button above to add your first one.</p>
+            </div>
+        <% } %>
+
+        <% Object.keys(groups).forEach(function(groupLabel) { %>
+            <div class="mb-10">
+                <h2 class="text-sm uppercase tracking-widest text-slate-500 font-bold mb-4"><%= groupLabel %></h2>
+                <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
+                    <% groups[groupLabel].forEach(function(p, idx) { %>
+                        <div class="glass rounded-2xl p-5 sm:p-6" id="provider-card-<%= p.id %>">
+                            <div class="flex items-start justify-between mb-3 gap-2">
+                                <a href="<%= p.custom_link || p.link || '#' %>" target="_blank" class="flex items-center gap-3 min-w-0 hover:opacity-80 transition">
+                                    <span class="text-2xl flex-shrink-0"><%= p.icon %></span>
+                                    <div class="min-w-0">
+                                        <p class="font-bold text-white text-sm truncate"><%= p.name %></p>
+                                        <% if (p.type_label) { %><p class="text-slate-500 text-xs truncate"><%= p.type_label %></p><% } %>
+                                    </div>
+                                </a>
+                                <div class="flex items-center gap-0.5 flex-shrink-0">
+                                    <form method="POST" action="/admin/providers/<%= p.id %>/move" data-ajax-form>
+                                        <input type="hidden" name="direction" value="up">
+                                        <button type="submit" class="w-6 h-6 rounded-lg text-slate-500 hover:text-white hover:bg-white/5" title="Move earlier" <%= idx === 0 ? 'disabled style=opacity:0.3' : '' %>><i class="fas fa-arrow-up text-xs"></i></button>
+                                    </form>
+                                    <form method="POST" action="/admin/providers/<%= p.id %>/move" data-ajax-form>
+                                        <input type="hidden" name="direction" value="down">
+                                        <button type="submit" class="w-6 h-6 rounded-lg text-slate-500 hover:text-white hover:bg-white/5" title="Move later" <%= idx === groups[groupLabel].length - 1 ? 'disabled style=opacity:0.3' : '' %>><i class="fas fa-arrow-down text-xs"></i></button>
+                                    </form>
+                                    <button type="button" onclick="openEditProvider(<%= p.id %>)" title="Edit" class="text-slate-500 hover:text-white w-6 h-6 flex items-center justify-center rounded-lg hover:bg-white/5"><i class="fas fa-pen text-xs"></i></button>
+                                    <form method="POST" action="/admin/providers/<%= p.id %>/delete" data-ajax-form data-confirm="Remove &quot;<%= p.name %>&quot;? This can't be undone.">
+                                        <button type="submit" class="text-slate-500 hover:text-red-400 w-6 h-6 flex items-center justify-center rounded-lg hover:bg-white/5"><i class="fas fa-trash text-xs"></i></button>
+                                    </form>
+                                </div>
+                            </div>
+
+                            <div class="flex items-center justify-between gap-2 mb-3">
+                                <% if (p.check_type !== 'none') { %>
+                                    <span class="badge badge-closed text-[10px]" id="provider-status-<%= p.id %>"><i class="fas fa-circle-notch fa-spin mr-1"></i>checking</span>
+                                <% } else { %>
+                                    <span></span>
+                                <% } %>
+                                <button type="button" onclick="openTrackingModal(<%= p.id %>)" class="badge <%= { active: 'badge-active', warning: 'badge-suspended', inactive: 'badge-expired', lifetime: 'badge-answered', unset: 'badge-closed' }[p.tracking.tone] %> text-[10px]">
+                                    <%= p.tracking.label %>
+                                </button>
+                            </div>
+
+                            <div class="space-y-1 text-xs" id="provider-metrics-<%= p.id %>"></div>
+                            <% if (p.notes) { %><p class="text-slate-500 text-xs mt-2"><%= p.notes %></p><% } %>
+                        </div>
+                    <% }); %>
+                </div>
+            </div>
+        <% }); %>
+    </main>
+
+    <!-- Add Provider Modal -->
+    <div id="addProviderModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden items-center justify-center z-50 px-4 py-8 overflow-y-auto">
+        <div class="glass rounded-3xl p-6 sm:p-8 max-w-lg w-full my-auto">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-bold text-white"><i class="fas fa-plus mr-2 text-sky-400"></i>Add Provider</h3>
+                <button type="button" onclick="closeModal('addProviderModal')" title="Close" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5"><i class="fas fa-xmark"></i></button>
+            </div>
+            <form method="POST" action="/admin/providers" data-ajax-form class="grid gap-3">
+                <div class="grid grid-cols-3 gap-3">
+                    <input type="text" name="icon" class="input col-span-1 text-center" placeholder="🔌" maxlength="4" value="🔌">
+                    <input type="text" name="name" required class="input col-span-2" placeholder="Provider name">
+                </div>
+                <input type="text" name="group_label" required class="input" placeholder="Group (e.g. Infrastructure, Usenet, Indexers)" value="Infrastructure">
+                <input type="text" name="type_label" class="input" placeholder="Description shown under the name (optional)">
+                <select name="check_type" class="input" onchange="toggleCheckTypeFields('add')" data-check-type-select="add">
+                    <option value="none">No live check - manual tracking only</option>
+                    <option value="real_debrid">Real-Debrid (API key)</option>
+                    <option value="alldebrid">AllDebrid (API key)</option>
+                    <option value="easynews">Easynews (username + password)</option>
+                    <option value="tcp">TCP port check (host + port)</option>
+                </select>
+                <div data-check-fields="add-real_debrid,add-alldebrid" class="hidden">
+                    <input type="text" name="api_key" class="input w-full" placeholder="API key">
+                </div>
+                <div data-check-fields="add-easynews" class="hidden grid grid-cols-2 gap-3">
+                    <input type="text" name="username" class="input" placeholder="Username">
+                    <input type="password" name="password" class="input" placeholder="Password">
+                </div>
+                <div data-check-fields="add-tcp" class="hidden grid grid-cols-3 gap-3">
+                    <input type="text" name="host" class="input col-span-2" placeholder="Host">
+                    <input type="number" name="port" class="input" placeholder="Port">
+                </div>
+                <input type="url" name="link" class="input" placeholder="Website link (https://...)">
+                <button type="submit" class="btn-primary py-3 rounded-xl text-sm mt-2"><i class="fas fa-plus mr-2"></i>Add Provider</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Edit Provider Modal -->
+    <div id="editProviderModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden items-center justify-center z-50 px-4 py-8 overflow-y-auto">
+        <div class="glass rounded-3xl p-6 sm:p-8 max-w-lg w-full my-auto">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-bold text-white"><i class="fas fa-pen mr-2 text-sky-400"></i>Edit Provider</h3>
+                <button type="button" onclick="closeModal('editProviderModal')" title="Close" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5"><i class="fas fa-xmark"></i></button>
+            </div>
+            <form id="editProviderForm" method="POST" data-ajax-form class="grid gap-3">
+                <div class="grid grid-cols-3 gap-3">
+                    <input type="text" name="icon" class="input col-span-1 text-center" maxlength="4">
+                    <input type="text" name="name" required class="input col-span-2">
+                </div>
+                <input type="text" name="group_label" required class="input">
+                <input type="text" name="type_label" class="input" placeholder="Description shown under the name (optional)">
+                <select name="check_type" class="input" onchange="toggleCheckTypeFields('edit')" data-check-type-select="edit">
+                    <option value="none">No live check - manual tracking only</option>
+                    <option value="real_debrid">Real-Debrid (API key)</option>
+                    <option value="alldebrid">AllDebrid (API key)</option>
+                    <option value="easynews">Easynews (username + password)</option>
+                    <option value="tcp">TCP port check (host + port)</option>
+                </select>
+                <div data-check-fields="edit-real_debrid,edit-alldebrid" class="hidden">
+                    <input type="text" name="api_key" class="input w-full" placeholder="Leave blank to keep the current key">
+                </div>
+                <div data-check-fields="edit-easynews" class="hidden grid grid-cols-2 gap-3">
+                    <input type="text" name="username" class="input" placeholder="Username">
+                    <input type="password" name="password" class="input" placeholder="Leave blank to keep the current password">
+                </div>
+                <div data-check-fields="edit-tcp" class="hidden grid grid-cols-3 gap-3">
+                    <input type="text" name="host" class="input col-span-2" placeholder="Host">
+                    <input type="number" name="port" class="input" placeholder="Port">
+                </div>
+                <input type="url" name="link" class="input" placeholder="Website link (https://...)">
+                <button type="submit" class="btn-primary py-3 rounded-xl text-sm mt-2">Save Changes</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Tracking (Plan / Expiry) Modal -->
+    <div id="trackingModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden items-center justify-center z-50 px-4 py-8 overflow-y-auto">
+        <div class="glass rounded-3xl p-6 sm:p-8 max-w-lg w-full my-auto">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-bold text-white"><i class="fas fa-calendar mr-2 text-sky-400"></i>Plan &amp; Expiry</h3>
+                <button type="button" onclick="closeModal('trackingModal')" title="Close" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5"><i class="fas fa-xmark"></i></button>
+            </div>
+            <form id="trackingForm" method="POST" data-ajax-form class="grid gap-3">
+                <select name="plan_status" class="input" onchange="toggleTrackingValueField()" data-tracking-status-select>
+                    <option value="unset">Unset</option>
+                    <option value="date">Tracks an expiry date</option>
+                    <option value="lifetime">Lifetime</option>
+                    <option value="free">Free</option>
+                    <option value="billed">Billed / Active</option>
+                    <option value="inactive">Inactive</option>
+                    <option value="balance_gb">Balance (GB)</option>
+                    <option value="balance_tb">Balance (TB)</option>
+                </select>
+                <div data-tracking-value-wrap class="hidden">
+                    <label class="text-xs text-slate-500 mb-1 block" data-tracking-value-label>Expiry date</label>
+                    <input type="text" name="tracking_value" id="trackingValueInput" class="input w-full">
+                </div>
+                <div>
+                    <label class="text-xs text-slate-500 mb-1 block">Custom link (overrides the default website link)</label>
+                    <input type="url" name="custom_link" class="input w-full" placeholder="https://...">
+                </div>
+                <div>
+                    <label class="text-xs text-slate-500 mb-1 block">Notes (shown on the card, e.g. server count or plan details)</label>
+                    <input type="text" name="notes" class="input w-full">
+                </div>
+                <button type="submit" class="btn-primary py-3 rounded-xl text-sm mt-2">Save</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        const PROVIDERS_DATA = <%- JSON.stringify(providers) %>;
+
+        function formField(form, name) {
+            return form.querySelector('[name="' + name + '"]');
+        }
+
+        function toggleCheckTypeFields(prefix) {
+            const select = document.querySelector('[data-check-type-select="' + prefix + '"]');
+            const value = select.value;
+            document.querySelectorAll('[data-check-fields^="' + prefix + '-"]').forEach(function (el) { el.classList.add('hidden'); });
+            document.querySelectorAll('[data-check-fields]').forEach(function (el) {
+                const keys = el.getAttribute('data-check-fields').split(',');
+                if (keys.indexOf(prefix + '-' + value) !== -1) el.classList.remove('hidden');
+            });
+        }
+
+        function toggleTrackingValueField() {
+            const select = document.querySelector('[data-tracking-status-select]');
+            const wrap = document.querySelector('[data-tracking-value-wrap]');
+            const label = document.querySelector('[data-tracking-value-label]');
+            const input = document.getElementById('trackingValueInput');
+            const value = select.value;
+
+            if (value === 'date') {
+                wrap.classList.remove('hidden');
+                label.textContent = 'Expiry date';
+                input.type = 'date';
+            } else if (value === 'balance_gb' || value === 'balance_tb') {
+                wrap.classList.remove('hidden');
+                label.textContent = value === 'balance_tb' ? 'Balance (TB)' : 'Balance (GB)';
+                input.type = 'number';
+                input.step = '0.01';
+            } else {
+                wrap.classList.add('hidden');
+            }
+        }
+
+        function openAddProvider() {
+            toggleCheckTypeFields('add');
+            openModal('addProviderModal');
+        }
+
+        function openEditProvider(id) {
+            const p = PROVIDERS_DATA.find(function (x) { return x.id === id; });
+            if (!p) return;
+            const form = document.getElementById('editProviderForm');
+            form.action = '/admin/providers/' + id + '/update';
+            formField(form, 'icon').value = p.icon;
+            formField(form, 'name').value = p.name;
+            formField(form, 'group_label').value = p.group_label;
+            formField(form, 'type_label').value = p.type_label || '';
+            formField(form, 'check_type').value = p.check_type;
+            formField(form, 'api_key').value = '';
+            formField(form, 'username').value = p.username || '';
+            formField(form, 'password').value = '';
+            formField(form, 'host').value = p.host || '';
+            formField(form, 'port').value = p.port || '';
+            formField(form, 'link').value = p.link || '';
+            toggleCheckTypeFields('edit');
+            openModal('editProviderModal');
+        }
+
+        function openTrackingModal(id) {
+            const p = PROVIDERS_DATA.find(function (x) { return x.id === id; });
+            if (!p) return;
+            const form = document.getElementById('trackingForm');
+            form.action = '/admin/providers/' + id + '/tracking';
+            formField(form, 'plan_status').value = p.plan_status || 'unset';
+            formField(form, 'tracking_value').value = p.tracking_value || '';
+            formField(form, 'custom_link').value = p.custom_link || '';
+            formField(form, 'notes').value = p.notes || '';
+            toggleTrackingValueField();
+            openModal('trackingModal');
+        }
+
+        function latencyClass(ms) {
+            if (ms == null) return 'text-slate-300';
+            if (ms < 200) return 'text-emerald-400';
+            if (ms < 600) return 'text-amber-400';
+            return 'text-red-400';
+        }
+
+        function statusBadgeClass(status) {
+            return { online: 'badge-active', offline: 'badge-expired', degraded: 'badge-suspended', unknown: 'badge-closed' }[status] || 'badge-closed';
+        }
+
+        function renderMetrics(data) {
+            if (!data) return '';
+            const rows = [];
+            if (data.latency_ms != null) rows.push(['Latency', data.latency_ms + 'ms', latencyClass(data.latency_ms)]);
+            if (data.username) rows.push(['Account', data.username, 'text-slate-300']);
+            if (data.premium_until) rows.push(['Premium Until', data.premium_until, 'text-slate-300']);
+            if (data.host) rows.push(['Host', data.host, 'text-slate-300']);
+            if (data.error) rows.push(['Error', data.error, 'text-red-400']);
+            return rows.map(function (r) {
+                return '<div class="flex items-center justify-between"><span class="text-slate-500">' + r[0] + '</span><span class="font-mono ' + r[2] + '">' + r[1] + '</span></div>';
+            }).join('');
+        }
+
+        async function fetchProviderStatuses() {
+            try {
+                const res = await fetch('/admin/providers/status');
+                const data = await res.json();
+                if (!data.ok) return;
+                Object.keys(data.results).forEach(function (id) {
+                    const result = data.results[id];
+                    const badge = document.getElementById('provider-status-' + id);
+                    const metrics = document.getElementById('provider-metrics-' + id);
+                    if (badge && result) {
+                        const isUnconfigured = result.status === 'unknown' && result.error && /configured/i.test(result.error);
+                        badge.className = 'badge ' + statusBadgeClass(result.status) + ' text-[10px]';
+                        badge.textContent = isUnconfigured ? 'n/a' : result.status;
+                    }
+                    if (metrics && result) {
+                        metrics.innerHTML = renderMetrics(result);
+                    }
+                });
+            } catch (e) {
+                // Silent - the "checking" badges just stay as-is until the next attempt.
+            }
+        }
+
+        fetchProviderStatuses();
+        setInterval(fetchProviderStatuses, 60000);
+    </script>
+</body>
+</html>

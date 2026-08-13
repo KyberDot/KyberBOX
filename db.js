@@ -89,6 +89,36 @@ CREATE TABLE IF NOT EXISTS vpn_watch_containers (
 -- anything speaking the standard S3 API) that admins can browse and
 -- manage files within. Credentials encrypted the same way as SSH/SMTP
 -- secrets elsewhere in this app (see utils/crypto.js).
+-- Providers page: debrid services, usenet/torrent indexers, and any other
+-- external service admin wants to track uptime/expiry for. Deliberately
+-- generic rather than a fixed preset list - check_type picks which kind
+-- of live check (if any) applies, and every provider gets the same
+-- plan/expiry tracking regardless of whether it has a live check at all
+-- (an indexer with check_type='none' is purely manual-tracked, matching
+-- how NZB/torrent indexers work in the reference app this replaces).
+-- Credentials encrypted the same way as SSH/SMTP/storage secrets
+-- elsewhere in this app (see utils/crypto.js).
+CREATE TABLE IF NOT EXISTS admin_providers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  icon TEXT NOT NULL DEFAULT '🔌',
+  group_label TEXT NOT NULL DEFAULT 'Infrastructure',
+  type_label TEXT, -- short description shown under the name, e.g. "Debrid Service - HTTP API"
+  check_type TEXT NOT NULL DEFAULT 'none', -- real_debrid | alldebrid | easynews | tcp | none
+  api_key_encrypted TEXT,
+  username TEXT,
+  password_encrypted TEXT,
+  host TEXT,
+  port INTEGER,
+  link TEXT, -- default website link, used when no custom_link is set
+  plan_status TEXT NOT NULL DEFAULT 'unset', -- unset | date | lifetime | free | billed | inactive | balance_gb | balance_tb
+  tracking_value TEXT, -- expiry date string, or numeric balance, depending on plan_status
+  custom_link TEXT,
+  notes TEXT, -- free-text extra info shown as a metric, e.g. server count for a dedicated box
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS storage_buckets (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   label TEXT NOT NULL,
@@ -214,10 +244,21 @@ CREATE TABLE IF NOT EXISTS plan_actions (
 -- are automatically enabled when a plan is newly added" work for free -
 -- assigning a subscription never needs to insert anything here, there's
 -- simply nothing to override yet.
+-- Per-user override on top of a plan action's own enabled flag. A row
+-- existing means an admin has explicitly overridden this action for this
+-- specific user - its own "enabled" column says which way: 1 forces it on
+-- even if the plan-wide action is disabled, 0 forces it off even if the
+-- plan-wide action is enabled. No row at all means "just follow whatever
+-- the plan says" - which is what makes "actions are automatically enabled
+-- when a plan is newly added" work for free, and also what makes a plan-
+-- wide disable/enable toggle correctly override any stale per-user
+-- exception (see the toggle route, which clears these rows for the action
+-- being changed).
 CREATE TABLE IF NOT EXISTS user_disabled_actions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   plan_action_id INTEGER NOT NULL REFERENCES plan_actions(id) ON DELETE CASCADE,
+  enabled INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   UNIQUE(user_id, plan_action_id)
 );
@@ -392,6 +433,7 @@ ensureColumn('plans', 'boss_ender_dragon_beaten', 'boss_ender_dragon_beaten INTE
 ensureColumn('plans', 'boss_warden_beaten', 'boss_warden_beaten INTEGER NOT NULL DEFAULT 0');
 ensureColumn('plans', 'boss_wither_beaten', 'boss_wither_beaten INTEGER NOT NULL DEFAULT 0');
 ensureColumn('plan_actions', 'enabled', 'enabled INTEGER NOT NULL DEFAULT 1');
+ensureColumn('user_disabled_actions', 'enabled', 'enabled INTEGER NOT NULL DEFAULT 0');
 ensureColumn('plans', 'run_timer_status', "run_timer_status TEXT NOT NULL DEFAULT 'stopped'");
 ensureColumn('plans', 'run_timer_started_at', 'run_timer_started_at TEXT');
 ensureColumn('plans', 'run_timer_accumulated_seconds', 'run_timer_accumulated_seconds INTEGER NOT NULL DEFAULT 0');

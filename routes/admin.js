@@ -2,7 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const db = require('../db');
-const { encrypt } = require('../utils/crypto');
+const { encrypt, decrypt } = require('../utils/crypto');
 const { getAllSettings, setSetting, getSiteBaseUrl } = require('../utils/settings');
 const { sendMail, isConfigured, notifyResetStarted } = require('../utils/mailer');
 const { testConnection: testTautulliConnection, getWatchHistory, getNowWatching, getAllActivity, getGeoLookup, fetchPosterImage } = require('../utils/tautulli');
@@ -17,6 +17,7 @@ const { triggerFullReset, getFullResetState } = require('../utils/fullReset');
 const s3 = require('../utils/s3');
 const { computeElapsedSeconds, startTimer, stopTimer, restartTimer, resetIfLinkedContainerAction } = require('../utils/runTimer');
 const { BOSSES, columnForBossKey } = require('../utils/bosses');
+const { getProviderStatus, clearProviderCache } = require('../utils/providerChecks');
 const sftpStorage = require('../utils/sftpStorage');
 const { bucketUpload } = require('../utils/uploads');
 
@@ -109,13 +110,17 @@ function loadUsersPageData() {
     (actionsByUser[a.user_id] = actionsByUser[a.user_id] || []).push(a);
   });
 
-  const disabledActionIdsByUser = {};
-  db.prepare('SELECT user_id, plan_action_id FROM user_disabled_actions').all().forEach((row) => {
-    (disabledActionIdsByUser[row.user_id] = disabledActionIdsByUser[row.user_id] || []).push(row.plan_action_id);
+  const overridesByUser = {};
+  db.prepare('SELECT user_id, plan_action_id, enabled FROM user_disabled_actions').all().forEach((row) => {
+    (overridesByUser[row.user_id] = overridesByUser[row.user_id] || {})[row.plan_action_id] = !!row.enabled;
   });
   Object.keys(actionsByUser).forEach((userId) => {
-    const disabledIds = disabledActionIdsByUser[userId] || [];
-    actionsByUser[userId].forEach((a) => { a.disabledForUser = disabledIds.includes(a.id); });
+    const overrides = overridesByUser[userId] || {};
+    actionsByUser[userId].forEach((a) => {
+      a.hasOverride = Object.prototype.hasOwnProperty.call(overrides, a.id);
+      a.overrideEnabled = a.hasOverride ? overrides[a.id] : null;
+      a.effectivelyEnabled = a.hasOverride ? overrides[a.id] : !!a.enabled;
+    });
   });
 
   // "Approved" once we've matched their Plex account (used to show/lookup
@@ -395,6 +400,10 @@ router.post('/admin/plans/:id/actions/:actionId/delete', (req, res) => {
 
 router.post('/admin/plans/:id/actions/:actionId/toggle-enabled', (req, res) => {
   db.prepare('UPDATE plan_actions SET enabled = NOT enabled WHERE id = ? AND plan_id = ?').run(req.params.actionId, req.params.id);
+  // A plan-wide change makes any existing per-user exception stale - clear
+  // them so everyone follows the new state, rather than leaving an old
+  // "force enabled" or "force disabled" override quietly still in effect.
+  db.prepare('DELETE FROM user_disabled_actions WHERE plan_action_id = ?').run(req.params.actionId);
   res.redirect('/admin/plans');
 });
 
@@ -1263,14 +1272,22 @@ router.post('/admin/users/:id/plex-username', (req, res) => {
 });
 
 router.post('/admin/users/:id/actions/:actionId/toggle-enabled', (req, res) => {
+  const action = db.prepare('SELECT * FROM plan_actions WHERE id = ?').get(req.params.actionId);
+  if (!action) return res.redirect('/admin/users');
+
   const existing = db.prepare('SELECT id FROM user_disabled_actions WHERE user_id = ? AND plan_action_id = ?').get(req.params.id, req.params.actionId);
   if (existing) {
-    // A row already exists (action is currently disabled for this user) -
-    // removing it restores the default enabled state, rather than the
-    // table ever needing an explicit "enabled" row for anyone.
+    // An override already exists - removing it returns this user to
+    // whatever the plan-wide state currently says, rather than the table
+    // needing to track a third "explicitly follows the plan" state.
     db.prepare('DELETE FROM user_disabled_actions WHERE id = ?').run(existing.id);
   } else {
-    db.prepare('INSERT INTO user_disabled_actions (user_id, plan_action_id) VALUES (?, ?)').run(req.params.id, req.params.actionId);
+    // No override yet - create one that's the opposite of the plan's
+    // current effective state for this user. If the plan is enabled, this
+    // creates a "force disabled" exception; if the plan is disabled, this
+    // creates a "force enabled" exception - the case the confirmation
+    // popup on the frontend is specifically warning about.
+    db.prepare('INSERT INTO user_disabled_actions (user_id, plan_action_id, enabled) VALUES (?, ?, ?)').run(req.params.id, req.params.actionId, action.enabled ? 0 : 1);
   }
   res.redirect('/admin/users');
 });
@@ -2306,6 +2323,183 @@ router.post('/admin/ssh-console/run', async (req, res) => {
 router.post('/admin/ssh-console/reset-cwd', (req, res) => {
   consoleCwd = null;
   res.json({ ok: true, cwd: consoleCwd });
+});
+
+// ---------- Providers ----------
+
+const PROVIDER_CHECK_TYPES = ['real_debrid', 'alldebrid', 'easynews', 'tcp', 'none'];
+const PROVIDER_PLAN_STATUSES = ['unset', 'date', 'lifetime', 'free', 'billed', 'inactive', 'balance_gb', 'balance_tb'];
+
+// Mirrors the reference app's expiryLabel()/expiryStatus() logic, just
+// computed server-side instead of in the browser - the view can then
+// just print these directly rather than doing date math in JS.
+function providerTrackingDisplay(p) {
+  switch (p.plan_status) {
+    case 'lifetime': return { label: 'LIFETIME', tone: 'lifetime' };
+    case 'free': return { label: 'FREE', tone: 'active' };
+    case 'billed': return { label: 'BILLED', tone: 'active' };
+    case 'inactive': return { label: 'INACTIVE', tone: 'inactive' };
+    case 'balance_gb':
+    case 'balance_tb': {
+      const unit = p.plan_status === 'balance_tb' ? 'TB' : 'GB';
+      if (!p.tracking_value) return { label: 'SET BALANCE', tone: 'unset' };
+      const gbValue = unit === 'TB' ? parseFloat(p.tracking_value) * 1024 : parseFloat(p.tracking_value);
+      return { label: `${p.tracking_value} ${unit} UP`, tone: gbValue < 100 ? 'warning' : 'active' };
+    }
+    case 'date': {
+      if (!p.tracking_value) return { label: 'SET EXPIRY', tone: 'unset' };
+      const days = Math.ceil((new Date(p.tracking_value) - new Date()) / (1000 * 60 * 60 * 24));
+      if (days < 0) return { label: 'EXPIRED', tone: 'inactive' };
+      if (days === 0) return { label: 'EXPIRES TODAY', tone: 'warning' };
+      return { label: `${days}d LEFT`, tone: days <= 7 ? 'warning' : 'active' };
+    }
+    default:
+      return { label: 'UNSET', tone: 'unset' };
+  }
+}
+
+function loadProviders() {
+  const providers = db.prepare('SELECT * FROM admin_providers ORDER BY group_label ASC, sort_order ASC, id ASC').all();
+  providers.forEach((p) => { p.tracking = providerTrackingDisplay(p); });
+  const groups = {};
+  providers.forEach((p) => {
+    (groups[p.group_label] = groups[p.group_label] || []).push(p);
+  });
+  return { providers, groups };
+}
+
+router.get('/admin/providers', (req, res) => {
+  res.render('admin-providers', { ...loadProviders() });
+});
+
+router.post('/admin/providers', (req, res) => {
+  const name = String(req.body.name || '').trim();
+  if (!name) return res.status(400).render('error', { message: 'A provider name is required.' });
+
+  const icon = String(req.body.icon || '').trim() || '🔌';
+  const groupLabel = String(req.body.group_label || '').trim() || 'Infrastructure';
+  const typeLabel = String(req.body.type_label || '').trim() || null;
+  const checkType = PROVIDER_CHECK_TYPES.includes(req.body.check_type) ? req.body.check_type : 'none';
+  const link = String(req.body.link || '').trim() || null;
+
+  const apiKey = String(req.body.api_key || '').trim();
+  const username = String(req.body.username || '').trim() || null;
+  const password = String(req.body.password || '').trim();
+  const host = String(req.body.host || '').trim() || null;
+  const port = req.body.port ? Number(req.body.port) : null;
+
+  const maxOrder = db.prepare('SELECT MAX(sort_order) AS m FROM admin_providers WHERE group_label = ?').get(groupLabel);
+  const sortOrder = (maxOrder.m == null ? -1 : maxOrder.m) + 1;
+
+  db.prepare(
+    `INSERT INTO admin_providers (name, icon, group_label, type_label, check_type, api_key_encrypted, username, password_encrypted, host, port, link, sort_order)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    name, icon, groupLabel, typeLabel, checkType,
+    apiKey ? encrypt(apiKey) : null,
+    username,
+    password ? encrypt(password) : null,
+    host, port, link, sortOrder
+  );
+
+  res.redirect('/admin/providers');
+});
+
+router.post('/admin/providers/:id/update', (req, res) => {
+  const name = String(req.body.name || '').trim();
+  if (!name) return res.status(400).render('error', { message: 'A provider name is required.' });
+
+  const icon = String(req.body.icon || '').trim() || '🔌';
+  const groupLabel = String(req.body.group_label || '').trim() || 'Infrastructure';
+  const typeLabel = String(req.body.type_label || '').trim() || null;
+  const checkType = PROVIDER_CHECK_TYPES.includes(req.body.check_type) ? req.body.check_type : 'none';
+  const link = String(req.body.link || '').trim() || null;
+  const username = String(req.body.username || '').trim() || null;
+  const host = String(req.body.host || '').trim() || null;
+  const port = req.body.port ? Number(req.body.port) : null;
+
+  // Credentials are only overwritten when a new value is actually typed -
+  // leaving the field blank on an edit keeps whatever's already stored,
+  // matching how every other credential form in this app behaves.
+  const apiKey = String(req.body.api_key || '').trim();
+  const password = String(req.body.password || '').trim();
+
+  if (apiKey || password) {
+    db.prepare(
+      `UPDATE admin_providers SET name = ?, icon = ?, group_label = ?, type_label = ?, check_type = ?, link = ?, username = ?, host = ?, port = ?,
+       api_key_encrypted = COALESCE(?, api_key_encrypted), password_encrypted = COALESCE(?, password_encrypted) WHERE id = ?`
+    ).run(
+      name, icon, groupLabel, typeLabel, checkType, link, username, host, port,
+      apiKey ? encrypt(apiKey) : null,
+      password ? encrypt(password) : null,
+      req.params.id
+    );
+  } else {
+    db.prepare(
+      `UPDATE admin_providers SET name = ?, icon = ?, group_label = ?, type_label = ?, check_type = ?, link = ?, username = ?, host = ?, port = ? WHERE id = ?`
+    ).run(name, icon, groupLabel, typeLabel, checkType, link, username, host, port, req.params.id);
+  }
+
+  clearProviderCache(Number(req.params.id));
+  res.redirect('/admin/providers');
+});
+
+router.post('/admin/providers/:id/tracking', (req, res) => {
+  const planStatus = PROVIDER_PLAN_STATUSES.includes(req.body.plan_status) ? req.body.plan_status : 'unset';
+  const trackingValue = String(req.body.tracking_value || '').trim() || null;
+  const customLink = String(req.body.custom_link || '').trim() || null;
+  const notes = String(req.body.notes || '').trim() || null;
+
+  db.prepare('UPDATE admin_providers SET plan_status = ?, tracking_value = ?, custom_link = ?, notes = ? WHERE id = ?').run(
+    planStatus, trackingValue, customLink, notes, req.params.id
+  );
+
+  res.redirect('/admin/providers');
+});
+
+router.post('/admin/providers/:id/delete', (req, res) => {
+  db.prepare('DELETE FROM admin_providers WHERE id = ?').run(req.params.id);
+  clearProviderCache(Number(req.params.id));
+  res.redirect('/admin/providers');
+});
+
+router.post('/admin/providers/:id/move', (req, res) => {
+  const direction = req.body.direction === 'up' ? 'up' : 'down';
+  const provider = db.prepare('SELECT * FROM admin_providers WHERE id = ?').get(req.params.id);
+  if (!provider) return res.redirect('/admin/providers');
+
+  const siblings = db.prepare('SELECT * FROM admin_providers WHERE group_label = ? ORDER BY sort_order ASC, id ASC').all(provider.group_label);
+  const index = siblings.findIndex((p) => p.id === provider.id);
+  const swapIndex = direction === 'up' ? index - 1 : index + 1;
+  if (swapIndex < 0 || swapIndex >= siblings.length) return res.redirect('/admin/providers');
+
+  const swap = siblings[swapIndex];
+  const update = db.prepare('UPDATE admin_providers SET sort_order = ? WHERE id = ?');
+  update.run(swap.sort_order, provider.id);
+  update.run(provider.sort_order, swap.id);
+
+  res.redirect('/admin/providers');
+});
+
+router.get('/admin/providers/status', async (req, res) => {
+  const providers = db.prepare('SELECT * FROM admin_providers').all();
+  const results = {};
+
+  await Promise.all(providers.map(async (p) => {
+    if (p.check_type === 'none') return;
+    const decrypted = {
+      ...p,
+      apiKey: p.api_key_encrypted ? decrypt(p.api_key_encrypted) : null,
+      password: p.password_encrypted ? decrypt(p.password_encrypted) : null,
+    };
+    try {
+      results[p.id] = await getProviderStatus(decrypted);
+    } catch (err) {
+      results[p.id] = { status: 'offline', error: err.message };
+    }
+  }));
+
+  res.json({ ok: true, results, checked_at: Date.now() });
 });
 
 module.exports = router;

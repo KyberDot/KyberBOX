@@ -61,9 +61,10 @@ function buildPlanView(subscription, userId) {
       if (next > Date.now()) nextAllowedAt = new Date(next).toISOString();
     }
 
-    const disabledForUser = !!db.prepare('SELECT 1 FROM user_disabled_actions WHERE user_id = ? AND plan_action_id = ?').get(userId, action.id);
+    const override = db.prepare('SELECT enabled FROM user_disabled_actions WHERE user_id = ? AND plan_action_id = ?').get(userId, action.id);
+    const effectivelyEnabled = override ? !!override.enabled : !!action.enabled;
 
-    return { ...action, nextAllowedAt, disabledForUser };
+    return { ...action, nextAllowedAt, disabledForUser: !effectivelyEnabled };
   });
 
   return {
@@ -182,13 +183,13 @@ router.post('/dashboard/actions/:actionId/run', async (req, res) => {
     });
   }
 
-  if (!action.enabled) {
-    return res.status(423).json({ ok: false, message: `"${action.label}" has been disabled by an admin and is currently unavailable.` });
-  }
-
-  const disabledForThisUser = db.prepare('SELECT 1 FROM user_disabled_actions WHERE user_id = ? AND plan_action_id = ?').get(req.user.id, action.id);
-  if (disabledForThisUser) {
-    return res.status(423).json({ ok: false, message: `"${action.label}" has been disabled for your account and is currently unavailable.` });
+  const override = db.prepare('SELECT enabled FROM user_disabled_actions WHERE user_id = ? AND plan_action_id = ?').get(req.user.id, action.id);
+  const effectivelyEnabled = override ? !!override.enabled : !!action.enabled;
+  if (!effectivelyEnabled) {
+    const message = override
+      ? `"${action.label}" has been disabled for your account and is currently unavailable.`
+      : `"${action.label}" has been disabled by an admin and is currently unavailable.`;
+    return res.status(423).json({ ok: false, message });
   }
 
   const globalResetState = getResetState();
