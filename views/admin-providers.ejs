@@ -19,7 +19,7 @@
                 </button>
             </div>
         </div>
-        <p class="text-slate-400 text-sm mb-8">Track uptime and account status for debrid services, Usenet providers, indexers, and anything else worth keeping an eye on. Group providers however makes sense to you - each group becomes its own section below.</p>
+        <p class="text-slate-400 text-sm mb-8">Track uptime and account status for debrid services, Usenet providers, indexers, and anything else worth keeping an eye on.</p>
 
         <% if (providers.length === 0) { %>
             <div class="glass rounded-2xl p-8 text-center">
@@ -28,66 +28,111 @@
             </div>
         <% } %>
 
-        <% Object.keys(groups).forEach(function(groupLabel) { %>
+        <%
+            // Single card-builder reused across all three fixed categories,
+            // rather than repeating the same markup three times over.
+            // isIndexer forces the blue accent/badge treatment and drops the
+            // empty status-badge slot indexers have nothing to put there,
+            // which is what was leaving the tracking badge looking stranded
+            // on its own before.
+            function providerCard(p, idx, total, isIndexer) {
+                const toneBorder = { active: 'border-emerald-500 text-emerald-400', warning: 'border-amber-500 text-amber-400', inactive: 'border-red-500 text-red-400', lifetime: 'border-sky-500 text-sky-400', unset: 'border-slate-700 border-dashed text-slate-500' }[p.tracking.tone];
+                const accentColor = isIndexer ? '#58a6ff' : (p.check_type === 'none' ? '#334155' : '#475569');
+
+                let html = '<div class="glass rounded-2xl overflow-hidden relative" id="provider-card-' + p.id + '">';
+                html += '<div class="h-[3px] w-full" id="provider-accent-' + p.id + '" data-indexer="' + (isIndexer ? '1' : '0') + '" style="background:' + accentColor + ';"></div>';
+                html += '<div class="p-5">';
+
+                html += '<div class="flex items-start justify-between gap-2 mb-3">';
+                html += '<a href="' + (p.custom_link || p.link || '#') + '" target="_blank" class="flex items-center gap-3 min-w-0 hover:opacity-75 transition">';
+                html += '<span class="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-lg flex-shrink-0">' + p.icon + '</span>';
+                html += '<div class="min-w-0"><p class="font-extrabold text-white text-sm uppercase tracking-wide truncate">' + p.name + '</p>';
+                if (p.type_label) html += '<p class="font-mono text-[10px] text-sky-400/60 uppercase tracking-wider truncate mt-0.5">' + p.type_label + '</p>';
+                html += '</div></a>';
+
+                html += '<div class="flex items-center gap-0.5 flex-shrink-0">';
+                html += '<form method="POST" action="/admin/providers/' + p.id + '/move" data-ajax-form><input type="hidden" name="direction" value="up"><button type="submit" class="w-6 h-6 rounded-lg text-slate-500 hover:text-white hover:bg-white/5" title="Move earlier"' + (idx === 0 ? ' disabled style=opacity:0.3' : '') + '><i class="fas fa-arrow-up text-xs"></i></button></form>';
+                html += '<form method="POST" action="/admin/providers/' + p.id + '/move" data-ajax-form><input type="hidden" name="direction" value="down"><button type="submit" class="w-6 h-6 rounded-lg text-slate-500 hover:text-white hover:bg-white/5" title="Move later"' + (idx === total - 1 ? ' disabled style=opacity:0.3' : '') + '><i class="fas fa-arrow-down text-xs"></i></button></form>';
+                html += '<button type="button" onclick="openEditProvider(' + p.id + ')" title="Edit" class="text-slate-500 hover:text-white w-6 h-6 flex items-center justify-center rounded-lg hover:bg-white/5"><i class="fas fa-pen text-xs"></i></button>';
+                html += '<form method="POST" action="/admin/providers/' + p.id + '/delete" data-ajax-form data-confirm="Remove &quot;' + p.name + '&quot;? This can\'t be undone."><button type="submit" class="text-slate-500 hover:text-red-400 w-6 h-6 flex items-center justify-center rounded-lg hover:bg-white/5"><i class="fas fa-trash text-xs"></i></button></form>';
+                html += '</div></div>';
+
+                const trackingBadge = '<button type="button" onclick="openTrackingModal(' + p.id + ')" class="px-2.5 py-1 rounded-md border font-mono text-[10px] uppercase tracking-wider font-bold hover:opacity-75 transition ' + (isIndexer ? 'border-sky-500 text-sky-400' : toneBorder) + '">' + p.tracking.label + '</button>';
+
+                if (p.check_type !== 'none') {
+                    html += '<div class="flex items-center justify-between gap-2 mb-3">';
+                    html += '<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-slate-600 text-slate-400 font-mono text-[10px] uppercase tracking-wider font-bold" id="provider-status-' + p.id + '"><span class="w-1.5 h-1.5 rounded-full bg-slate-500 flex-shrink-0" id="provider-status-dot-' + p.id + '"></span>checking</span>';
+                    html += trackingBadge;
+                    html += '</div>';
+                } else {
+                    // No live status for this provider - the tracking badge
+                    // is the only thing in this row, so it sits at the start
+                    // instead of being centered by a justify-between with
+                    // nothing on the other side to balance it.
+                    html += '<div class="flex items-center mb-3">' + trackingBadge + '</div>';
+                }
+
+                html += '<div class="space-y-1 font-mono text-[11px]" id="provider-metrics-' + p.id + '"></div>';
+
+                if (p.active_servers != null) {
+                    html += '<div class="flex items-center justify-between font-mono text-[11px] mt-1"><span class="text-slate-500">Active Servers</span><span class="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-bold">' + p.active_servers + '</span></div>';
+                }
+                if (p.plan_name) {
+                    html += '<div class="flex items-center justify-between font-mono text-[11px] mt-1"><span class="text-slate-500">Plan</span><span class="text-slate-300">' + p.plan_name + '</span></div>';
+                }
+                if (p.notes) {
+                    html += '<p class="text-slate-500 text-xs mt-2 pt-2 border-t border-white/5">' + p.notes + '</p>';
+                }
+
+                html += '</div></div>';
+                return html;
+            }
+        %>
+
+        <% if (infrastructureProviders.length > 0) { %>
             <div class="mb-10">
                 <div class="flex items-center gap-3 mb-4">
-                    <h2 class="text-xs font-mono uppercase tracking-[0.2em] text-sky-400/70 font-bold flex-shrink-0"><%= groupLabel %></h2>
+                    <h2 class="text-xs font-mono uppercase tracking-[0.2em] text-sky-400/70 font-bold flex-shrink-0">Infrastructure</h2>
                     <div class="flex-1 h-px bg-white/10"></div>
                 </div>
                 <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
-                    <% groups[groupLabel].forEach(function(p, idx) { %>
-                        <div class="glass rounded-2xl overflow-hidden relative" id="provider-card-<%= p.id %>">
-                            <div class="h-[3px] w-full" id="provider-accent-<%= p.id %>" style="background: <%= p.check_type === 'none' ? '#334155' : '#475569' %>;"></div>
-                            <div class="p-5">
-                                <div class="flex items-start justify-between gap-2 mb-3">
-                                    <a href="<%= p.custom_link || p.link || '#' %>" target="_blank" class="flex items-center gap-3 min-w-0 hover:opacity-75 transition">
-                                        <span class="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-lg flex-shrink-0"><%= p.icon %></span>
-                                        <div class="min-w-0">
-                                            <p class="font-extrabold text-white text-sm uppercase tracking-wide truncate"><%= p.name %></p>
-                                            <% if (p.type_label) { %><p class="font-mono text-[10px] text-sky-400/60 uppercase tracking-wider truncate mt-0.5"><%= p.type_label %></p><% } %>
-                                        </div>
-                                    </a>
-                                    <div class="flex items-center gap-0.5 flex-shrink-0">
-                                        <form method="POST" action="/admin/providers/<%= p.id %>/move" data-ajax-form>
-                                            <input type="hidden" name="direction" value="up">
-                                            <button type="submit" class="w-6 h-6 rounded-lg text-slate-500 hover:text-white hover:bg-white/5" title="Move earlier" <%= idx === 0 ? 'disabled style=opacity:0.3' : '' %>><i class="fas fa-arrow-up text-xs"></i></button>
-                                        </form>
-                                        <form method="POST" action="/admin/providers/<%= p.id %>/move" data-ajax-form>
-                                            <input type="hidden" name="direction" value="down">
-                                            <button type="submit" class="w-6 h-6 rounded-lg text-slate-500 hover:text-white hover:bg-white/5" title="Move later" <%= idx === groups[groupLabel].length - 1 ? 'disabled style=opacity:0.3' : '' %>><i class="fas fa-arrow-down text-xs"></i></button>
-                                        </form>
-                                        <button type="button" onclick="openEditProvider(<%= p.id %>)" title="Edit" class="text-slate-500 hover:text-white w-6 h-6 flex items-center justify-center rounded-lg hover:bg-white/5"><i class="fas fa-pen text-xs"></i></button>
-                                        <form method="POST" action="/admin/providers/<%= p.id %>/delete" data-ajax-form data-confirm="Remove &quot;<%= p.name %>&quot;? This can't be undone.">
-                                            <button type="submit" class="text-slate-500 hover:text-red-400 w-6 h-6 flex items-center justify-center rounded-lg hover:bg-white/5"><i class="fas fa-trash text-xs"></i></button>
-                                        </form>
-                                    </div>
-                                </div>
-
-                                <div class="flex items-center justify-between gap-2 mb-3">
-                                    <% if (p.check_type !== 'none') { %>
-                                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-slate-600 text-slate-400 font-mono text-[10px] uppercase tracking-wider font-bold" id="provider-status-<%= p.id %>">
-                                            <span class="w-1.5 h-1.5 rounded-full bg-slate-500 flex-shrink-0" id="provider-status-dot-<%= p.id %>"></span>checking
-                                        </span>
-                                    <% } else { %>
-                                        <span></span>
-                                    <% } %>
-                                    <% var toneBorder = { active: 'border-emerald-500 text-emerald-400', warning: 'border-amber-500 text-amber-400', inactive: 'border-red-500 text-red-400', lifetime: 'border-sky-500 text-sky-400', unset: 'border-slate-700 border-dashed text-slate-500' }[p.tracking.tone]; %>
-                                    <button type="button" onclick="openTrackingModal(<%= p.id %>)" class="px-2.5 py-1 rounded-md border font-mono text-[10px] uppercase tracking-wider font-bold hover:opacity-75 transition <%= toneBorder %>">
-                                        <%= p.tracking.label %>
-                                    </button>
-                                </div>
-
-                                <div class="space-y-1 font-mono text-[11px]" id="provider-metrics-<%= p.id %>"></div>
-                                <% if (p.plan_name) { %>
-                                    <div class="flex items-center justify-between font-mono text-[11px] mt-1"><span class="text-slate-500">Plan</span><span class="text-slate-300"><%= p.plan_name %></span></div>
-                                <% } %>
-                                <% if (p.notes) { %><p class="text-slate-500 text-xs mt-2 pt-2 border-t border-white/5"><%= p.notes %></p><% } %>
-                            </div>
-                        </div>
-                    <% }); %>
+                    <% infrastructureProviders.forEach(function(p, idx) { %><%- providerCard(p, idx, infrastructureProviders.length, false) %><% }); %>
                 </div>
             </div>
-        <% }); %>
+        <% } %>
+
+        <% if (usenetProviders.length > 0 || torrentsProviders.length > 0) { %>
+            <div class="mb-2">
+                <div class="flex items-center gap-3 mb-6">
+                    <h2 class="text-xs font-mono uppercase tracking-[0.2em] text-white/80 font-bold flex-shrink-0">Indexers</h2>
+                    <div class="flex-1 h-px bg-white/10"></div>
+                </div>
+            </div>
+
+            <% if (usenetProviders.length > 0) { %>
+                <div class="mb-10">
+                    <div class="flex items-center gap-3 mb-4 pl-2">
+                        <h3 class="text-xs font-mono uppercase tracking-[0.15em] text-sky-400/70 font-bold flex-shrink-0">Usenet</h3>
+                        <div class="flex-1 h-px bg-white/5"></div>
+                    </div>
+                    <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
+                        <% usenetProviders.forEach(function(p, idx) { %><%- providerCard(p, idx, usenetProviders.length, true) %><% }); %>
+                    </div>
+                </div>
+            <% } %>
+
+            <% if (torrentsProviders.length > 0) { %>
+                <div class="mb-10">
+                    <div class="flex items-center gap-3 mb-4 pl-2">
+                        <h3 class="text-xs font-mono uppercase tracking-[0.15em] text-sky-400/70 font-bold flex-shrink-0">Torrents</h3>
+                        <div class="flex-1 h-px bg-white/5"></div>
+                    </div>
+                    <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
+                        <% torrentsProviders.forEach(function(p, idx) { %><%- providerCard(p, idx, torrentsProviders.length, true) %><% }); %>
+                    </div>
+                </div>
+            <% } %>
+        <% } %>
 
         <script type="application/json" id="providers-data"><%- JSON.stringify(providers) %></script>
     </main>
@@ -104,7 +149,11 @@
                     <input type="text" name="icon" class="input col-span-1 text-center" placeholder="🔌" maxlength="4" value="🔌">
                     <input type="text" name="name" required class="input col-span-2" placeholder="Provider name">
                 </div>
-                <input type="text" name="group_label" required class="input" placeholder="Group (e.g. Infrastructure, Usenet, Indexers)" value="Infrastructure">
+                <select name="group_label" required class="input">
+                    <option value="Infrastructure">Infrastructure</option>
+                    <option value="Usenet">Indexers - Usenet</option>
+                    <option value="Torrents">Indexers - Torrents</option>
+                </select>
                 <input type="text" name="type_label" class="input" placeholder="Description shown under the name (optional)">
                 <select name="check_type" class="input" onchange="toggleCheckTypeFields('add')" data-check-type-select="add">
                     <option value="none">No live check - manual tracking only</option>
@@ -112,6 +161,7 @@
                     <option value="alldebrid">AllDebrid (API key)</option>
                     <option value="easynews">Easynews (username + password)</option>
                     <option value="tcp">TCP port check (host + port)</option>
+                    <option value="http_ping">HTTP ping - latency only (Hetzner, AWS, etc)</option>
                 </select>
                 <div data-check-fields="add-real_debrid,add-alldebrid" class="hidden">
                     <input type="text" name="api_key" class="input w-full" placeholder="API key">
@@ -123,6 +173,10 @@
                 <div data-check-fields="add-tcp" class="hidden grid grid-cols-3 gap-3">
                     <input type="text" name="host" class="input col-span-2" placeholder="Host">
                     <input type="number" name="port" class="input" placeholder="Port">
+                </div>
+                <div data-check-fields="add-http_ping" class="hidden grid gap-2">
+                    <p class="text-slate-500 text-xs">Pings the website link below to measure latency - useful for services with no standard port to check directly.</p>
+                    <input type="number" name="active_servers" class="input w-full" placeholder="Active servers (optional)" min="0">
                 </div>
                 <input type="url" name="link" class="input" placeholder="Website link (https://...)">
                 <button type="submit" class="btn-primary py-3 rounded-xl text-sm mt-2"><i class="fas fa-plus mr-2"></i>Add Provider</button>
@@ -142,7 +196,11 @@
                     <input type="text" name="icon" class="input col-span-1 text-center" maxlength="4">
                     <input type="text" name="name" required class="input col-span-2">
                 </div>
-                <input type="text" name="group_label" required class="input">
+                <select name="group_label" required class="input">
+                    <option value="Infrastructure">Infrastructure</option>
+                    <option value="Usenet">Indexers - Usenet</option>
+                    <option value="Torrents">Indexers - Torrents</option>
+                </select>
                 <input type="text" name="type_label" class="input" placeholder="Description shown under the name (optional)">
                 <select name="check_type" class="input" onchange="toggleCheckTypeFields('edit')" data-check-type-select="edit">
                     <option value="none">No live check - manual tracking only</option>
@@ -150,6 +208,7 @@
                     <option value="alldebrid">AllDebrid (API key)</option>
                     <option value="easynews">Easynews (username + password)</option>
                     <option value="tcp">TCP port check (host + port)</option>
+                    <option value="http_ping">HTTP ping - latency only (Hetzner, AWS, etc)</option>
                 </select>
                 <div data-check-fields="edit-real_debrid,edit-alldebrid" class="hidden">
                     <input type="text" name="api_key" class="input w-full" placeholder="Leave blank to keep the current key">
@@ -161,6 +220,10 @@
                 <div data-check-fields="edit-tcp" class="hidden grid grid-cols-3 gap-3">
                     <input type="text" name="host" class="input col-span-2" placeholder="Host">
                     <input type="number" name="port" class="input" placeholder="Port">
+                </div>
+                <div data-check-fields="edit-http_ping" class="hidden grid gap-2">
+                    <p class="text-slate-500 text-xs">Pings the website link below to measure latency - useful for services with no standard port to check directly.</p>
+                    <input type="number" name="active_servers" class="input w-full" placeholder="Active servers (optional)" min="0">
                 </div>
                 <input type="url" name="link" class="input" placeholder="Website link (https://...)">
                 <button type="submit" class="btn-primary py-3 rounded-xl text-sm mt-2">Save Changes</button>
@@ -199,7 +262,7 @@
                     <input type="url" name="custom_link" class="input w-full" placeholder="https://...">
                 </div>
                 <div>
-                    <label class="text-xs text-slate-500 mb-1 block">Notes (shown on the card, e.g. server count or plan details)</label>
+                    <label class="text-xs text-slate-500 mb-1 block">Notes (shown on the card)</label>
                     <input type="text" name="notes" class="input w-full">
                 </div>
                 <button type="submit" class="btn-primary py-3 rounded-xl text-sm mt-2">Save</button>
@@ -269,6 +332,7 @@
             formField(form, 'password').value = '';
             formField(form, 'host').value = p.host || '';
             formField(form, 'port').value = p.port || '';
+            formField(form, 'active_servers').value = p.active_servers != null ? p.active_servers : '';
             formField(form, 'link').value = p.link || '';
             toggleCheckTypeFields('edit');
             openModal('editProviderModal');
@@ -324,7 +388,7 @@
             if (manual && btn) btn.querySelector('i').classList.add('fa-spin');
 
             try {
-                const res = await fetch('/admin/providers/status');
+                const res = await fetch('/admin/providers/status' + (manual ? '?force=1' : ''));
                 const data = await res.json();
                 if (!data.ok) return;
                 Object.keys(data.results).forEach(function (id) {
@@ -343,7 +407,10 @@
                         badge.lastChild.textContent = isUnconfigured ? 'n/a' : result.status;
                     }
                     if (dot) dot.className = 'w-1.5 h-1.5 rounded-full flex-shrink-0 ' + style.dot + (style.pulse ? ' animate-pulse' : '');
-                    if (accent) accent.style.background = style.accent;
+                    // Indexer cards keep their fixed blue accent regardless of
+                    // status, even if one somehow has a live check configured -
+                    // the category rule always wins here.
+                    if (accent && accent.getAttribute('data-indexer') !== '1') accent.style.background = style.accent;
                     if (metrics) metrics.innerHTML = renderMetrics(isUnconfigured ? null : result);
                 });
             } catch (e) {
@@ -359,8 +426,15 @@
         // added/edited provider's "checking" badge would sit there until
         // the next scheduled 60s poll - which reads as "stuck forever" to
         // anyone who (reasonably) doesn't wait a full minute before
-        // reaching for a manual page refresh.
-        document.addEventListener('main:updated', function () { fetchProviderStatuses(); });
+        // reaching for a manual page refresh. Closing the modals here too,
+        // since they live outside <main> and the ajax handler has no way
+        // of knowing one was open for the save that just completed.
+        document.addEventListener('main:updated', function () {
+            fetchProviderStatuses();
+            closeModal('addProviderModal');
+            closeModal('editProviderModal');
+            closeModal('trackingModal');
+        });
 
         fetchProviderStatuses();
         setInterval(fetchProviderStatuses, 60000);

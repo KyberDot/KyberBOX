@@ -108,6 +108,28 @@ async function checkEasynews(username, password) {
   }
 }
 
+async function checkHttpPing(url) {
+  if (!url) return { status: 'unknown', error: 'No URL configured' };
+  try {
+    const start = Date.now();
+    // HEAD first since it's cheaper - some servers reject it outright
+    // though, so GET is the fallback rather than a hard failure. Any
+    // response at all (including 4xx/5xx) still proves the endpoint is
+    // reachable, since this is measuring connectivity/latency, not
+    // checking whether the request itself succeeded.
+    await fetch(url, { method: 'HEAD', signal: AbortSignal.timeout(10000) });
+    return { status: 'online', latency_ms: Date.now() - start };
+  } catch (err) {
+    try {
+      const start2 = Date.now();
+      await fetch(url, { method: 'GET', signal: AbortSignal.timeout(10000) });
+      return { status: 'online', latency_ms: Date.now() - start2 };
+    } catch (err2) {
+      return { status: 'offline', error: err2.message };
+    }
+  }
+}
+
 // provider: a row from admin_providers, with credentials already decrypted
 // onto plaintext fields (apiKey / username / password) by the caller -
 // this module never touches the encrypted columns directly.
@@ -122,18 +144,22 @@ async function checkProvider(provider) {
     case 'tcp':
       if (!provider.host || !provider.port) return { status: 'unknown', error: 'Host/port not configured' };
       return checkTcp(provider.host, provider.port);
+    case 'http_ping':
+      return checkHttpPing(provider.link);
     case 'none':
     default:
       return null; // no live check for this provider - purely manual tracking
   }
 }
 
-async function getProviderStatus(provider) {
+async function getProviderStatus(provider, force = false) {
   if (provider.check_type === 'none') return null;
 
-  const cached = cache.get(provider.id);
-  if (cached && Date.now() - cached.checkedAt < CACHE_TTL_MS) {
-    return cached.data;
+  if (!force) {
+    const cached = cache.get(provider.id);
+    if (cached && Date.now() - cached.checkedAt < CACHE_TTL_MS) {
+      return cached.data;
+    }
   }
 
   const data = await checkProvider(provider);
@@ -145,4 +171,4 @@ function clearProviderCache(providerId) {
   cache.delete(providerId);
 }
 
-module.exports = { checkTcp, checkRealDebrid, checkAllDebrid, checkEasynews, checkProvider, getProviderStatus, clearProviderCache };
+module.exports = { checkTcp, checkRealDebrid, checkAllDebrid, checkEasynews, checkHttpPing, checkProvider, getProviderStatus, clearProviderCache };

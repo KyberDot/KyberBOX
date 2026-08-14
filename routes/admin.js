@@ -2327,8 +2327,9 @@ router.post('/admin/ssh-console/reset-cwd', (req, res) => {
 
 // ---------- Providers ----------
 
-const PROVIDER_CHECK_TYPES = ['real_debrid', 'alldebrid', 'easynews', 'tcp', 'none'];
+const PROVIDER_CHECK_TYPES = ['real_debrid', 'alldebrid', 'easynews', 'tcp', 'http_ping', 'none'];
 const PROVIDER_PLAN_STATUSES = ['unset', 'date', 'lifetime', 'free', 'billed', 'inactive', 'balance_gb', 'balance_tb'];
+const PROVIDER_GROUPS = ['Infrastructure', 'Usenet', 'Torrents'];
 
 // Mirrors the reference app's expiryLabel()/expiryStatus() logic, just
 // computed server-side instead of in the browser - the view can then
@@ -2359,13 +2360,14 @@ function providerTrackingDisplay(p) {
 }
 
 function loadProviders() {
-  const providers = db.prepare('SELECT * FROM admin_providers ORDER BY group_label ASC, sort_order ASC, id ASC').all();
+  const providers = db.prepare('SELECT * FROM admin_providers ORDER BY sort_order ASC, id ASC').all();
   providers.forEach((p) => { p.tracking = providerTrackingDisplay(p); });
-  const groups = {};
-  providers.forEach((p) => {
-    (groups[p.group_label] = groups[p.group_label] || []).push(p);
-  });
-  return { providers, groups };
+  return {
+    providers,
+    infrastructureProviders: providers.filter((p) => p.group_label === 'Infrastructure'),
+    usenetProviders: providers.filter((p) => p.group_label === 'Usenet'),
+    torrentsProviders: providers.filter((p) => p.group_label === 'Torrents'),
+  };
 }
 
 router.get('/admin/providers', (req, res) => {
@@ -2377,7 +2379,7 @@ router.post('/admin/providers', (req, res) => {
   if (!name) return res.status(400).render('error', { message: 'A provider name is required.' });
 
   const icon = String(req.body.icon || '').trim() || '🔌';
-  const groupLabel = String(req.body.group_label || '').trim() || 'Infrastructure';
+  const groupLabel = PROVIDER_GROUPS.includes(req.body.group_label) ? req.body.group_label : 'Infrastructure';
   const typeLabel = String(req.body.type_label || '').trim() || null;
   const checkType = PROVIDER_CHECK_TYPES.includes(req.body.check_type) ? req.body.check_type : 'none';
   const link = String(req.body.link || '').trim() || null;
@@ -2387,19 +2389,20 @@ router.post('/admin/providers', (req, res) => {
   const password = String(req.body.password || '').trim();
   const host = String(req.body.host || '').trim() || null;
   const port = req.body.port ? Number(req.body.port) : null;
+  const activeServers = checkType === 'http_ping' && req.body.active_servers !== '' ? Number(req.body.active_servers) : null;
 
   const maxOrder = db.prepare('SELECT MAX(sort_order) AS m FROM admin_providers WHERE group_label = ?').get(groupLabel);
   const sortOrder = (maxOrder.m == null ? -1 : maxOrder.m) + 1;
 
   db.prepare(
-    `INSERT INTO admin_providers (name, icon, group_label, type_label, check_type, api_key_encrypted, username, password_encrypted, host, port, link, sort_order)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO admin_providers (name, icon, group_label, type_label, check_type, api_key_encrypted, username, password_encrypted, host, port, link, active_servers, sort_order)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     name, icon, groupLabel, typeLabel, checkType,
     apiKey ? encrypt(apiKey) : null,
     username,
     password ? encrypt(password) : null,
-    host, port, link, sortOrder
+    host, port, link, activeServers, sortOrder
   );
 
   res.redirect('/admin/providers');
@@ -2410,13 +2413,14 @@ router.post('/admin/providers/:id/update', (req, res) => {
   if (!name) return res.status(400).render('error', { message: 'A provider name is required.' });
 
   const icon = String(req.body.icon || '').trim() || '🔌';
-  const groupLabel = String(req.body.group_label || '').trim() || 'Infrastructure';
+  const groupLabel = PROVIDER_GROUPS.includes(req.body.group_label) ? req.body.group_label : 'Infrastructure';
   const typeLabel = String(req.body.type_label || '').trim() || null;
   const checkType = PROVIDER_CHECK_TYPES.includes(req.body.check_type) ? req.body.check_type : 'none';
   const link = String(req.body.link || '').trim() || null;
   const username = String(req.body.username || '').trim() || null;
   const host = String(req.body.host || '').trim() || null;
   const port = req.body.port ? Number(req.body.port) : null;
+  const activeServers = checkType === 'http_ping' && req.body.active_servers !== '' ? Number(req.body.active_servers) : null;
 
   // Credentials are only overwritten when a new value is actually typed -
   // leaving the field blank on an edit keeps whatever's already stored,
@@ -2426,18 +2430,18 @@ router.post('/admin/providers/:id/update', (req, res) => {
 
   if (apiKey || password) {
     db.prepare(
-      `UPDATE admin_providers SET name = ?, icon = ?, group_label = ?, type_label = ?, check_type = ?, link = ?, username = ?, host = ?, port = ?,
+      `UPDATE admin_providers SET name = ?, icon = ?, group_label = ?, type_label = ?, check_type = ?, link = ?, username = ?, host = ?, port = ?, active_servers = ?,
        api_key_encrypted = COALESCE(?, api_key_encrypted), password_encrypted = COALESCE(?, password_encrypted) WHERE id = ?`
     ).run(
-      name, icon, groupLabel, typeLabel, checkType, link, username, host, port,
+      name, icon, groupLabel, typeLabel, checkType, link, username, host, port, activeServers,
       apiKey ? encrypt(apiKey) : null,
       password ? encrypt(password) : null,
       req.params.id
     );
   } else {
     db.prepare(
-      `UPDATE admin_providers SET name = ?, icon = ?, group_label = ?, type_label = ?, check_type = ?, link = ?, username = ?, host = ?, port = ? WHERE id = ?`
-    ).run(name, icon, groupLabel, typeLabel, checkType, link, username, host, port, req.params.id);
+      `UPDATE admin_providers SET name = ?, icon = ?, group_label = ?, type_label = ?, check_type = ?, link = ?, username = ?, host = ?, port = ?, active_servers = ? WHERE id = ?`
+    ).run(name, icon, groupLabel, typeLabel, checkType, link, username, host, port, activeServers, req.params.id);
   }
 
   clearProviderCache(Number(req.params.id));
@@ -2483,6 +2487,7 @@ router.post('/admin/providers/:id/move', (req, res) => {
 });
 
 router.get('/admin/providers/status', async (req, res) => {
+  const force = req.query.force === '1' || req.query.force === 'true';
   const providers = db.prepare('SELECT * FROM admin_providers').all();
   const results = {};
 
@@ -2494,7 +2499,7 @@ router.get('/admin/providers/status', async (req, res) => {
       password: p.password_encrypted ? decrypt(p.password_encrypted) : null,
     };
     try {
-      results[p.id] = await getProviderStatus(decrypted);
+      results[p.id] = await getProviderStatus(decrypted, force);
     } catch (err) {
       results[p.id] = { status: 'offline', error: err.message };
     }

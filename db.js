@@ -116,6 +116,7 @@ CREATE TABLE IF NOT EXISTS admin_providers (
   tracking_value TEXT, -- expiry date string, or numeric balance, depending on plan_status
   custom_link TEXT,
   notes TEXT, -- free-text extra info shown as a metric, e.g. server count for a dedicated box
+  active_servers INTEGER, -- shown for http_ping (cloud storage-style) providers - count of active servers/boxes, admin-set
   sort_order INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -436,6 +437,7 @@ ensureColumn('plans', 'boss_wither_beaten', 'boss_wither_beaten INTEGER NOT NULL
 ensureColumn('plan_actions', 'enabled', 'enabled INTEGER NOT NULL DEFAULT 1');
 ensureColumn('user_disabled_actions', 'enabled', 'enabled INTEGER NOT NULL DEFAULT 0');
 ensureColumn('admin_providers', 'plan_name', 'plan_name TEXT');
+ensureColumn('admin_providers', 'active_servers', 'active_servers INTEGER');
 ensureColumn('plans', 'run_timer_status', "run_timer_status TEXT NOT NULL DEFAULT 'stopped'");
 ensureColumn('plans', 'run_timer_started_at', 'run_timer_started_at TEXT');
 ensureColumn('plans', 'run_timer_accumulated_seconds', 'run_timer_accumulated_seconds INTEGER NOT NULL DEFAULT 0');
