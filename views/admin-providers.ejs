@@ -38,41 +38,44 @@
             function providerCard(p, idx, total, isIndexer) {
                 const toneBorder = { active: 'border-emerald-500 text-emerald-400', warning: 'border-amber-500 text-amber-400', inactive: 'border-red-500 text-red-400', lifetime: 'border-sky-500 text-sky-400', unset: 'border-slate-700 border-dashed text-slate-500' }[p.tracking.tone];
                 const accentColor = isIndexer ? '#58a6ff' : (p.check_type === 'none' ? '#334155' : '#475569');
+                const trackingBadge = '<button type="button" onclick="openTrackingModal(' + p.id + ')" class="px-2.5 py-1 rounded-md border font-mono text-[10px] uppercase tracking-wider font-bold hover:opacity-75 transition flex-shrink-0 ' + (isIndexer ? 'border-sky-500 text-sky-400' : toneBorder) + '">' + p.tracking.label + '</button>';
 
                 let html = '<div class="glass rounded-2xl overflow-hidden relative" id="provider-card-' + p.id + '">';
                 html += '<div class="h-[3px] w-full" id="provider-accent-' + p.id + '" data-indexer="' + (isIndexer ? '1' : '0') + '" style="background:' + accentColor + ';"></div>';
-                html += '<div class="p-5">';
+                html += '<div class="p-4' + (isIndexer ? '' : ' sm:p-5') + '">';
 
-                html += '<div class="flex items-start justify-between gap-2 mb-3">';
+                // Indexers have no status/metrics to show, so their whole
+                // card collapses to a single row - icon and name on the
+                // left, the tracking badge and admin controls together on
+                // the right - rather than leaving a near-empty second row
+                // underneath just to hold one small badge.
+                html += '<div class="flex items-center justify-between gap-2' + (isIndexer ? '' : ' mb-3') + '">';
                 html += '<a href="' + (p.custom_link || p.link || '#') + '" target="_blank" class="flex items-center gap-3 min-w-0 hover:opacity-75 transition">';
                 html += '<span class="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-lg flex-shrink-0">' + p.icon + '</span>';
                 html += '<div class="min-w-0"><p class="font-extrabold text-white text-sm uppercase tracking-wide truncate">' + p.name + '</p>';
                 if (p.type_label) html += '<p class="font-mono text-[10px] text-sky-400/60 uppercase tracking-wider truncate mt-0.5">' + p.type_label + '</p>';
                 html += '</div></a>';
 
-                html += '<div class="flex items-center gap-0.5 flex-shrink-0">';
+                html += '<div class="flex items-center gap-1.5 flex-shrink-0">';
+                if (isIndexer) html += trackingBadge;
+                html += '<div class="flex items-center gap-0.5">';
                 html += '<form method="POST" action="/admin/providers/' + p.id + '/move" data-ajax-form><input type="hidden" name="direction" value="up"><button type="submit" class="w-6 h-6 rounded-lg text-slate-500 hover:text-white hover:bg-white/5" title="Move earlier"' + (idx === 0 ? ' disabled style=opacity:0.3' : '') + '><i class="fas fa-arrow-up text-xs"></i></button></form>';
                 html += '<form method="POST" action="/admin/providers/' + p.id + '/move" data-ajax-form><input type="hidden" name="direction" value="down"><button type="submit" class="w-6 h-6 rounded-lg text-slate-500 hover:text-white hover:bg-white/5" title="Move later"' + (idx === total - 1 ? ' disabled style=opacity:0.3' : '') + '><i class="fas fa-arrow-down text-xs"></i></button></form>';
                 html += '<button type="button" onclick="openEditProvider(' + p.id + ')" title="Edit" class="text-slate-500 hover:text-white w-6 h-6 flex items-center justify-center rounded-lg hover:bg-white/5"><i class="fas fa-pen text-xs"></i></button>';
                 html += '<form method="POST" action="/admin/providers/' + p.id + '/delete" data-ajax-form data-confirm="Remove &quot;' + p.name + '&quot;? This can\'t be undone."><button type="submit" class="text-slate-500 hover:text-red-400 w-6 h-6 flex items-center justify-center rounded-lg hover:bg-white/5"><i class="fas fa-trash text-xs"></i></button></form>';
-                html += '</div></div>';
+                html += '</div></div></div>';
 
-                const trackingBadge = '<button type="button" onclick="openTrackingModal(' + p.id + ')" class="px-2.5 py-1 rounded-md border font-mono text-[10px] uppercase tracking-wider font-bold hover:opacity-75 transition ' + (isIndexer ? 'border-sky-500 text-sky-400' : toneBorder) + '">' + p.tracking.label + '</button>';
-
-                if (p.check_type !== 'none') {
-                    html += '<div class="flex items-center justify-between gap-2 mb-3">';
-                    html += '<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-slate-600 text-slate-400 font-mono text-[10px] uppercase tracking-wider font-bold" id="provider-status-' + p.id + '"><span class="w-1.5 h-1.5 rounded-full bg-slate-500 flex-shrink-0" id="provider-status-dot-' + p.id + '"></span>checking</span>';
-                    html += trackingBadge;
-                    html += '</div>';
-                } else {
-                    // No live status for this provider - the tracking badge
-                    // is the only thing in this row, so it sits at the start
-                    // instead of being centered by a justify-between with
-                    // nothing on the other side to balance it.
-                    html += '<div class="flex items-center mb-3">' + trackingBadge + '</div>';
+                if (!isIndexer) {
+                    if (p.check_type !== 'none') {
+                        html += '<div class="flex items-center justify-between gap-2 mb-3">';
+                        html += '<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-slate-600 text-slate-400 font-mono text-[10px] uppercase tracking-wider font-bold" id="provider-status-' + p.id + '"><span class="w-1.5 h-1.5 rounded-full bg-slate-500 flex-shrink-0" id="provider-status-dot-' + p.id + '"></span>checking</span>';
+                        html += trackingBadge;
+                        html += '</div>';
+                    } else {
+                        html += '<div class="flex items-center mb-3">' + trackingBadge + '</div>';
+                    }
+                    html += '<div class="space-y-1 font-mono text-[11px]" id="provider-metrics-' + p.id + '"></div>';
                 }
-
-                html += '<div class="space-y-1 font-mono text-[11px]" id="provider-metrics-' + p.id + '"></div>';
 
                 if (p.active_servers != null) {
                     html += '<div class="flex items-center justify-between font-mono text-[11px] mt-1"><span class="text-slate-500">Active Servers</span><span class="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-bold">' + p.active_servers + '</span></div>';
@@ -291,12 +294,36 @@
             });
         }
 
+        const PLAN_STATUS_COLORS = {
+            unset:      { border: '#475569', bg: 'rgba(71,85,105,0.15)',  text: '#cbd5e1' },
+            date:       { border: '#0ea5e9', bg: 'rgba(14,165,233,0.15)', text: '#bae6fd' },
+            lifetime:   { border: '#8b5cf6', bg: 'rgba(139,92,246,0.15)', text: '#ddd6fe' },
+            free:       { border: '#10b981', bg: 'rgba(16,185,129,0.15)', text: '#a7f3d0' },
+            billed:     { border: '#14b8a6', bg: 'rgba(20,184,166,0.15)', text: '#99f6e4' },
+            inactive:   { border: '#ef4444', bg: 'rgba(239,68,68,0.15)',  text: '#fecaca' },
+            balance_gb: { border: '#f59e0b', bg: 'rgba(245,158,11,0.15)', text: '#fde68a' },
+            balance_tb: { border: '#f97316', bg: 'rgba(249,115,22,0.15)', text: '#fed7aa' },
+        };
+
+        function applyTrackingSelectColor() {
+            const select = document.querySelector('[data-tracking-status-select]');
+            const color = PLAN_STATUS_COLORS[select.value] || PLAN_STATUS_COLORS.unset;
+            // Inline styles rather than Tailwind classes - .input sets its
+            // border color via a CSS shorthand, which would otherwise fight
+            // a utility class for specificity.
+            select.style.borderColor = color.border;
+            select.style.backgroundColor = color.bg;
+            select.style.color = color.text;
+        }
+
         function toggleTrackingValueField() {
             const select = document.querySelector('[data-tracking-status-select]');
             const wrap = document.querySelector('[data-tracking-value-wrap]');
             const label = document.querySelector('[data-tracking-value-label]');
             const input = document.getElementById('trackingValueInput');
             const value = select.value;
+
+            applyTrackingSelectColor();
 
             if (value === 'date') {
                 wrap.classList.remove('hidden');
