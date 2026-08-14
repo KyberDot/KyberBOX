@@ -36,9 +36,18 @@
             // which is what was leaving the tracking badge looking stranded
             // on its own before.
             function providerCard(p, idx, total, isIndexer) {
-                const toneBorder = { active: 'border-emerald-500 text-emerald-400', warning: 'border-amber-500 text-amber-400', inactive: 'border-red-500 text-red-400', lifetime: 'border-sky-500 text-sky-400', unset: 'border-slate-700 border-dashed text-slate-500' }[p.tracking.tone];
+                const planStatusColor = {
+                    unset:      'border-slate-600 text-slate-400',
+                    date:       'border-sky-500 text-sky-400',
+                    lifetime:   'border-violet-500 text-violet-400',
+                    free:       'border-emerald-500 text-emerald-400',
+                    billed:     'border-teal-500 text-teal-400',
+                    inactive:   'border-red-500 text-red-400',
+                    balance_gb: 'border-amber-500 text-amber-400',
+                    balance_tb: 'border-orange-500 text-orange-400',
+                }[p.plan_status] || 'border-slate-600 text-slate-400';
                 const accentColor = isIndexer ? '#58a6ff' : (p.check_type === 'none' ? '#334155' : '#475569');
-                const trackingBadge = '<button type="button" onclick="openTrackingModal(' + p.id + ')" class="px-2.5 py-1 rounded-md border font-mono text-[10px] uppercase tracking-wider font-bold hover:opacity-75 transition flex-shrink-0 ' + toneBorder + '">' + p.tracking.label + '</button>';
+                const trackingBadge = '<button type="button" onclick="openTrackingModal(' + p.id + ')" class="px-2.5 py-1 rounded-md border font-mono text-[10px] uppercase tracking-wider font-bold hover:opacity-75 transition flex-shrink-0 ' + planStatusColor + '">' + p.tracking.label + '</button>';
 
                 let html = '<div class="glass rounded-2xl overflow-hidden relative" id="provider-card-' + p.id + '">';
                 html += '<div class="h-[3px] w-full" id="provider-accent-' + p.id + '" data-indexer="' + (isIndexer ? '1' : '0') + '" style="background:' + accentColor + ';"></div>';
