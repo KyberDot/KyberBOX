@@ -38,7 +38,7 @@
             function providerCard(p, idx, total, isIndexer) {
                 const toneBorder = { active: 'border-emerald-500 text-emerald-400', warning: 'border-amber-500 text-amber-400', inactive: 'border-red-500 text-red-400', lifetime: 'border-sky-500 text-sky-400', unset: 'border-slate-700 border-dashed text-slate-500' }[p.tracking.tone];
                 const accentColor = isIndexer ? '#58a6ff' : (p.check_type === 'none' ? '#334155' : '#475569');
-                const trackingBadge = '<button type="button" onclick="openTrackingModal(' + p.id + ')" class="px-2.5 py-1 rounded-md border font-mono text-[10px] uppercase tracking-wider font-bold hover:opacity-75 transition flex-shrink-0 ' + (isIndexer ? 'border-sky-500 text-sky-400' : toneBorder) + '">' + p.tracking.label + '</button>';
+                const trackingBadge = '<button type="button" onclick="openTrackingModal(' + p.id + ')" class="px-2.5 py-1 rounded-md border font-mono text-[10px] uppercase tracking-wider font-bold hover:opacity-75 transition flex-shrink-0 ' + toneBorder + '">' + p.tracking.label + '</button>';
 
                 let html = '<div class="glass rounded-2xl overflow-hidden relative" id="provider-card-' + p.id + '">';
                 html += '<div class="h-[3px] w-full" id="provider-accent-' + p.id + '" data-indexer="' + (isIndexer ? '1' : '0') + '" style="background:' + accentColor + ';"></div>';
@@ -294,36 +294,12 @@
             });
         }
 
-        const PLAN_STATUS_COLORS = {
-            unset:      { border: '#475569', bg: 'rgba(71,85,105,0.15)',  text: '#cbd5e1' },
-            date:       { border: '#0ea5e9', bg: 'rgba(14,165,233,0.15)', text: '#bae6fd' },
-            lifetime:   { border: '#8b5cf6', bg: 'rgba(139,92,246,0.15)', text: '#ddd6fe' },
-            free:       { border: '#10b981', bg: 'rgba(16,185,129,0.15)', text: '#a7f3d0' },
-            billed:     { border: '#14b8a6', bg: 'rgba(20,184,166,0.15)', text: '#99f6e4' },
-            inactive:   { border: '#ef4444', bg: 'rgba(239,68,68,0.15)',  text: '#fecaca' },
-            balance_gb: { border: '#f59e0b', bg: 'rgba(245,158,11,0.15)', text: '#fde68a' },
-            balance_tb: { border: '#f97316', bg: 'rgba(249,115,22,0.15)', text: '#fed7aa' },
-        };
-
-        function applyTrackingSelectColor() {
-            const select = document.querySelector('[data-tracking-status-select]');
-            const color = PLAN_STATUS_COLORS[select.value] || PLAN_STATUS_COLORS.unset;
-            // Inline styles rather than Tailwind classes - .input sets its
-            // border color via a CSS shorthand, which would otherwise fight
-            // a utility class for specificity.
-            select.style.borderColor = color.border;
-            select.style.backgroundColor = color.bg;
-            select.style.color = color.text;
-        }
-
         function toggleTrackingValueField() {
             const select = document.querySelector('[data-tracking-status-select]');
             const wrap = document.querySelector('[data-tracking-value-wrap]');
             const label = document.querySelector('[data-tracking-value-label]');
             const input = document.getElementById('trackingValueInput');
             const value = select.value;
-
-            applyTrackingSelectColor();
 
             if (value === 'date') {
                 wrap.classList.remove('hidden');
