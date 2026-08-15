@@ -4,7 +4,7 @@
 // actually ran if nobody visited the site for a while. This makes it a
 // genuine background job instead, independent of anyone logging in.
 
-const { applyAutoRenewals, applyManualExpirations, applyExpiryWarnings } = require('./renewals');
+const { applyAutoRenewals, applyManualExpirations, applyExpiryWarnings, applyProviderExpiryWarnings } = require('./renewals');
 const { checkStuckWatch } = require('./stuckWatch');
 const { checkVpnWatch } = require('./vpnWatch');
 
@@ -22,6 +22,12 @@ async function runMaintenanceCycle() {
     await applyExpiryWarnings();
   } catch (err) {
     console.error('[scheduler] expiry warnings failed:', err.message);
+  }
+
+  try {
+    await applyProviderExpiryWarnings();
+  } catch (err) {
+    console.error('[scheduler] provider expiry warnings failed:', err.message);
   }
 
   try {

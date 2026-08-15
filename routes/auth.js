@@ -6,6 +6,8 @@ const rateLimit = require('express-rate-limit');
 const db = require('../db');
 const { getAllSettings, getSiteBaseUrl } = require('../utils/settings');
 const { sendMail } = require('../utils/mailer');
+const { encrypt, decrypt } = require('../utils/crypto');
+const { verifyCode } = require('../utils/totp');
 
 const router = express.Router();
 const RESET_TOKEN_TTL_MS = 30 * 60 * 1000; // 30 minutes
@@ -16,6 +18,14 @@ const loginLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: 'Too many login attempts. Please try again in a few minutes.',
+});
+
+const twoFactorLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: 'Too many attempts. Please try again in a few minutes.',
 });
 
 const forgotPasswordLimiter = rateLimit({
@@ -42,6 +52,85 @@ router.post('/login', loginLimiter, (req, res) => {
     return res.status(401).render('login', { error: genericError });
   }
 
+  if (user.totp_enabled) {
+    // Password is correct, but login isn't complete yet - a separate,
+    // short-lived token that only proves "this request already passed
+    // the password check for this user", not a real session. attachUser
+    // only ever reads kb_session, so this can't accidentally grant
+    // access to anything on its own even if read elsewhere.
+    const pendingToken = jwt.sign({ id: user.id, purpose: '2fa_pending' }, process.env.JWT_SECRET, { expiresIn: '10m' });
+    res.cookie('kb_2fa_pending', pendingToken, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: req.protocol === 'https',
+      maxAge: 10 * 60 * 1000,
+    });
+    return res.redirect('/login/2fa');
+  }
+
+  const token = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET, { expiresIn: '12h' });
+  res.cookie('kb_session', token, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: req.protocol === 'https',
+    maxAge: 12 * 60 * 60 * 1000,
+  });
+
+  if (user.must_change_password) return res.redirect('/change-password');
+  res.redirect(user.role === 'admin' ? '/admin' : '/dashboard');
+});
+
+function getPendingTwoFactorUser(req) {
+  const token = req.cookies.kb_2fa_pending;
+  if (!token) return null;
+  try {
+    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    if (payload.purpose !== '2fa_pending') return null;
+    return db.prepare('SELECT * FROM users WHERE id = ?').get(payload.id);
+  } catch (_) {
+    return null;
+  }
+}
+
+router.get('/login/2fa', (req, res) => {
+  const user = getPendingTwoFactorUser(req);
+  if (!user) return res.redirect('/login');
+  res.render('login-2fa', { error: null });
+});
+
+router.post('/login/2fa', twoFactorLimiter, async (req, res) => {
+  const user = getPendingTwoFactorUser(req);
+  if (!user) return res.redirect('/login');
+
+  const submitted = String(req.body.code || '').trim();
+  let verified = false;
+
+  if (/^\d{6}$/.test(submitted.replace(/\s+/g, ''))) {
+    // Looks like a TOTP code from the authenticator app.
+    const secret = user.totp_secret_encrypted ? decrypt(user.totp_secret_encrypted) : null;
+    if (secret) {
+      const result = await verifyCode(secret, submitted, user.totp_last_time_step);
+      if (result.valid) {
+        db.prepare('UPDATE users SET totp_last_time_step = ? WHERE id = ?').run(result.timeStep, user.id);
+        verified = true;
+      }
+    }
+  } else {
+    // Otherwise, treat it as a one-time recovery code.
+    const codes = user.totp_recovery_codes ? JSON.parse(user.totp_recovery_codes) : [];
+    const matchIndex = codes.findIndex((hash) => bcrypt.compareSync(submitted.toUpperCase(), hash));
+    if (matchIndex !== -1) {
+      codes.splice(matchIndex, 1); // single-use - remove once redeemed
+      db.prepare('UPDATE users SET totp_recovery_codes = ? WHERE id = ?').run(JSON.stringify(codes), user.id);
+      verified = true;
+    }
+  }
+
+  if (!verified) {
+    return res.status(401).render('login-2fa', { error: 'Incorrect code. Please try again.' });
+  }
+
+  res.clearCookie('kb_2fa_pending');
   const token = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET, { expiresIn: '12h' });
   res.cookie('kb_session', token, {
     httpOnly: true,

@@ -52,6 +52,67 @@
             </form>
         </div>
 
+        <!-- Two-Factor Authentication -->
+        <div class="glass rounded-2xl sm:rounded-3xl p-5 sm:p-8 mb-8">
+            <h2 class="text-lg font-bold text-white mb-1"><i class="fas fa-shield-halved mr-2 text-sky-400"></i>Two-Factor Authentication</h2>
+            <p class="text-slate-400 text-sm mb-4">Optional extra layer of security - once enabled, signing in also requires a code from an authenticator app on your phone.</p>
+
+            <% if (twoFactorError) { %>
+                <div class="mb-4 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
+                    <i class="fas fa-triangle-exclamation mr-2"></i><%= twoFactorError %>
+                </div>
+            <% } %>
+
+            <% if (recoveryCodes) { %>
+                <!-- Just confirmed setup - show the one-time recovery codes -->
+                <div class="mb-4 px-4 py-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-sm">
+                    <i class="fas fa-circle-check mr-2"></i>Two-factor authentication is now enabled.
+                </div>
+                <div class="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 mb-4">
+                    <p class="text-amber-400 text-sm font-semibold mb-1"><i class="fas fa-triangle-exclamation mr-1.5"></i>Save your recovery codes now</p>
+                    <p class="text-slate-400 text-xs mb-3">Each code can be used once to sign in if you lose access to your authenticator app. They won't be shown again.</p>
+                    <div class="grid grid-cols-2 gap-2 font-mono text-sm text-white">
+                        <% recoveryCodes.forEach(function(code) { %>
+                            <div class="bg-slate-900/60 rounded-lg px-3 py-2 text-center"><%= code %></div>
+                        <% }); %>
+                    </div>
+                </div>
+                <a href="/account" class="btn-primary py-3 rounded-xl text-sm w-full sm:w-auto px-8 inline-block text-center">I've saved these, done</a>
+
+            <% } else if (twoFactorQr) { %>
+                <!-- Setup in progress - scan QR, confirm with a code -->
+                <div class="grid sm:grid-cols-2 gap-5 items-start mb-4">
+                    <div class="bg-white rounded-xl p-3 w-fit mx-auto sm:mx-0">
+                        <img src="<%= twoFactorQr %>" alt="2FA QR code" class="w-40 h-40">
+                    </div>
+                    <div>
+                        <p class="text-slate-400 text-sm mb-2">Scan this with your authenticator app (Google Authenticator, Authy, 1Password, etc), or enter this key manually:</p>
+                        <p class="font-mono text-xs text-slate-300 bg-slate-900/60 rounded-lg px-3 py-2 break-all"><%= twoFactorManualKey %></p>
+                    </div>
+                </div>
+                <form method="POST" action="/account/2fa/confirm" class="space-y-4">
+                    <input type="text" name="code" required autofocus inputmode="numeric" maxlength="6" class="input text-center text-xl tracking-[0.3em] font-mono" placeholder="000000">
+                    <button type="submit" class="btn-primary py-3 rounded-xl text-sm w-full sm:w-auto px-8">Confirm &amp; Enable</button>
+                </form>
+
+            <% } else if (totpEnabled) { %>
+                <!-- Enabled -->
+                <div class="mb-4 px-4 py-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-sm">
+                    <i class="fas fa-circle-check mr-2"></i>Two-factor authentication is enabled on your account.
+                </div>
+                <form method="POST" action="/account/2fa/disable" class="space-y-4">
+                    <input type="password" name="current_password" required class="input" placeholder="Current password (to confirm)">
+                    <button type="submit" class="btn-outline py-3 rounded-xl text-sm w-full sm:w-auto px-8 border-red-500/40 text-red-400 hover:bg-red-500/10">Disable 2FA</button>
+                </form>
+
+            <% } else { %>
+                <!-- Not enabled -->
+                <form method="POST" action="/account/2fa/setup">
+                    <button type="submit" class="btn-primary py-3 rounded-xl text-sm w-full sm:w-auto px-8">Enable 2FA</button>
+                </form>
+            <% } %>
+        </div>
+
         <!-- Change email -->
         <div class="glass rounded-2xl sm:rounded-3xl p-5 sm:p-8 mb-16">
             <h2 class="text-lg font-bold text-white mb-1"><i class="fas fa-envelope mr-2 text-sky-400"></i>Change Email Address</h2>

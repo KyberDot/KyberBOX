@@ -7,7 +7,7 @@ const { getAllSettings, setSetting, getSiteBaseUrl } = require('../utils/setting
 const { sendMail, isConfigured, notifyResetStarted } = require('../utils/mailer');
 const { testConnection: testTautulliConnection, getWatchHistory, getNowWatching, getAllActivity, getGeoLookup, fetchPosterImage } = require('../utils/tautulli');
 const { syncIncludedPlansForUser } = require('../utils/includedPlans');
-const { londonInputToUtcIso, formatUK } = require('../utils/time');
+const { londonInputToUtcIso, formatUK, formatUKForEmail } = require('../utils/time');
 const { serviceLabel } = require('../utils/labels');
 const { runCommand, getContainerStatuses } = require('../utils/ssh');
 const { upload } = require('../utils/uploads');
@@ -281,7 +281,7 @@ router.post('/admin/plans/:id/maintenance', async (req, res) => {
 
     const siteName = getAllSettings().site_name;
     const label = serviceLabel(plan.service);
-    const resumeLine = resumeAtUtc ? `We expect to resume by <strong>${formatUK(resumeAtUtc)}</strong> (UK time).` : '';
+    const resumeLine = resumeAtUtc ? `We expect to resume by <strong>${formatUKForEmail(resumeAtUtc)}</strong>.` : '';
 
     await Promise.all(
       affected.map((sub) =>
@@ -2455,7 +2455,7 @@ router.post('/admin/providers/:id/tracking', (req, res) => {
   const planName = String(req.body.plan_name || '').trim() || null;
   const notes = String(req.body.notes || '').trim() || null;
 
-  db.prepare('UPDATE admin_providers SET plan_status = ?, tracking_value = ?, custom_link = ?, plan_name = ?, notes = ? WHERE id = ?').run(
+  db.prepare('UPDATE admin_providers SET plan_status = ?, tracking_value = ?, custom_link = ?, plan_name = ?, notes = ?, expiry_warning_sent_at = NULL WHERE id = ?').run(
     planStatus, trackingValue, customLink, planName, notes, req.params.id
   );
 

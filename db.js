@@ -117,6 +117,7 @@ CREATE TABLE IF NOT EXISTS admin_providers (
   custom_link TEXT,
   notes TEXT, -- free-text extra info shown as a metric, e.g. server count for a dedicated box
   active_servers INTEGER, -- shown for http_ping (cloud storage-style) providers - count of active servers/boxes, admin-set
+  expiry_warning_sent_at TEXT, -- last time the admin was emailed that this provider's tracked expiry date is approaching; cleared whenever the tracking info is edited
   sort_order INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -187,6 +188,11 @@ CREATE TABLE IF NOT EXISTS users (
   role TEXT NOT NULL DEFAULT 'subscriber', -- 'admin' | 'subscriber'
   must_change_password INTEGER NOT NULL DEFAULT 0,
   payment_method_id INTEGER REFERENCES payment_methods(id) ON DELETE SET NULL,
+  totp_pending_secret_encrypted TEXT, -- secret generated during setup, not yet confirmed by a valid code
+  totp_secret_encrypted TEXT, -- confirmed, active secret - only set once totp_enabled is true
+  totp_enabled INTEGER NOT NULL DEFAULT 0,
+  totp_recovery_codes TEXT, -- JSON array of bcrypt-hashed single-use backup codes
+  totp_last_time_step INTEGER, -- most recently accepted code's time step, for replay protection
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -438,6 +444,12 @@ ensureColumn('plan_actions', 'enabled', 'enabled INTEGER NOT NULL DEFAULT 1');
 ensureColumn('user_disabled_actions', 'enabled', 'enabled INTEGER NOT NULL DEFAULT 0');
 ensureColumn('admin_providers', 'plan_name', 'plan_name TEXT');
 ensureColumn('admin_providers', 'active_servers', 'active_servers INTEGER');
+ensureColumn('admin_providers', 'expiry_warning_sent_at', 'expiry_warning_sent_at TEXT');
+ensureColumn('users', 'totp_pending_secret_encrypted', 'totp_pending_secret_encrypted TEXT');
+ensureColumn('users', 'totp_secret_encrypted', 'totp_secret_encrypted TEXT');
+ensureColumn('users', 'totp_enabled', 'totp_enabled INTEGER NOT NULL DEFAULT 0');
+ensureColumn('users', 'totp_recovery_codes', 'totp_recovery_codes TEXT');
+ensureColumn('users', 'totp_last_time_step', 'totp_last_time_step INTEGER');
 ensureColumn('plans', 'run_timer_status', "run_timer_status TEXT NOT NULL DEFAULT 'stopped'");
 ensureColumn('plans', 'run_timer_started_at', 'run_timer_started_at TEXT');
 ensureColumn('plans', 'run_timer_accumulated_seconds', 'run_timer_accumulated_seconds INTEGER NOT NULL DEFAULT 0');

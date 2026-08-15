@@ -18,7 +18,7 @@ function parseStoredDate(value) {
   return isNaN(date.getTime()) ? null : date;
 }
 
-/** Full UK date + time, e.g. "17 Jul 2026, 14:30 BST". */
+/** Full UK date + time, e.g. "17 Jul 2026, 14:30 BST". Used across the UI (logs, tickets, health page, etc) - kept as-is, unrelated to the email-specific formatting below. */
 function formatUK(value) {
   const date = parseStoredDate(value);
   if (!date) return '';
@@ -32,6 +32,34 @@ function formatUK(value) {
     hour12: false,
     timeZoneName: 'short',
   }).format(date);
+}
+
+/**
+ * UK date + time formatted specifically for outgoing emails, e.g.
+ * "17 Jul 2026, 14:30 (UK)" - no BST/GMT abbreviation, just a fixed "(UK)"
+ * label. Deliberately built from individual date parts (formatToParts)
+ * and assembled by hand here, rather than a single combined .format()
+ * call with timeZoneName like formatUK() above - on at least one
+ * production Node/ICU build, including timeZoneName in that combined
+ * call was producing a malformed offset string (and possibly corrupting
+ * neighbouring fields like the year). Requesting each part separately
+ * and concatenating them ourselves avoids relying on ICU's internal
+ * pattern-combining logic for the parts that were actually misbehaving.
+ */
+function formatUKForEmail(value) {
+  const date = parseStoredDate(value);
+  if (!date) return '';
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: TIME_ZONE,
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(date).reduce((acc, p) => { acc[p.type] = p.value; return acc; }, {});
+
+  return `${parts.day} ${parts.month} ${parts.year}, ${parts.hour}:${parts.minute} (UK)`;
 }
 
 /** UK date only, e.g. "17 Jul 2026" - for things like subscription expiry. */
@@ -114,4 +142,4 @@ function utcToLondonInputValue(utcValue) {
   return `${parts.year}-${parts.month}-${parts.day}T${hour}:${parts.minute}`;
 }
 
-module.exports = { TIME_ZONE, formatUK, formatUKDate, formatMoney, nowUK, parseStoredDate, londonInputToUtcIso, utcToLondonInputValue };
+module.exports = { TIME_ZONE, formatUK, formatUKForEmail, formatUKDate, formatMoney, nowUK, parseStoredDate, londonInputToUtcIso, utcToLondonInputValue };

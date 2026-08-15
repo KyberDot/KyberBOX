@@ -128,4 +128,24 @@ async function notifyAdminVpnFailure(admins, serviceLabel, containerName) {
   ).catch(() => {});
 }
 
-module.exports = { sendMail, isConfigured, getTransporter, notifyResetStarted, notifyAutoResetStarted, notifyAdminVpnFailure };
+async function notifyAdminProviderExpiring(admins, provider, daysLeft) {
+  if (!admins || admins.length === 0) return;
+  const dayWord = daysLeft === 1 ? 'day' : 'days';
+  const dueText = daysLeft <= 0 ? 'has already expired' : `expires in ${daysLeft} ${dayWord}`;
+
+  await Promise.all(
+    admins.map((admin) =>
+      sendMail({
+        to: admin.email,
+        subject: `${provider.name} ${dueText}`,
+        bodyHtml: `
+          <p>Hi ${admin.name},</p>
+          <p><strong>${provider.name}</strong> (${provider.group_label}) ${dueText}${provider.tracking_value ? ` on <strong>${provider.tracking_value}</strong>` : ''}.</p>
+          <p>Check the Providers page to renew it or update its tracked expiry date.</p>
+        `,
+      })
+    )
+  ).catch(() => {});
+}
+
+module.exports = { sendMail, isConfigured, getTransporter, notifyResetStarted, notifyAutoResetStarted, notifyAdminVpnFailure, notifyAdminProviderExpiring };

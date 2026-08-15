@@ -1,5 +1,5 @@
 const db = require('../db');
-const { sendMail } = require('./mailer');
+const { sendMail, notifyAdminProviderExpiring } = require('./mailer');
 const { getAllSettings } = require('./settings');
 const { syncIncludedPlansForUser } = require('./includedPlans');
 
@@ -125,4 +125,42 @@ async function applyExpiryWarnings() {
   );
 }
 
-module.exports = { applyAutoRenewals, applyManualExpirations, applyExpiryWarnings };
+/**
+ * Admin equivalent of applyExpiryWarnings above, but for Providers page
+ * entries tracking an actual expiry date (plan_status = 'date') rather
+ * than subscriber subscriptions. Same idea: warn 2 days out, once, and
+ * don't re-send until the tracked date itself changes (see the tracking
+ * route, which clears expiry_warning_sent_at whenever it's edited).
+ */
+async function applyProviderExpiryWarnings() {
+  const due = db
+    .prepare(
+      `SELECT * FROM admin_providers
+       WHERE plan_status = 'date'
+         AND tracking_value IS NOT NULL
+         AND tracking_value <= date('now', '+2 days')
+         AND expiry_warning_sent_at IS NULL`
+    )
+    .all();
+
+  if (due.length === 0) return;
+
+  const admins = db.prepare("SELECT name, email FROM users WHERE role = 'admin'").all();
+  if (admins.length === 0) return;
+
+  const markSent = db.prepare(`UPDATE admin_providers SET expiry_warning_sent_at = datetime('now') WHERE id = ?`);
+  const today = new Date(new Date().toISOString().slice(0, 10) + 'T00:00:00Z');
+
+  await Promise.all(
+    due.map(async (provider) => {
+      const expiry = new Date(String(provider.tracking_value).slice(0, 10) + 'T00:00:00Z');
+      const daysLeft = Math.round((expiry - today) / (1000 * 60 * 60 * 24));
+
+      await notifyAdminProviderExpiring(admins, provider, daysLeft).catch(() => {}); // best-effort - never let a mail hiccup block marking this as handled
+
+      markSent.run(provider.id);
+    })
+  );
+}
+
+module.exports = { applyAutoRenewals, applyManualExpirations, applyExpiryWarnings, applyProviderExpiryWarnings };
