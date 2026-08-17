@@ -2251,7 +2251,9 @@ router.post('/admin/health/containers/bulk-action', async (req, res) => {
 // single process (no horizontal scaling), so this is safe and avoids extra
 // schema just to track "is a reset currently running".
 router.post('/admin/health/full-reset', (req, res) => {
-  const result = triggerFullReset('Admin: Full Reset & Update', req.user.id);
+  const withUpdate = req.body.with_update === '1' || req.body.with_update === undefined; // default to update, in case an older cached page still posts with no body at all
+  const source = withUpdate ? 'Admin: Full Reset & Update' : 'Admin: Full Reset';
+  const result = triggerFullReset(source, req.user.id, null, withUpdate);
   const status = result.ok ? 200 : (result.message.includes('already in progress') ? 409 : 400);
   res.status(status).json(result);
 });

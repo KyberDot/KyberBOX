@@ -39,8 +39,8 @@
                 <button type="button" id="bulkModeToggle" onclick="toggleBulkMode()" class="btn-outline px-4 py-2.5 rounded-xl text-sm">
                     <i class="fas fa-check-double mr-2"></i>Bulk Actions
                 </button>
-                <button type="button" onclick="confirmFullReset()" class="px-4 py-2.5 rounded-xl text-sm bg-red-600 hover:bg-red-500 text-white font-bold transition">
-                    <i class="fas fa-triangle-exclamation mr-2"></i>Full Reset &amp; Update
+                <button type="button" onclick="openModal('fullResetChoiceModal')" class="px-4 py-2.5 rounded-xl text-sm bg-red-600 hover:bg-red-500 text-white font-bold transition">
+                    <i class="fas fa-triangle-exclamation mr-2"></i>Full Reset
                 </button>
                 <button type="button" onclick="openModal('addContainerModal')" class="btn-primary px-5 py-2.5 rounded-xl text-sm">
                     <i class="fas fa-plus mr-2"></i>Add Container
@@ -207,6 +207,28 @@
                     </tbody>
                 </table>
             <% } %>
+        </div>
+
+        <!-- Full Reset Choice Modal -->
+        <div id="fullResetChoiceModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden items-center justify-center z-50 px-4 py-8 overflow-y-auto">
+            <div class="glass rounded-3xl p-6 sm:p-8 max-w-lg w-full my-auto">
+                <div class="flex items-center justify-between mb-2">
+                    <h3 class="text-lg font-bold text-white"><i class="fas fa-triangle-exclamation mr-2 text-red-400"></i>Full Reset</h3>
+                    <button type="button" onclick="closeModal('fullResetChoiceModal')" title="Close" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5"><i class="fas fa-xmark"></i></button>
+                </div>
+                <p class="text-slate-400 text-sm mb-5">Both options take the entire stack offline briefly. Choose whether to also update every image first.</p>
+
+                <div class="grid gap-3">
+                    <button type="button" onclick="startFullReset(false)" class="text-left p-4 rounded-xl border border-white/10 hover:border-sky-500/40 hover:bg-white/5 transition">
+                        <p class="font-bold text-white text-sm mb-1"><i class="fas fa-rotate mr-2 text-sky-400"></i>Restart Only <span class="text-slate-500 font-normal">· ~4–8 min</span></p>
+                        <p class="text-slate-400 text-xs">Stops and brings the stack back up on the images already on disk. Faster - no images are downloaded.</p>
+                    </button>
+                    <button type="button" onclick="startFullReset(true)" class="text-left p-4 rounded-xl border border-white/10 hover:border-red-500/40 hover:bg-white/5 transition">
+                        <p class="font-bold text-white text-sm mb-1"><i class="fas fa-cloud-arrow-down mr-2 text-red-400"></i>Reset &amp; Update <span class="text-slate-500 font-normal">· ~5–15 min</span></p>
+                        <p class="text-slate-400 text-xs">Also pulls the latest version of every image first, retrying up to 5 times if any image fails to pull before continuing anyway. Takes longer, especially on the first run after a while.</p>
+                    </button>
+                </div>
+            </div>
         </div>
 
         <!-- Add Container Modal -->
@@ -460,30 +482,54 @@
             }
         }
 
-        // ---------- Full Reset & Update ----------
+        // ---------- Full Reset ----------
         let fullResetPollTimer = null;
 
-        async function confirmFullReset() {
-            if (!confirm('This will run "docker compose down", then "pull", then "up -d" for your ENTIRE stack, in that order. Every container in it will go offline briefly. Continue?')) return;
-            if (!confirm('Are you sure? This affects everything, not just one container. This can take several minutes, especially the pull step.')) return;
+        // Mirrors the backend's phase/pullAttempt tracking (see
+        // utils/fullReset.js) so the banner can show exactly what's
+        // happening right now - including which pull attempt it's on and
+        // whether the previous one just failed - rather than a static
+        // "running in the background" message for the whole duration.
+        function fullResetPhaseMessage(state) {
+            if (state.phase === 'down') return 'Stopping the stack…';
+            if (state.phase === 'pull') {
+                if (state.pullAttempt <= 1) return 'Pulling the latest images (attempt 1/' + state.pullMaxAttempts + ')…';
+                return 'Pull attempt ' + (state.pullAttempt - 1) + '/' + state.pullMaxAttempts + ' failed — reattempting (' + state.pullAttempt + '/' + state.pullMaxAttempts + ')…';
+            }
+            if (state.phase === 'up') return 'Starting the stack back up…';
+            return 'Running in the background — this can take several minutes.';
+        }
+
+        async function startFullReset(withUpdate) {
+            closeModal('fullResetChoiceModal');
+
+            const confirmMsg = withUpdate
+                ? 'This will run "docker compose down", then "pull" (retrying up to 5 times if an image fails), then "up -d" for your ENTIRE stack. Every container in it will go offline briefly. Continue?'
+                : 'This will run "docker compose down" then "up -d" for your ENTIRE stack - no images are pulled. Every container will go offline briefly. Continue?';
+            if (!confirm(confirmMsg)) return;
+            if (!confirm('Are you sure? This affects everything, not just one container. Expect roughly ' + (withUpdate ? '5–15 minutes' : '4–8 minutes') + '.')) return;
 
             const resultBox = document.getElementById('fullResetResult');
             resultBox.classList.remove('hidden');
             resultBox.className = 'text-sm rounded-xl p-4 mb-6 bg-amber-500/10 border border-amber-500/30 text-amber-400';
-            resultBox.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Starting full reset…';
+            resultBox.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Starting' + (withUpdate ? ' full reset' : ' reset') + '…';
 
             try {
-                const res = await fetch('/admin/health/full-reset', { method: 'POST' });
+                const res = await fetch('/admin/health/full-reset', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: 'with_update=' + (withUpdate ? '1' : '0'),
+                });
                 const data = await res.json();
 
                 if (!res.ok || (!data.ok && !data.started)) {
                     resultBox.className = 'text-sm rounded-xl p-4 mb-6 bg-red-500/10 border border-red-500/30 text-red-400';
-                    resultBox.textContent = data.message || 'Could not start the full reset.';
-                    showToast(data.message || 'Could not start the full reset.', 'error');
+                    resultBox.textContent = data.message || 'Could not start the reset.';
+                    showToast(data.message || 'Could not start the reset.', 'error');
                     return;
                 }
 
-                resultBox.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Running in the background — this can take several minutes. You can navigate away; it keeps running on the server either way.';
+                resultBox.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Starting…';
                 pollFullResetStatus();
             } catch (e) {
                 resultBox.className = 'text-sm rounded-xl p-4 mb-6 bg-red-500/10 border border-red-500/30 text-red-400';
@@ -502,13 +548,20 @@
                     const data = await res.json();
 
                     if (data.running) {
-                        return; // still going - keep polling, leave the "running" message as-is
+                        // Keep the banner live and phase-aware while it's still going,
+                        // rather than a static message for the whole duration - this is
+                        // what actually shows "pull attempt 2/5" etc as it happens.
+                        resultBox.classList.remove('hidden');
+                        resultBox.className = 'text-sm rounded-xl p-4 mb-6 bg-amber-500/10 border border-amber-500/30 text-amber-400';
+                        resultBox.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>' + fullResetPhaseMessage(data);
+                        return;
                     }
 
                     clearInterval(fullResetPollTimer);
                     fullResetPollTimer = null;
 
                     if (data.lastResult) {
+                        resultBox.classList.remove('hidden');
                         resultBox.className = 'text-sm rounded-xl p-4 mb-6 ' + (data.lastResult.ok
                             ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400'
                             : 'bg-red-500/10 border border-red-500/30 text-red-400');
@@ -517,7 +570,9 @@
                     }
                     refreshHealth();
                 } catch (e) {
-                    // transient network hiccup while polling - keep trying, don't clear the interval
+                    // transient network hiccup while polling - keep trying, don't clear the interval.
+                    // This also covers the server itself briefly restarting mid-reset: the poll
+                    // just keeps failing silently and picks back up once it responds again.
                 }
             };
 
@@ -525,18 +580,31 @@
             fullResetPollTimer = setInterval(check, 5000);
         }
 
-        // If a reset was already running when this page loaded (e.g. it was
-        // started, then the page got reloaded/reopened), pick up polling for it.
-        (async function checkForInProgressReset() {
+        // Runs on every page load, independent of whether THIS tab/session
+        // started the reset - the state lives on the server (see
+        // utils/fullReset.js), not in this page's own JS, so navigating
+        // away and coming back (or opening the page fresh) always picks up
+        // wherever things currently stand, running or already finished.
+        (async function checkFullResetOnLoad() {
             try {
                 const res = await fetch('/admin/health/full-reset/status');
                 const data = await res.json();
+                const resultBox = document.getElementById('fullResetResult');
+
                 if (data.running) {
-                    const resultBox = document.getElementById('fullResetResult');
                     resultBox.classList.remove('hidden');
                     resultBox.className = 'text-sm rounded-xl p-4 mb-6 bg-amber-500/10 border border-amber-500/30 text-amber-400';
-                    resultBox.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>A full reset is already running in the background — this can take several minutes.';
+                    resultBox.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>' + fullResetPhaseMessage(data);
                     pollFullResetStatus();
+                } else if (data.lastResult) {
+                    // A reset finished while nobody was watching this page -
+                    // still worth surfacing rather than only ever showing up
+                    // for whoever happened to have the tab open at the time.
+                    resultBox.classList.remove('hidden');
+                    resultBox.className = 'text-sm rounded-xl p-4 mb-6 ' + (data.lastResult.ok
+                        ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400'
+                        : 'bg-red-500/10 border border-red-500/30 text-red-400');
+                    resultBox.textContent = data.lastResult.message;
                 }
             } catch (e) {
                 // ignore - not critical on page load

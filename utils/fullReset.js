@@ -9,10 +9,60 @@ const { getAllSettings } = require('./settings');
 const { startReset, endReset, getResetState } = require('./resetLock');
 const { notifyResetStarted, notifyAutoResetStarted } = require('./mailer');
 
-let fullResetState = { running: false, lastResult: null };
+const PULL_MAX_ATTEMPTS = 5;
+
+// phase is null when idle, otherwise 'down' | 'pull' | 'up' - lets the
+// frontend show exactly what's happening right now (including which pull
+// attempt it's on) rather than just a generic "running" spinner, and lets
+// it resume showing the right thing on page load/reload rather than only
+// ever knowing about a reset it personally started.
+let fullResetState = { running: false, phase: null, pullAttempt: 0, pullMaxAttempts: PULL_MAX_ATTEMPTS, lastResult: null };
 
 function getFullResetState() {
   return fullResetState;
+}
+
+// Runs down, then (if withUpdate) pull with up to PULL_MAX_ATTEMPTS
+// retries, then up -d - always, regardless of whether pull ultimately
+// succeeded. Previously this was one combined shell command
+// ("down && pull && up"); running each step as its own SSH call is what
+// makes the pull retry loop possible, since each attempt's success/failure
+// needs to be inspected individually to decide whether to try again.
+async function runResetSequence(target, safePath, withUpdate) {
+  let combinedOutput = '';
+
+  fullResetState = { running: true, phase: 'down', pullAttempt: 0, pullMaxAttempts: PULL_MAX_ATTEMPTS, lastResult: null };
+  const downResult = await runCommand(target, `cd '${safePath}' && docker compose down`, 5 * 60 * 1000);
+  combinedOutput += downResult.output;
+  if (!downResult.success) {
+    return { success: false, output: combinedOutput, pullFailedAfterRetries: false };
+  }
+
+  let pullFailedAfterRetries = false;
+  if (withUpdate) {
+    let pullSucceeded = false;
+    for (let attempt = 1; attempt <= PULL_MAX_ATTEMPTS; attempt++) {
+      fullResetState = { running: true, phase: 'pull', pullAttempt: attempt, pullMaxAttempts: PULL_MAX_ATTEMPTS, lastResult: null };
+      const pullResult = await runCommand(target, `cd '${safePath}' && docker compose pull`, 10 * 60 * 1000);
+      combinedOutput += `\n\n--- Pull attempt ${attempt}/${PULL_MAX_ATTEMPTS} ---\n${pullResult.output}`;
+      if (pullResult.success) {
+        pullSucceeded = true;
+        break;
+      }
+      // Otherwise fall through and try again, up to PULL_MAX_ATTEMPTS -
+      // most retry failures here are transient (registry timeout, rate
+      // limit) and later layers are usually already cached locally from
+      // the previous attempt, so retries are typically much faster than
+      // the first one.
+    }
+    if (!pullSucceeded) pullFailedAfterRetries = true;
+  }
+
+  fullResetState = { running: true, phase: 'up', pullAttempt: 0, pullMaxAttempts: PULL_MAX_ATTEMPTS, lastResult: null };
+  const upResult = await runCommand(target, `cd '${safePath}' && docker compose up -d`, 5 * 60 * 1000);
+  combinedOutput += `\n\n--- Up ---\n${upResult.output}`;
+
+  return { success: upResult.success, output: combinedOutput, pullFailedAfterRetries };
 }
 
 // adminUserId may be null for an automated trigger (no person actually
@@ -24,7 +74,9 @@ function getFullResetState() {
 // (e.g. "Plex", "Jellyfin") - passed explicitly by callers that know it,
 // rather than parsed back out of the human-readable source string, which
 // would be fragile if that wording ever changes.
-function triggerFullReset(source, adminUserId, serviceLabel) {
+// withUpdate controls whether images are pulled first (down, pull, up) or
+// this is just a restart (down, up) with no pull step at all.
+function triggerFullReset(source, adminUserId, serviceLabel, withUpdate = true) {
   const globalState = getResetState();
   if (globalState.active) {
     return { ok: false, message: `A reset is already in progress (${globalState.source || 'another action'}) - wait for it to finish first.` };
@@ -47,9 +99,8 @@ function triggerFullReset(source, adminUserId, serviceLabel) {
   }
 
   const safePath = composePath.replace(/'/g, `'"'"'`);
-  const command = `cd '${safePath}' && docker compose down && docker compose pull && docker compose up -d`;
 
-  fullResetState = { running: true, lastResult: null };
+  fullResetState = { running: true, phase: 'down', pullAttempt: 0, pullMaxAttempts: PULL_MAX_ATTEMPTS, lastResult: null };
   startReset(source);
 
   const allActiveSubscribers = db
@@ -69,34 +120,37 @@ function triggerFullReset(source, adminUserId, serviceLabel) {
   // manual reset email here would be confusing since nobody actually
   // clicked anything.
   if (source.startsWith('Auto:')) {
-    notifyAutoResetStarted(allActiveSubscribers, serviceLabel);
+    notifyAutoResetStarted(allActiveSubscribers, serviceLabel, withUpdate);
   } else {
-    notifyResetStarted(allActiveSubscribers);
+    notifyResetStarted(allActiveSubscribers, withUpdate);
   }
 
-  runCommand(target, command, 15 * 60 * 1000)
+  runResetSequence(target, safePath, withUpdate)
     .then((result) => {
       db.prepare(
         'INSERT INTO admin_health_log (admin_user_id, container_name, action, success, output) VALUES (?, ?, ?, ?, ?)'
       ).run(resolvedAdminId, 'ALL (full stack)', source, result.success ? 1 : 0, result.output);
 
-      fullResetState = {
-        running: false,
-        lastResult: {
-          ok: result.success,
-          message: result.success
-            ? 'Full reset complete: stack was taken down, images pulled, and brought back up.'
-            : `Full reset failed: ${result.output}`,
-        },
-      };
+      let message;
+      if (!result.success) {
+        message = `Full reset failed: ${result.output}`;
+      } else if (result.pullFailedAfterRetries) {
+        message = `Reset complete and the stack is back up, but pulling images failed after ${PULL_MAX_ATTEMPTS} attempts (registry timeout or similar) - some containers are running their previous version. Check the log below and try again shortly to pick up the update.`;
+      } else if (withUpdate) {
+        message = 'Full reset complete: stack was taken down, images pulled, and brought back up.';
+      } else {
+        message = 'Reset complete: stack was taken down and brought back up.';
+      }
+
+      fullResetState = { running: false, phase: null, pullAttempt: 0, pullMaxAttempts: PULL_MAX_ATTEMPTS, lastResult: { ok: result.success, message } };
       endReset();
     })
     .catch((err) => {
-      fullResetState = { running: false, lastResult: { ok: false, message: `Full reset failed: ${err.message}` } };
+      fullResetState = { running: false, phase: null, pullAttempt: 0, pullMaxAttempts: PULL_MAX_ATTEMPTS, lastResult: { ok: false, message: `Full reset failed: ${err.message}` } };
       endReset();
     });
 
-  return { ok: true, started: true, message: 'Full reset started in the background — this can take several minutes.' };
+  return { ok: true, started: true, message: 'Reset started in the background — this can take several minutes.' };
 }
 
 module.exports = { triggerFullReset, getFullResetState };

@@ -72,26 +72,30 @@ async function sendMail({ to, subject, bodyHtml }) {
  * subscriber-triggered danger action (scoped to that plan's other
  * subscribers) - same wording either way, best-effort, never throws.
  */
-async function notifyResetStarted(recipients) {
+async function notifyResetStarted(recipients, withUpdate = true) {
   if (!recipients || recipients.length === 0) return;
+  const window = withUpdate ? '5–15 minutes' : '4–8 minutes';
+  const subject = withUpdate ? 'Scheduled Server Update In Progress' : 'Scheduled Server Reset In Progress';
+  const introLine = withUpdate ? 'A server update is currently in progress.' : 'A server reset is currently in progress.';
 
   await Promise.all(
     recipients.map((person) =>
       sendMail({
         to: person.email,
-        subject: 'Scheduled Server Reset In Progress',
+        subject,
         bodyHtml: `
           <p>Hi ${person.name},</p>
-          <p>A server reset is currently in progress. Services may be briefly interrupted while this completes.</p>
-          <p>We expect to resume within <strong>5–15 minutes</strong>. Apologies for the inconvenience.</p>
+          <p>${introLine} Services may be briefly interrupted while this completes.</p>
+          <p>We expect to resume within <strong>${window}</strong>. Apologies for the inconvenience.</p>
         `,
       })
     )
   ).catch(() => {}); // best-effort - never let a mail hiccup affect the reset itself
 }
 
-async function notifyAutoResetStarted(recipients, serviceLabel) {
+async function notifyAutoResetStarted(recipients, serviceLabel, withUpdate = true) {
   if (!recipients || recipients.length === 0) return;
+  const window = withUpdate ? '5–15 minutes' : '4–8 minutes';
 
   const serviceMention = serviceLabel ? `with <strong>${serviceLabel}</strong>` : 'with one of the services';
 
@@ -103,7 +107,7 @@ async function notifyAutoResetStarted(recipients, serviceLabel) {
         bodyHtml: `
           <p>Hi ${person.name},</p>
           <p>Our monitoring detected an issue ${serviceMention} and is automatically restarting the affected systems to fix it. Services may be briefly interrupted while this completes.</p>
-          <p>We expect to resume within <strong>5–15 minutes</strong>. No action is needed on your end. Apologies for the inconvenience.</p>
+          <p>We expect to resume within <strong>${window}</strong>. No action is needed on your end. Apologies for the inconvenience.</p>
         `,
       })
     )
