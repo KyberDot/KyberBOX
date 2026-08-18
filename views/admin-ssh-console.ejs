@@ -33,7 +33,7 @@
                         <button type="button" id="termReconnectBtn" onclick="connectTerminal()" class="hidden text-xs px-3 py-1.5 rounded-lg btn-outline">
                             <i class="fas fa-rotate mr-1.5"></i>Reconnect
                         </button>
-                        <button type="button" onclick="term.clear()" title="Clear screen" class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-white/5">
+                        <button type="button" onclick="term && term.clear()" title="Clear screen" class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-white/5">
                             <i class="fas fa-broom"></i>
                         </button>
                     </div>
@@ -65,18 +65,25 @@
 
     <% if (sshConfigured) { %>
     <script>
-        const term = new Terminal({
-            cursorBlink: true,
-            fontSize: 14,
-            fontFamily: 'Menlo, Monaco, "Courier New", monospace',
-            theme: {
-                background: '#0b1120',
-                foreground: '#e2e8f0',
-                cursor: '#38bdf8',
-                selectionBackground: '#38bdf844',
-            },
-        });
-        term.open(document.getElementById('terminalContainer'));
+        let term = null;
+        let initError = null;
+        try {
+            if (typeof Terminal === 'undefined') throw new Error('The terminal library failed to load (likely blocked by a network filter, ad-blocker, or content security policy).');
+            term = new Terminal({
+                cursorBlink: true,
+                fontSize: 14,
+                fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+                theme: {
+                    background: '#0b1120',
+                    foreground: '#e2e8f0',
+                    cursor: '#38bdf8',
+                    selectionBackground: '#38bdf844',
+                },
+            });
+            term.open(document.getElementById('terminalContainer'));
+        } catch (e) {
+            initError = e;
+        }
 
         let ws = null;
         let measuredCell = null; // { width, height } in px, for the manual fit calculation below
@@ -101,6 +108,7 @@
         }
 
         function fitTerminal() {
+            if (!term) return null;
             const container = document.getElementById('terminalContainer');
             if (!container) return null;
             if (!measuredCell) measuredCell = measureCell();
@@ -121,9 +129,34 @@
             document.getElementById('termReconnectBtn').classList.toggle('hidden', tone !== 'disconnected' && tone !== 'error');
         }
 
+        const CONNECT_TIMEOUT_MS = 12000;
+        let connectTimeoutTimer = null;
+        let hadError = false; // so onclose (which fires right after onerror on a failed connection) doesn't stomp over a more specific error message with a generic "Disconnected"
+
         function connectTerminal() {
+            if (initError) {
+                setStatus('Failed to load terminal', 'error');
+                if (term) term.write('\r\n\x1b[31m' + initError.message + '\x1b[0m\r\n');
+                return;
+            }
+
             if (ws) { try { ws.close(); } catch (e) {} }
+            hadError = false;
             setStatus('Connecting…', 'connecting');
+
+            clearTimeout(connectTimeoutTimer);
+            connectTimeoutTimer = setTimeout(function () {
+                // Covers the case where the connection just silently never
+                // completes - no onopen, no onerror, no onclose at all (a
+                // common symptom when a reverse proxy in front of this app
+                // isn't configured to forward WebSocket upgrade requests).
+                // Without this, the page would otherwise sit on
+                // "Connecting…" forever with zero feedback.
+                hadError = true;
+                setStatus('Connection timed out', 'error');
+                if (term) term.write('\r\n\x1b[31mConnection timed out. If this keeps happening, check that your reverse proxy (if any) is configured to forward WebSocket upgrade requests.\x1b[0m\r\n');
+                if (ws) { try { ws.close(); } catch (e) {} }
+            }, CONNECT_TIMEOUT_MS);
 
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             ws = new WebSocket(protocol + '//' + window.location.host + '/admin/ssh-console/ws');
@@ -131,6 +164,7 @@
             ws.onmessage = function (event) {
                 const msg = JSON.parse(event.data);
                 if (msg.type === 'ready') {
+                    clearTimeout(connectTimeoutTimer);
                     setStatus('Connected', 'connected');
                     measuredCell = null; // re-measure now that real content may be about to render
                     setTimeout(() => {
@@ -141,23 +175,30 @@
                 } else if (msg.type === 'data') {
                     term.write(msg.data);
                 } else if (msg.type === 'error') {
+                    clearTimeout(connectTimeoutTimer);
+                    hadError = true;
                     setStatus('Error', 'error');
                     term.write('\r\n\x1b[31m' + msg.message + '\x1b[0m\r\n');
                 }
             };
 
             ws.onclose = function () {
-                setStatus('Disconnected', 'disconnected');
+                clearTimeout(connectTimeoutTimer);
+                if (!hadError) setStatus('Disconnected', 'disconnected');
             };
 
             ws.onerror = function () {
+                clearTimeout(connectTimeoutTimer);
+                hadError = true;
                 setStatus('Connection error', 'error');
             };
         }
 
-        term.onData(function (data) {
-            if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'input', data: data }));
-        });
+        if (term) {
+            term.onData(function (data) {
+                if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'input', data: data }));
+            });
+        }
 
         let resizeTimer = null;
         window.addEventListener('resize', function () {
