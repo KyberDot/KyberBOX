@@ -3,59 +3,56 @@
 <head>
     <% pageTitle = 'SSH Console' %>
     <%- include('partials/head') %>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/xterm/5.5.0/xterm.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xterm/5.5.0/xterm.min.js"></script>
+    <style>
+        .xterm { padding: 12px; height: 100%; }
+        .xterm-viewport { border-radius: 0 0 1rem 1rem; }
+    </style>
 </head>
 <body class="antialiased overflow-x-hidden">
     <%- include('partials/nav') %>
 
     <main class="max-w-4xl mx-auto px-4 sm:px-6 py-8 sm:py-10 pb-24">
         <h1 class="text-2xl sm:text-3xl font-extrabold mb-2">SSH Console</h1>
-        <p class="text-slate-400 text-sm mb-3">Run commands directly against your server, auto-authenticated with the SSH access already saved in Settings — no separate login needed. Each command runs once and returns its output; this isn't a full interactive terminal.</p>
-        <p class="text-slate-500 text-xs mb-8"><i class="fas fa-circle-info mr-1.5"></i>Under the hood, every command opens its own fresh connection - but the console remembers your current directory and re-applies it automatically, so <code class="font-mono text-slate-400">cd</code> behaves the way you'd expect: run <code class="font-mono text-slate-400">cd /opt/media-stack</code>, then <code class="font-mono text-slate-400">ls</code> on the next line, and it'll list that directory.</p>
+        <p class="text-slate-400 text-sm mb-8">A real interactive terminal to your server, auto-authenticated with the SSH access already saved in Settings. Type commands, run interactive programs, use Ctrl+C - it behaves like a normal terminal because it is one.</p>
 
         <% if (!sshConfigured) { %>
             <div class="mb-8 px-4 sm:px-5 py-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400 text-sm flex items-center justify-between flex-wrap gap-3">
                 <span><i class="fas fa-triangle-exclamation mr-2"></i>No server access configured yet.</span>
                 <a href="/admin/settings" class="btn-amber px-4 py-2 rounded-lg text-xs whitespace-nowrap">Set Up in Settings</a>
             </div>
+        <% } else { %>
+            <div class="glass rounded-2xl sm:rounded-3xl overflow-hidden mb-8">
+                <div class="flex items-center justify-between gap-2 px-5 py-3 border-b border-white/10 flex-wrap">
+                    <div class="flex items-center gap-2">
+                        <span id="termStatusDot" class="w-2 h-2 rounded-full bg-amber-400"></span>
+                        <span id="termStatusText" class="text-xs text-slate-400">Connecting…</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button type="button" id="termReconnectBtn" onclick="connectTerminal()" class="hidden text-xs px-3 py-1.5 rounded-lg btn-outline">
+                            <i class="fas fa-rotate mr-1.5"></i>Reconnect
+                        </button>
+                        <button type="button" onclick="term.clear()" title="Clear screen" class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-white/5">
+                            <i class="fas fa-broom"></i>
+                        </button>
+                    </div>
+                </div>
+                <div id="terminalContainer" style="height: 60vh; background: #0b1120;"></div>
+            </div>
         <% } %>
 
-        <div class="glass rounded-2xl sm:rounded-3xl p-5 sm:p-8 mb-8">
-            <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
-                <div class="flex items-center gap-2">
-                    <span class="w-2 h-2 rounded-full <%= sshConfigured ? 'bg-emerald-400' : 'bg-slate-600' %>"></span>
-                    <span class="text-xs text-slate-400"><%= sshConfigured ? 'Connected using saved admin server access' : 'Not connected' %></span>
-                </div>
-                <div class="flex items-center gap-2 text-xs text-slate-500">
-                    <i class="fas fa-folder"></i>
-                    <span id="cwdDisplay" class="font-mono text-slate-300"><%= cwd || '(default login directory)' %></span>
-                    <button type="button" onclick="resetCwd()" class="text-sky-400 hover:text-sky-300 ml-1" title="Reset to default directory">
-                        <i class="fas fa-rotate-left"></i>
-                    </button>
-                </div>
-            </div>
-            <div id="consoleOutput" class="console-output mb-4"><span class="console-prompt">$</span> Ready. Type a command below and press Run.</div>
-            <form id="consoleForm" class="flex flex-col sm:flex-row gap-3">
-                <input type="text" id="commandInput" name="command" autocomplete="off" spellcheck="false" class="input font-mono text-sm flex-1" placeholder="e.g. docker ps" <%= sshConfigured ? '' : 'disabled' %>>
-                <button type="button" onclick="clearConsole()" title="Clear console" class="flex-shrink-0 flex items-center justify-center rounded-xl btn-outline px-4 py-[0.85rem]">
-                    <i class="fas fa-broom"></i>
-                </button>
-                <button type="submit" class="btn-primary px-6 py-[0.85rem] rounded-xl text-sm whitespace-nowrap" <%= sshConfigured ? '' : 'disabled' %>>
-                    <i class="fas fa-play mr-2"></i>Run
-                </button>
-            </form>
-        </div>
-
-        <h2 class="text-sm uppercase tracking-widest text-slate-500 font-bold mb-4">Recent Commands</h2>
+        <h2 class="text-sm uppercase tracking-widest text-slate-500 font-bold mb-4">Recent Sessions</h2>
         <div class="glass rounded-2xl overflow-x-auto">
             <% if (history.length === 0) { %>
-                <p class="text-slate-500 text-sm p-6">No commands run yet.</p>
+                <p class="text-slate-500 text-sm p-6">No sessions yet.</p>
             <% } else { %>
                 <table class="kb-table min-w-[560px]">
-                    <thead><tr><th>Command</th><th>Time (UK)</th><th>Result</th></tr></thead>
+                    <thead><tr><th>Session</th><th>Time (UK)</th><th>Result</th></tr></thead>
                     <tbody>
                         <% history.forEach(function(h) { %>
                             <tr>
-                                <td class="text-slate-300 font-mono text-xs"><%= h.command %></td>
+                                <td class="text-slate-300 font-mono text-xs"><%= h.command %><% if (h.output) { %><span class="text-slate-500"> — <%= h.output %></span><% } %></td>
                                 <td class="text-slate-500 text-xs"><%= formatUK(h.requested_at) %></td>
                                 <td><span class="badge <%= h.success ? 'badge-active' : 'badge-expired' %>"><%= h.success ? 'Success' : 'Failed' %></span></td>
                             </tr>
@@ -66,72 +63,113 @@
         </div>
     </main>
 
+    <% if (sshConfigured) { %>
     <script>
-        const form = document.getElementById('consoleForm');
-        const input = document.getElementById('commandInput');
-        const output = document.getElementById('consoleOutput');
-        const cwdDisplay = document.getElementById('cwdDisplay');
+        const term = new Terminal({
+            cursorBlink: true,
+            fontSize: 14,
+            fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+            theme: {
+                background: '#0b1120',
+                foreground: '#e2e8f0',
+                cursor: '#38bdf8',
+                selectionBackground: '#38bdf844',
+            },
+        });
+        term.open(document.getElementById('terminalContainer'));
 
-        function appendLine(html) {
-            const line = document.createElement('div');
-            line.innerHTML = html;
-            output.appendChild(line);
-            output.scrollTop = output.scrollHeight;
+        let ws = null;
+        let measuredCell = null; // { width, height } in px, for the manual fit calculation below
+
+        // No fit addon here (deliberately) - a hidden span with the same
+        // font measures one character cell directly, independent of
+        // xterm's own render state (which may not have any measurable
+        // content yet on first connect). This is the same basic technique
+        // xterm's own fit addon uses internally, just without the extra
+        // dependency. rows/cols are floor()'d so the terminal never
+        // overflows its container.
+        function measureCell() {
+            const span = document.createElement('span');
+            span.style.cssText = 'position:absolute;visibility:hidden;white-space:pre;top:-9999px;left:-9999px;'
+                + 'font-family:' + term.options.fontFamily + ';font-size:' + term.options.fontSize + 'px;';
+            span.textContent = 'W'.repeat(20);
+            document.body.appendChild(span);
+            const rect = span.getBoundingClientRect();
+            document.body.removeChild(span);
+            if (rect.width === 0) return null;
+            return { width: rect.width / 20, height: Math.round(term.options.fontSize * 1.2) };
         }
 
-        function escapeHtml(str) {
-            const div = document.createElement('div');
-            div.textContent = str;
-            return div.innerHTML;
+        function fitTerminal() {
+            const container = document.getElementById('terminalContainer');
+            if (!container) return null;
+            if (!measuredCell) measuredCell = measureCell();
+            if (!measuredCell) return null;
+
+            const cols = Math.max(20, Math.floor(container.clientWidth / measuredCell.width));
+            const rows = Math.max(10, Math.floor(container.clientHeight / measuredCell.height));
+            if (cols !== term.cols || rows !== term.rows) term.resize(cols, rows);
+            return { cols: term.cols, rows: term.rows };
         }
 
-        function updateCwdDisplay(cwd) {
-            if (cwdDisplay) cwdDisplay.textContent = cwd || '(default login directory)';
+        function setStatus(text, tone) {
+            const dot = document.getElementById('termStatusDot');
+            const label = document.getElementById('termStatusText');
+            const colors = { connecting: 'bg-amber-400', connected: 'bg-emerald-400', disconnected: 'bg-slate-600', error: 'bg-red-400' };
+            dot.className = 'w-2 h-2 rounded-full ' + (colors[tone] || colors.disconnected);
+            label.textContent = text;
+            document.getElementById('termReconnectBtn').classList.toggle('hidden', tone !== 'disconnected' && tone !== 'error');
         }
 
-        function clearConsole() {
-            output.innerHTML = '<span class="console-prompt">$</span> Ready. Type a command below and press Run.';
-            input.focus();
-        }
+        function connectTerminal() {
+            if (ws) { try { ws.close(); } catch (e) {} }
+            setStatus('Connecting…', 'connecting');
 
-        async function resetCwd() {
-            try {
-                const res = await fetch('/admin/ssh-console/reset-cwd', { method: 'POST' });
-                const data = await res.json();
-                updateCwdDisplay(data.cwd);
-                appendLine('<span style="color:#64748b;">Working directory reset.</span>');
-            } catch (e) {
-                // ignore
-            }
-        }
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(protocol + '//' + window.location.host + '/admin/ssh-console/ws');
 
-        if (form) {
-            form.addEventListener('submit', async function (e) {
-                e.preventDefault();
-                const command = input.value.trim();
-                if (!command) return;
-
-                appendLine('<span class="console-prompt">$</span> ' + escapeHtml(command));
-                input.value = '';
-                input.disabled = true;
-
-                try {
-                    const res = await fetch('/admin/ssh-console/run', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                        body: 'command=' + encodeURIComponent(command),
-                    });
-                    const data = await res.json();
-                    appendLine(escapeHtml(data.output || (data.ok ? '(no output)' : data.message || 'Command failed.')));
-                    if ('cwd' in data) updateCwdDisplay(data.cwd);
-                } catch (err) {
-                    appendLine('<span style="color:#f87171;">Something went wrong sending that command.</span>');
-                } finally {
-                    input.disabled = false;
-                    input.focus();
+            ws.onmessage = function (event) {
+                const msg = JSON.parse(event.data);
+                if (msg.type === 'ready') {
+                    setStatus('Connected', 'connected');
+                    measuredCell = null; // re-measure now that real content may be about to render
+                    setTimeout(() => {
+                        const dims = fitTerminal();
+                        if (dims) ws.send(JSON.stringify({ type: 'resize', rows: dims.rows, cols: dims.cols }));
+                        term.focus();
+                    }, 50);
+                } else if (msg.type === 'data') {
+                    term.write(msg.data);
+                } else if (msg.type === 'error') {
+                    setStatus('Error', 'error');
+                    term.write('\r\n\x1b[31m' + msg.message + '\x1b[0m\r\n');
                 }
-            });
+            };
+
+            ws.onclose = function () {
+                setStatus('Disconnected', 'disconnected');
+            };
+
+            ws.onerror = function () {
+                setStatus('Connection error', 'error');
+            };
         }
+
+        term.onData(function (data) {
+            if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'input', data: data }));
+        });
+
+        let resizeTimer = null;
+        window.addEventListener('resize', function () {
+            clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(function () {
+                const dims = fitTerminal();
+                if (dims && ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'resize', rows: dims.rows, cols: dims.cols }));
+            }, 200);
+        });
+
+        connectTerminal();
     </script>
+    <% } %>
 </body>
 </html>

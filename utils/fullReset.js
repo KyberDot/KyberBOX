@@ -22,6 +22,16 @@ function getFullResetState() {
   return fullResetState;
 }
 
+// Lets the admin manually clear a finished result from the banner. Only
+// touches lastResult - if a reset is somehow currently running (shouldn't
+// be reachable from the UI, which hides the dismiss button in that case,
+// but defend against it anyway), this leaves that alone rather than
+// clobbering an in-progress reset's state.
+function dismissFullResetResult() {
+  if (fullResetState.running) return;
+  fullResetState = { ...fullResetState, lastResult: null };
+}
+
 // Runs down, then (if withUpdate) pull with up to PULL_MAX_ATTEMPTS
 // retries, then up -d - always, regardless of whether pull ultimately
 // succeeded. Previously this was one combined shell command
@@ -142,15 +152,15 @@ function triggerFullReset(source, adminUserId, serviceLabel, withUpdate = true) 
         message = 'Reset complete: stack was taken down and brought back up.';
       }
 
-      fullResetState = { running: false, phase: null, pullAttempt: 0, pullMaxAttempts: PULL_MAX_ATTEMPTS, lastResult: { ok: result.success, message } };
+      fullResetState = { running: false, phase: null, pullAttempt: 0, pullMaxAttempts: PULL_MAX_ATTEMPTS, lastResult: { ok: result.success, message, completedAt: Date.now(), withUpdate } };
       endReset();
     })
     .catch((err) => {
-      fullResetState = { running: false, phase: null, pullAttempt: 0, pullMaxAttempts: PULL_MAX_ATTEMPTS, lastResult: { ok: false, message: `Full reset failed: ${err.message}` } };
+      fullResetState = { running: false, phase: null, pullAttempt: 0, pullMaxAttempts: PULL_MAX_ATTEMPTS, lastResult: { ok: false, message: `Full reset failed: ${err.message}`, completedAt: Date.now(), withUpdate } };
       endReset();
     });
 
   return { ok: true, started: true, message: 'Reset started in the background — this can take several minutes.' };
 }
 
-module.exports = { triggerFullReset, getFullResetState };
+module.exports = { triggerFullReset, getFullResetState, dismissFullResetResult };

@@ -38,7 +38,8 @@ const forgotPasswordLimiter = rateLimit({
 
 router.get('/login', (req, res) => {
   if (req.user) return res.redirect(req.user.role === 'admin' ? '/admin' : '/dashboard');
-  res.render('login', { error: null });
+  const pendingUser = getPendingTwoFactorUser(req);
+  res.render('login', { error: null, showTwoFactor: !!pendingUser });
 });
 
 router.post('/login', loginLimiter, (req, res) => {
@@ -49,7 +50,7 @@ router.post('/login', loginLimiter, (req, res) => {
   const genericError = 'Invalid email or password.';
 
   if (!user || !bcrypt.compareSync(password, user.password_hash)) {
-    return res.status(401).render('login', { error: genericError });
+    return res.status(401).json({ ok: false, message: genericError });
   }
 
   if (user.totp_enabled) {
@@ -65,7 +66,7 @@ router.post('/login', loginLimiter, (req, res) => {
       secure: req.protocol === 'https',
       maxAge: 10 * 60 * 1000,
     });
-    return res.redirect('/login/2fa');
+    return res.json({ ok: true, twoFactorRequired: true });
   }
 
   const token = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET, { expiresIn: '12h' });
@@ -76,8 +77,8 @@ router.post('/login', loginLimiter, (req, res) => {
     maxAge: 12 * 60 * 60 * 1000,
   });
 
-  if (user.must_change_password) return res.redirect('/change-password');
-  res.redirect(user.role === 'admin' ? '/admin' : '/dashboard');
+  const redirect = user.must_change_password ? '/change-password' : (user.role === 'admin' ? '/admin' : '/dashboard');
+  res.json({ ok: true, redirect });
 });
 
 function getPendingTwoFactorUser(req) {
@@ -92,15 +93,9 @@ function getPendingTwoFactorUser(req) {
   }
 }
 
-router.get('/login/2fa', (req, res) => {
-  const user = getPendingTwoFactorUser(req);
-  if (!user) return res.redirect('/login');
-  res.render('login-2fa', { error: null });
-});
-
 router.post('/login/2fa', twoFactorLimiter, async (req, res) => {
   const user = getPendingTwoFactorUser(req);
-  if (!user) return res.redirect('/login');
+  if (!user) return res.status(401).json({ ok: false, expired: true, message: 'Your session has expired. Please sign in again.' });
 
   const submitted = String(req.body.code || '').trim();
   let verified = false;
@@ -127,7 +122,7 @@ router.post('/login/2fa', twoFactorLimiter, async (req, res) => {
   }
 
   if (!verified) {
-    return res.status(401).render('login-2fa', { error: 'Incorrect code. Please try again.' });
+    return res.status(401).json({ ok: false, message: 'Incorrect code. Please try again.' });
   }
 
   res.clearCookie('kb_2fa_pending');
@@ -139,8 +134,16 @@ router.post('/login/2fa', twoFactorLimiter, async (req, res) => {
     maxAge: 12 * 60 * 60 * 1000,
   });
 
-  if (user.must_change_password) return res.redirect('/change-password');
-  res.redirect(user.role === 'admin' ? '/admin' : '/dashboard');
+  const redirect = user.must_change_password ? '/change-password' : (user.role === 'admin' ? '/admin' : '/dashboard');
+  res.json({ ok: true, redirect });
+});
+
+// Lets someone back out of an in-progress 2FA prompt (e.g. "use a different
+// account") and land back on a clean login form, rather than the pending
+// cookie just sitting there until its own 10-minute expiry.
+router.post('/login/2fa/cancel', (req, res) => {
+  res.clearCookie('kb_2fa_pending');
+  res.json({ ok: true });
 });
 
 router.get('/change-password', (req, res) => {

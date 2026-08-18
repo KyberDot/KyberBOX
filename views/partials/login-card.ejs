@@ -1,0 +1,49 @@
+<div class="login-panel">
+    <div class="login-error-box <%= error ? '' : 'hidden' %> mb-5 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
+        <i class="fas fa-triangle-exclamation mr-2"></i><span class="login-error-text"><%= error || '' %></span>
+    </div>
+    <form class="login-form space-y-4">
+        <div>
+            <label class="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-2 block">Email</label>
+            <input type="email" name="email" required autocomplete="email" class="input" placeholder="you@example.com">
+        </div>
+        <div>
+            <div class="flex items-center justify-between mb-2">
+                <label class="text-xs uppercase tracking-widest text-slate-500 font-semibold">Password</label>
+                <a href="/forgot-password" class="text-xs text-sky-400 hover:text-sky-300">Forgot password?</a>
+            </div>
+            <input type="password" name="password" required autocomplete="current-password" class="input" placeholder="••••••••">
+        </div>
+        <button type="submit" class="w-full btn-primary py-4 rounded-2xl text-sm mt-2">
+            <i class="fas fa-right-to-bracket mr-2"></i> <span class="login-submit-label">Sign In</span>
+        </button>
+    </form>
+</div>
+
+<div class="twofa-panel hidden">
+    <div class="twofa-error-box hidden mb-5 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
+        <i class="fas fa-triangle-exclamation mr-2"></i><span class="twofa-error-text"></span>
+    </div>
+    <div class="text-center mb-5">
+        <div class="w-14 h-14 mx-auto rounded-full bg-sky-500/10 border border-sky-500/30 flex items-center justify-center mb-3">
+            <i class="fas fa-shield-halved text-sky-400 text-xl"></i>
+        </div>
+        <p class="text-white font-bold text-sm mb-1">Verify it's you</p>
+        <p class="text-slate-400 text-xs">Enter the 6-digit code from your authenticator app, or a recovery code.</p>
+    </div>
+    <form class="twofa-form space-y-4">
+        <input
+            type="text"
+            name="code"
+            autocomplete="one-time-code"
+            inputmode="numeric"
+            class="input text-center text-2xl tracking-[0.4em] font-mono"
+            placeholder="000000"
+            maxlength="11"
+        >
+        <button type="submit" class="w-full btn-primary py-4 rounded-2xl text-sm mt-2">
+            <i class="fas fa-right-to-bracket mr-2"></i> <span class="twofa-submit-label">Verify</span>
+        </button>
+    </form>
+    <button type="button" class="twofa-cancel-btn w-full text-center text-slate-500 hover:text-slate-300 text-xs mt-4">Use a different account</button>
+</div>

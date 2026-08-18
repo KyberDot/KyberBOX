@@ -13,7 +13,7 @@ const { runCommand, getContainerStatuses } = require('../utils/ssh');
 const { upload } = require('../utils/uploads');
 const { startReset, endReset, getResetState } = require('../utils/resetLock');
 const { requireFullAdmin } = require('../middleware/auth');
-const { triggerFullReset, getFullResetState } = require('../utils/fullReset');
+const { triggerFullReset, getFullResetState, dismissFullResetResult } = require('../utils/fullReset');
 const s3 = require('../utils/s3');
 const { computeElapsedSeconds, startTimer, stopTimer, restartTimer, resetIfLinkedContainerAction } = require('../utils/runTimer');
 const { BOSSES, columnForBossKey } = require('../utils/bosses');
@@ -2262,69 +2262,22 @@ router.get('/admin/health/full-reset/status', (req, res) => {
   res.json(getFullResetState());
 });
 
+router.post('/admin/health/full-reset/dismiss', (req, res) => {
+  dismissFullResetResult();
+  res.json({ ok: true });
+});
+
 // ---------- SSH Console ----------
 // A direct command runner against the admin-wide SSH target, auto-authenticated
 // with the credentials already stored in Settings - no separate login step.
 // This runs one command per request (not a full interactive shell/PTY).
-
-// Each command runs over its own fresh SSH connection (no persistent shell),
-// so a plain "cd" would normally have zero effect on the next command - not
-// a display quirk, a real limitation of one-shot exec. This tracks the
-// working directory server-side and transparently re-applies it before every
-// command, then re-reads it afterwards in case that command changed it,
-// so "cd" behaves the way people reasonably expect a console to behave.
-let consoleCwd = null;
-const CWD_MARKER = '___KYBERBOX_CWD___';
 
 router.get('/admin/ssh-console', (req, res) => {
   const sshConfigured = !!db.prepare('SELECT id FROM admin_ssh LIMIT 1').get();
   const history = db
     .prepare('SELECT * FROM ssh_console_log ORDER BY requested_at DESC LIMIT 25')
     .all();
-  res.render('admin-ssh-console', { sshConfigured, history, cwd: consoleCwd });
-});
-
-router.post('/admin/ssh-console/run', async (req, res) => {
-  const command = String(req.body.command || '').trim();
-  if (!command) return res.status(400).json({ ok: false, message: 'Enter a command to run.' });
-
-  const target = db.prepare('SELECT * FROM admin_ssh LIMIT 1').get();
-  if (!target) {
-    return res.status(400).json({ ok: false, message: 'No admin SSH access configured yet. Set it up in Settings first.' });
-  }
-
-  // Restore the last-known directory (silently, so a deleted/renamed
-  // directory doesn't block the rest of the command from running), run the
-  // actual command, then capture wherever it ended up for next time.
-  const cdPrefix = consoleCwd ? `cd '${consoleCwd.replace(/'/g, `'"'"'`)}' >/dev/null 2>&1 ; ` : '';
-  const fullCommand = `${cdPrefix}${command} ; echo "${CWD_MARKER}$(pwd)"`;
-
-  const result = await runCommand(target, fullCommand);
-
-  // Pull the tracked directory out of the trailing marker line and hide
-  // that plumbing from what's actually shown to the admin.
-  let output = result.output;
-  const markerIndex = output.lastIndexOf(CWD_MARKER);
-  if (markerIndex !== -1) {
-    const newCwd = output.slice(markerIndex + CWD_MARKER.length).split('\n')[0].trim();
-    if (newCwd) consoleCwd = newCwd;
-    output = output.slice(0, markerIndex).replace(/\n$/, '');
-  }
-  if (!output.trim()) output = '(no output — command completed successfully)';
-
-  db.prepare('INSERT INTO ssh_console_log (admin_user_id, command, success, output) VALUES (?, ?, ?, ?)').run(
-    req.user.id,
-    command,
-    result.success ? 1 : 0,
-    output
-  );
-
-  res.json({ ok: result.success, output, cwd: consoleCwd });
-});
-
-router.post('/admin/ssh-console/reset-cwd', (req, res) => {
-  consoleCwd = null;
-  res.json({ ok: true, cwd: consoleCwd });
+  res.render('admin-ssh-console', { sshConfigured, history });
 });
 
 // ---------- Providers ----------

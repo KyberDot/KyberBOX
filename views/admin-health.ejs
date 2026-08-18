@@ -61,7 +61,14 @@
             </div>
         </div>
 
-        <div id="fullResetResult" class="hidden text-sm rounded-xl p-4 mb-6"></div>
+        <div id="fullResetResult" class="hidden text-sm rounded-xl p-4 mb-6">
+            <div class="flex items-start justify-between gap-3">
+                <span id="fullResetResultText" class="flex-1"></span>
+                <button type="button" id="fullResetDismissBtn" onclick="dismissFullResetBanner()" title="Dismiss" class="hidden flex-shrink-0 text-current opacity-60 hover:opacity-100 transition">
+                    <i class="fas fa-xmark"></i>
+                </button>
+            </div>
+        </div>
         <div id="healthActionResult" class="hidden text-sm rounded-xl p-4 mb-6"></div>
 
         <!-- Containers -->
@@ -500,6 +507,32 @@
             return 'Running in the background — this can take several minutes.';
         }
 
+        function setFullResetBanner(html, toneClass, showDismiss) {
+            const box = document.getElementById('fullResetResult');
+            const text = document.getElementById('fullResetResultText');
+            const dismissBtn = document.getElementById('fullResetDismissBtn');
+            box.classList.remove('hidden');
+            box.className = 'text-sm rounded-xl p-4 mb-6 ' + toneClass;
+            text.innerHTML = html;
+            dismissBtn.classList.toggle('hidden', !showDismiss);
+        }
+
+        const RESET_TONE_RUNNING = 'bg-amber-500/10 border border-amber-500/30 text-amber-400';
+        const RESET_TONE_OK = 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400';
+        const RESET_TONE_ERROR = 'bg-red-500/10 border border-red-500/30 text-red-400';
+
+        // Manual removal - hides immediately, and clears it server-side too
+        // so it doesn't just reappear on the next page load within its
+        // staleness window (see checkFullResetOnLoad below).
+        async function dismissFullResetBanner() {
+            document.getElementById('fullResetResult').classList.add('hidden');
+            try {
+                await fetch('/admin/health/full-reset/dismiss', { method: 'POST' });
+            } catch (e) {
+                // best-effort - it's already hidden client-side regardless
+            }
+        }
+
         async function startFullReset(withUpdate) {
             closeModal('fullResetChoiceModal');
 
@@ -509,10 +542,7 @@
             if (!confirm(confirmMsg)) return;
             if (!confirm('Are you sure? This affects everything, not just one container. Expect roughly ' + (withUpdate ? '5–15 minutes' : '4–8 minutes') + '.')) return;
 
-            const resultBox = document.getElementById('fullResetResult');
-            resultBox.classList.remove('hidden');
-            resultBox.className = 'text-sm rounded-xl p-4 mb-6 bg-amber-500/10 border border-amber-500/30 text-amber-400';
-            resultBox.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Starting' + (withUpdate ? ' full reset' : ' reset') + '…';
+            setFullResetBanner('<i class="fas fa-spinner fa-spin mr-2"></i>Starting' + (withUpdate ? ' full reset' : ' reset') + '…', RESET_TONE_RUNNING, false);
 
             try {
                 const res = await fetch('/admin/health/full-reset', {
@@ -523,17 +553,15 @@
                 const data = await res.json();
 
                 if (!res.ok || (!data.ok && !data.started)) {
-                    resultBox.className = 'text-sm rounded-xl p-4 mb-6 bg-red-500/10 border border-red-500/30 text-red-400';
-                    resultBox.textContent = data.message || 'Could not start the reset.';
+                    setFullResetBanner(data.message || 'Could not start the reset.', RESET_TONE_ERROR, true);
                     showToast(data.message || 'Could not start the reset.', 'error');
                     return;
                 }
 
-                resultBox.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Starting…';
+                setFullResetBanner('<i class="fas fa-spinner fa-spin mr-2"></i>Starting…', RESET_TONE_RUNNING, false);
                 pollFullResetStatus();
             } catch (e) {
-                resultBox.className = 'text-sm rounded-xl p-4 mb-6 bg-red-500/10 border border-red-500/30 text-red-400';
-                resultBox.textContent = 'Could not reach the server to start the reset. Check your connection and try again.';
+                setFullResetBanner('Could not reach the server to start the reset. Check your connection and try again.', RESET_TONE_ERROR, true);
                 showToast('Could not reach the server to start the reset.', 'error');
             }
         }
@@ -542,7 +570,6 @@
             if (fullResetPollTimer) clearInterval(fullResetPollTimer);
 
             const check = async function () {
-                const resultBox = document.getElementById('fullResetResult');
                 try {
                     const res = await fetch('/admin/health/full-reset/status');
                     const data = await res.json();
@@ -550,10 +577,9 @@
                     if (data.running) {
                         // Keep the banner live and phase-aware while it's still going,
                         // rather than a static message for the whole duration - this is
-                        // what actually shows "pull attempt 2/5" etc as it happens.
-                        resultBox.classList.remove('hidden');
-                        resultBox.className = 'text-sm rounded-xl p-4 mb-6 bg-amber-500/10 border border-amber-500/30 text-amber-400';
-                        resultBox.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>' + fullResetPhaseMessage(data);
+                        // what actually shows "pull attempt 2/5" etc as it happens. No
+                        // dismiss button while something is still actually running.
+                        setFullResetBanner('<i class="fas fa-spinner fa-spin mr-2"></i>' + fullResetPhaseMessage(data), RESET_TONE_RUNNING, false);
                         return;
                     }
 
@@ -561,11 +587,7 @@
                     fullResetPollTimer = null;
 
                     if (data.lastResult) {
-                        resultBox.classList.remove('hidden');
-                        resultBox.className = 'text-sm rounded-xl p-4 mb-6 ' + (data.lastResult.ok
-                            ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400'
-                            : 'bg-red-500/10 border border-red-500/30 text-red-400');
-                        resultBox.textContent = data.lastResult.message;
+                        setFullResetBanner(data.lastResult.message, data.lastResult.ok ? RESET_TONE_OK : RESET_TONE_ERROR, true);
                         showToast(data.lastResult.message, data.lastResult.ok ? 'success' : 'error');
                     }
                     refreshHealth();
@@ -589,22 +611,26 @@
             try {
                 const res = await fetch('/admin/health/full-reset/status');
                 const data = await res.json();
-                const resultBox = document.getElementById('fullResetResult');
 
                 if (data.running) {
-                    resultBox.classList.remove('hidden');
-                    resultBox.className = 'text-sm rounded-xl p-4 mb-6 bg-amber-500/10 border border-amber-500/30 text-amber-400';
-                    resultBox.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>' + fullResetPhaseMessage(data);
+                    setFullResetBanner('<i class="fas fa-spinner fa-spin mr-2"></i>' + fullResetPhaseMessage(data), RESET_TONE_RUNNING, false);
                     pollFullResetStatus();
-                } else if (data.lastResult) {
-                    // A reset finished while nobody was watching this page -
-                    // still worth surfacing rather than only ever showing up
-                    // for whoever happened to have the tab open at the time.
-                    resultBox.classList.remove('hidden');
-                    resultBox.className = 'text-sm rounded-xl p-4 mb-6 ' + (data.lastResult.ok
-                        ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400'
-                        : 'bg-red-500/10 border border-red-500/30 text-red-400');
-                    resultBox.textContent = data.lastResult.message;
+                    return;
+                }
+
+                if (!data.lastResult) return;
+
+                // A reset finished recently while nobody was watching this
+                // page - still worth surfacing. The cutoff matches each
+                // option's own time estimate (Reset & Update: ~5-15 min,
+                // Restart Only: ~4-8 min) rather than one flat window for
+                // both - without a cutoff at all, the same result would show
+                // up on every single page load forever, since the backend
+                // has no reason to clear it on its own until either the next
+                // reset runs or the admin dismisses it manually.
+                const staleWindowMs = (data.lastResult.withUpdate ? 15 : 8) * 60 * 1000;
+                if (Date.now() - data.lastResult.completedAt < staleWindowMs) {
+                    setFullResetBanner(data.lastResult.message, data.lastResult.ok ? RESET_TONE_OK : RESET_TONE_ERROR, true);
                 }
             } catch (e) {
                 // ignore - not critical on page load

@@ -29,27 +29,7 @@
                 </div>
 
                 <div class="glass rounded-3xl p-8">
-                    <% if (error) { %>
-                        <div class="mb-5 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
-                            <i class="fas fa-triangle-exclamation mr-2"></i><%= error %>
-                        </div>
-                    <% } %>
-                    <form method="POST" action="/login" class="space-y-4">
-                        <div>
-                            <label class="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-2 block">Email</label>
-                            <input type="email" name="email" required autocomplete="email" class="input" placeholder="you@example.com">
-                        </div>
-                        <div>
-                            <div class="flex items-center justify-between mb-2">
-                                <label class="text-xs uppercase tracking-widest text-slate-500 font-semibold">Password</label>
-                                <a href="/forgot-password" class="text-xs text-sky-400 hover:text-sky-300">Forgot password?</a>
-                            </div>
-                            <input type="password" name="password" required autocomplete="current-password" class="input" placeholder="••••••••">
-                        </div>
-                        <button type="submit" class="w-full btn-primary py-4 rounded-2xl text-sm mt-2">
-                            <i class="fas fa-right-to-bracket mr-2"></i> Sign In
-                        </button>
-                    </form>
+                    <%- include('partials/login-card') %>
                 </div>
 
                 <p class="text-center text-slate-500 text-sm mt-8">
@@ -110,27 +90,7 @@
                 </div>
 
                 <div class="glass rounded-3xl p-8">
-                    <% if (error) { %>
-                        <div class="mb-5 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
-                            <i class="fas fa-triangle-exclamation mr-2"></i><%= error %>
-                        </div>
-                    <% } %>
-                    <form method="POST" action="/login" class="space-y-4">
-                        <div>
-                            <label class="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-2 block">Email</label>
-                            <input type="email" name="email" required autocomplete="email" class="input" placeholder="you@example.com">
-                        </div>
-                        <div>
-                            <div class="flex items-center justify-between mb-2">
-                                <label class="text-xs uppercase tracking-widest text-slate-500 font-semibold">Password</label>
-                                <a href="/forgot-password" class="text-xs text-sky-400 hover:text-sky-300">Forgot password?</a>
-                            </div>
-                            <input type="password" name="password" required autocomplete="current-password" class="input" placeholder="••••••••">
-                        </div>
-                        <button type="submit" class="w-full btn-primary py-4 rounded-2xl text-sm mt-2">
-                            <i class="fas fa-right-to-bracket mr-2"></i> Sign In
-                        </button>
-                    </form>
+                    <%- include('partials/login-card') %>
                 </div>
 
                 <p class="text-left text-slate-500 text-sm mt-8">
@@ -140,5 +100,125 @@
             </div>
         </main>
     </div>
+
+    <script>
+        // Both the mobile and desktop layouts render their own copy of the
+        // login card (see partials/login-card.ejs) - only one is ever
+        // visible via CSS at a time, but both exist in the DOM, so every
+        // helper here operates on "all matching elements" rather than a
+        // single id, keeping both copies in sync automatically.
+        function showTwoFactorPanels() {
+            document.querySelectorAll('.login-panel').forEach((p) => p.classList.add('hidden'));
+            document.querySelectorAll('.twofa-panel').forEach((p) => p.classList.remove('hidden'));
+            document.querySelectorAll('.twofa-panel:not(.hidden) input[name="code"]').forEach((i) => i.focus());
+        }
+
+        function showLoginPanels() {
+            document.querySelectorAll('.twofa-panel').forEach((p) => p.classList.add('hidden'));
+            document.querySelectorAll('.login-panel').forEach((p) => p.classList.remove('hidden'));
+            setTwoFactorError(null);
+        }
+
+        function setLoginError(message) {
+            document.querySelectorAll('.login-error-box').forEach((box) => {
+                box.classList.toggle('hidden', !message);
+                box.querySelector('.login-error-text').textContent = message || '';
+            });
+        }
+
+        function setTwoFactorError(message) {
+            document.querySelectorAll('.twofa-error-box').forEach((box) => {
+                box.classList.toggle('hidden', !message);
+                box.querySelector('.twofa-error-text').textContent = message || '';
+            });
+        }
+
+        document.querySelectorAll('.login-form').forEach((form) => {
+            form.addEventListener('submit', async function (e) {
+                e.preventDefault();
+                setLoginError(null);
+
+                const email = form.querySelector('[name="email"]').value;
+                const password = form.querySelector('[name="password"]').value;
+                const submitBtn = form.querySelector('button[type="submit"]');
+                submitBtn.disabled = true;
+
+                try {
+                    const res = await fetch('/login', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: 'email=' + encodeURIComponent(email) + '&password=' + encodeURIComponent(password),
+                    });
+                    const data = await res.json();
+
+                    if (!data.ok) {
+                        setLoginError(data.message || 'Something went wrong. Please try again.');
+                        return;
+                    }
+
+                    if (data.twoFactorRequired) {
+                        showTwoFactorPanels();
+                    } else {
+                        window.location.href = data.redirect;
+                    }
+                } catch (err) {
+                    setLoginError('Could not reach the server. Please check your connection and try again.');
+                } finally {
+                    submitBtn.disabled = false;
+                }
+            });
+        });
+
+        document.querySelectorAll('.twofa-form').forEach((form) => {
+            form.addEventListener('submit', async function (e) {
+                e.preventDefault();
+                setTwoFactorError(null);
+
+                const code = form.querySelector('[name="code"]').value;
+                const submitBtn = form.querySelector('button[type="submit"]');
+                submitBtn.disabled = true;
+
+                try {
+                    const res = await fetch('/login/2fa', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: 'code=' + encodeURIComponent(code),
+                    });
+                    const data = await res.json();
+
+                    if (!data.ok) {
+                        if (data.expired) {
+                            showLoginPanels();
+                            setLoginError(data.message);
+                        } else {
+                            setTwoFactorError(data.message || 'Incorrect code. Please try again.');
+                        }
+                        return;
+                    }
+
+                    window.location.href = data.redirect;
+                } catch (err) {
+                    setTwoFactorError('Could not reach the server. Please check your connection and try again.');
+                } finally {
+                    submitBtn.disabled = false;
+                }
+            });
+        });
+
+        document.querySelectorAll('.twofa-cancel-btn').forEach((btn) => {
+            btn.addEventListener('click', async function () {
+                try {
+                    await fetch('/login/2fa/cancel', { method: 'POST' });
+                } catch (e) {
+                    // best-effort - still switch back to the login form client-side either way
+                }
+                showLoginPanels();
+            });
+        });
+
+        <% if (showTwoFactor) { %>
+        showTwoFactorPanels();
+        <% } %>
+    </script>
 </body>
 </html>

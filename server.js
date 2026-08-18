@@ -53,7 +53,8 @@ app.use((req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`KyberBOX portal listening on port ${PORT}`);
   require('./utils/scheduler').startScheduler();
 });
+require('./utils/sshTerminal').attachSshTerminal(server);
