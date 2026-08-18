@@ -74,7 +74,7 @@
         <!-- Containers -->
         <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4 mb-6" id="healthContainerList" data-bulk-mode="off">
             <% containers.forEach(function(c, index) { %>
-                <div class="glass rounded-2xl p-3 sm:p-4 flex flex-col items-center text-center gap-2 relative" data-container-row data-container-id="<%= c.id %>" data-container-search="<%= (c.label + ' ' + c.container_name).toLowerCase() %>">
+                <div class="glass rounded-2xl p-3 sm:p-4 flex flex-col items-center text-center gap-2 relative <%= c.is_active ? '' : 'opacity-50 grayscale' %>" data-container-row data-container-id="<%= c.id %>" data-container-search="<%= (c.label + ' ' + c.container_name).toLowerCase() %>">
                     <input type="checkbox" class="bulk-select-checkbox absolute top-2 left-2 w-4 h-4 accent-sky-500" data-bulk-checkbox value="<%= c.id %>">
                     <button type="button" class="container-actions-btn absolute top-2 left-2 w-5 h-5 flex items-center justify-center rounded text-slate-500 hover:text-white hover:bg-white/5 text-[10px]" title="Actions" onclick="openContainerActions('<%= c.id %>', '<%= c.label %>')" data-custom-actions="<%= JSON.stringify(c.customActions) %>">
                         <i class="fas fa-sliders"></i>
@@ -103,9 +103,9 @@
 
                     <div class="w-full min-w-0">
                         <% var stuckWatch = stuckWatchByContainer[c.container_name]; %>
-                        <% if (stuckWatch) { %>
-                            <i class="fas fa-eye text-sky-400 text-[10px] mr-1 <%= stuckWatch.last_status === 'waiting' ? 'animate-pulse' : '' %>" title="Watched for stuck startup (<%= stuckWatch.service_label %> - status: <%= stuckWatch.last_status %><%= stuckWatch.last_status === 'waiting' ? ', ' + stuckWatch.consecutive_stuck_checks + '/3 stuck checks' : '' %>)"></i>
-                        <% } %>
+                        <span data-stuck-watch-wrap="<%= c.container_name %>" class="<%= stuckWatch ? '' : 'hidden' %>">
+                            <i data-stuck-watch-icon class="fas fa-eye text-sky-400 text-[10px] mr-1 <%= (stuckWatch && stuckWatch.last_status === 'waiting') ? 'animate-pulse' : '' %>" title="<%= stuckWatch ? ('Watched for stuck startup (' + stuckWatch.service_label + ' - status: ' + stuckWatch.last_status + (stuckWatch.last_status === 'waiting' ? (', ' + stuckWatch.consecutive_stuck_checks + '/3 stuck checks') : '') + ')') : '' %>"></i>
+                        </span>
                         <% if (c.link_url) { %>
                             <a href="<%= c.link_url %>" target="_blank" rel="noopener noreferrer" class="font-semibold text-white text-xs truncate hover:text-sky-400"><%= c.label %></a>
                         <% } else { %>
@@ -114,24 +114,22 @@
                         <p class="text-slate-500 text-[10px] font-mono truncate"><%= c.container_name %></p>
                     </div>
 
-                    <span class="badge badge-suspended text-[10px] px-2 py-0.5" data-status-pill><i class="fas fa-circle-notch fa-spin"></i> checking</span>
+                    <% if (c.is_active) { %>
+                        <span class="badge badge-suspended text-[10px] px-2 py-0.5" data-status-pill><i class="fas fa-circle-notch fa-spin"></i> checking</span>
+                    <% } else { %>
+                        <span class="badge badge-closed text-[10px] px-2 py-0.5"><i class="fas fa-power-off"></i> Inactive</span>
+                    <% } %>
 
                     <% var vpnWatch = vpnWatchByContainer[c.container_name]; %>
-                    <% if (vpnWatch) { %>
-                        <% if (vpnWatch.last_status === 'connected') { %>
-                            <span class="badge badge-active text-[10px] px-2 py-0.5"><i class="fas fa-shield-halved"></i> VPN Active</span>
-                        <% } else if (vpnWatch.last_status === 'failed') { %>
-                            <span class="badge badge-expired text-[10px] px-2 py-0.5"><i class="fas fa-shield-halved"></i> VPN Failed</span>
-                        <% } else { %>
-                            <span class="badge badge-closed text-[10px] px-2 py-0.5"><i class="fas fa-shield-halved"></i> VPN Unknown</span>
-                        <% } %>
-                    <% } %>
+                    <span data-vpn-watch-badge="<%= c.container_name %>" class="<%= vpnWatch ? '' : 'hidden' %> badge text-[10px] px-2 py-0.5 <%= !vpnWatch ? '' : (vpnWatch.last_status === 'connected' ? 'badge-active' : (vpnWatch.last_status === 'failed' ? 'badge-expired' : 'badge-closed')) %>">
+                        <i class="fas fa-shield-halved"></i> <span data-vpn-watch-label>VPN <%= !vpnWatch ? 'Unknown' : (vpnWatch.last_status === 'connected' ? 'Active' : (vpnWatch.last_status === 'failed' ? 'Failed' : 'Unknown')) %></span>
+                    </span>
 
                     <div class="flex items-center gap-1.5 flex-wrap justify-center w-full">
                         <button class="btn-outline flex-1 py-1.5 rounded-lg text-[11px]" data-health-btn data-health-action="stop" data-health-id="<%= c.id %>" data-health-label="<%= c.label %>" title="Stop">
                             <i class="fas fa-stop"></i>
                         </button>
-                        <button class="btn-outline flex-1 py-1.5 rounded-lg text-[11px]" data-update-btn data-update-id="<%= c.id %>" data-update-label="<%= c.label %>" title="Update (stop, pull, up)">
+                        <button class="btn-outline flex-1 py-1.5 rounded-lg text-[11px]" data-update-btn data-update-id="<%= c.id %>" data-update-label="<%= c.label %>" title="Restart or Update">
                             <i class="fas fa-cloud-arrow-down"></i>
                         </button>
                         <button class="btn-amber flex-1 py-1.5 rounded-lg text-[11px]" data-health-btn data-health-action="restart" data-health-id="<%= c.id %>" data-health-label="<%= c.label %>" title="Restart">
@@ -177,6 +175,10 @@
                                 <i class="fas fa-image"></i>Choose Image
                             </label>
                             <input type="file" name="logo" id="logo-file-<%= c.id %>" accept="image/png,image/jpeg,image/webp,image/svg+xml" class="hidden">
+                            <label class="flex items-center gap-2 text-[11px] text-slate-400 cursor-pointer px-1">
+                                <input type="checkbox" name="mark_inactive" value="1" <%= c.is_active ? '' : 'checked' %> class="rounded border-white/20 bg-white/5">
+                                Mark as inactive (hides from live status &amp; homepage stats)
+                            </label>
                             <button type="submit" class="btn-primary px-4 py-1.5 rounded-lg text-[11px]">Save</button>
                         </form>
                         <form method="POST" action="/admin/health/containers/<%= c.id %>/delete" data-ajax-form data-confirm="Stop monitoring this container?" class="pt-2 border-t border-white/5">
@@ -233,6 +235,28 @@
                     <button type="button" onclick="startFullReset(true)" class="text-left p-4 rounded-xl border border-white/10 hover:border-red-500/40 hover:bg-white/5 transition">
                         <p class="font-bold text-white text-sm mb-1"><i class="fas fa-cloud-arrow-down mr-2 text-red-400"></i>Reset &amp; Update <span class="text-slate-500 font-normal">· ~5–15 min</span></p>
                         <p class="text-slate-400 text-xs">Also pulls the latest version of every image first, retrying up to 5 times if any image fails to pull before continuing anyway. Takes longer, especially on the first run after a while.</p>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Container Update/Restart Choice Modal -->
+        <div id="containerUpdateChoiceModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden items-center justify-center z-50 px-4 py-8 overflow-y-auto">
+            <div class="glass rounded-3xl p-6 sm:p-8 max-w-lg w-full my-auto">
+                <div class="flex items-center justify-between mb-2">
+                    <h3 class="text-lg font-bold text-white"><i class="fas fa-rotate mr-2 text-sky-400"></i>Reset <span id="containerUpdateChoiceLabel"></span></h3>
+                    <button type="button" onclick="closeModal('containerUpdateChoiceModal')" title="Close" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5"><i class="fas fa-xmark"></i></button>
+                </div>
+                <p class="text-slate-400 text-sm mb-5">Both options take this container offline briefly. Choose whether to also update its image first.</p>
+
+                <div class="grid gap-3">
+                    <button type="button" onclick="startContainerUpdate(false)" class="text-left p-4 rounded-xl border border-white/10 hover:border-sky-500/40 hover:bg-white/5 transition">
+                        <p class="font-bold text-white text-sm mb-1"><i class="fas fa-rotate mr-2 text-sky-400"></i>Restart Only</p>
+                        <p class="text-slate-400 text-xs">Stops and brings it back up on the image already on disk. Faster - nothing is downloaded.</p>
+                    </button>
+                    <button type="button" onclick="startContainerUpdate(true)" class="text-left p-4 rounded-xl border border-white/10 hover:border-red-500/40 hover:bg-white/5 transition">
+                        <p class="font-bold text-white text-sm mb-1"><i class="fas fa-cloud-arrow-down mr-2 text-red-400"></i>Update</p>
+                        <p class="text-slate-400 text-xs">Also pulls the latest image first, then brings it back up. Takes a bit longer.</p>
                     </button>
                 </div>
             </div>
@@ -1046,29 +1070,49 @@
             }
         }
 
-        // ---------- Update (stop, pull, up) ----------
-        document.addEventListener('click', async function (e) {
+        // ---------- Update / Restart (choice modal) ----------
+        let pendingContainerUpdate = null; // { id, label }
+
+        document.addEventListener('click', function (e) {
             const btn = e.target.closest('[data-update-btn]');
             if (!btn) return;
 
-            const label = btn.getAttribute('data-update-label');
-            const id = btn.getAttribute('data-update-id');
-            if (!confirm('Update "' + label + '"? This stops it, pulls the latest image, and brings it back up. It can take a minute or two.')) return;
+            pendingContainerUpdate = { id: btn.getAttribute('data-update-id'), label: btn.getAttribute('data-update-label') };
+            document.getElementById('containerUpdateChoiceLabel').textContent = '"' + pendingContainerUpdate.label + '"';
+            openModal('containerUpdateChoiceModal');
+        });
 
+        async function startContainerUpdate(withUpdate) {
+            closeModal('containerUpdateChoiceModal');
+            if (!pendingContainerUpdate) return;
+            const { id, label } = pendingContainerUpdate;
+
+            const confirmMsg = withUpdate
+                ? 'Update "' + label + '"? This stops it, pulls the latest image, and brings it back up. It can take a minute or two.'
+                : 'Restart "' + label + '"? This stops it and brings it back up on the image already on disk. No image is downloaded.';
+            if (!confirm(confirmMsg)) return;
+
+            const btn = document.querySelector('[data-update-id="' + id + '"]');
             const resultBox = document.getElementById('healthActionResult');
-            const originalHtml = btn.innerHTML;
-            btn.disabled = true;
-            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            const originalHtml = btn ? btn.innerHTML : null;
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            }
 
             const pill = document.querySelector('[data-container-id="' + id + '"] [data-status-pill]');
             if (pill) {
                 pill.className = 'badge badge-suspended text-[10px] px-2 py-0.5';
-                pill.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Updating…';
+                pill.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> ' + (withUpdate ? 'Updating…' : 'Restarting…');
                 pill.removeAttribute('data-current-status');
             }
 
             try {
-                const res = await fetch('/admin/health/containers/' + id + '/docker-update', { method: 'POST' });
+                const res = await fetch('/admin/health/containers/' + id + '/docker-update', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: 'with_update=' + (withUpdate ? '1' : '0'),
+                });
                 const data = await res.json();
                 if (resultBox) {
                     resultBox.classList.remove('hidden');
@@ -1087,10 +1131,13 @@
                 }
                 showToast('Something went wrong sending that request.', 'error');
             } finally {
-                btn.disabled = false;
-                btn.innerHTML = originalHtml;
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = originalHtml;
+                }
+                pendingContainerUpdate = null;
             }
-        });
+        }
 
         // ---------- Live status ----------
         const STATUS_MAP = {
@@ -1121,12 +1168,46 @@
             });
         }
 
+        function applyWatchdogStatuses(stuckWatchByContainer, vpnWatchByContainer) {
+            document.querySelectorAll('[data-stuck-watch-wrap]').forEach(function (wrap) {
+                const name = wrap.getAttribute('data-stuck-watch-wrap');
+                const w = stuckWatchByContainer ? stuckWatchByContainer[name] : null;
+                const icon = wrap.querySelector('[data-stuck-watch-icon]');
+
+                wrap.classList.toggle('hidden', !w);
+                if (!w || !icon) return;
+
+                icon.className = 'fas fa-eye text-sky-400 text-[10px] mr-1' + (w.last_status === 'waiting' ? ' animate-pulse' : '');
+                icon.title = 'Watched for stuck startup (' + w.service_label + ' - status: ' + w.last_status
+                    + (w.last_status === 'waiting' ? (', ' + w.consecutive_stuck_checks + '/3 stuck checks') : '') + ')';
+            });
+
+            document.querySelectorAll('[data-vpn-watch-badge]').forEach(function (badge) {
+                const name = badge.getAttribute('data-vpn-watch-badge');
+                const w = vpnWatchByContainer ? vpnWatchByContainer[name] : null;
+                const label = badge.querySelector('[data-vpn-watch-label]');
+
+                badge.classList.toggle('hidden', !w);
+                if (!w || !label) return;
+
+                const statusKey = w.last_status || 'unknown';
+                if (badge.getAttribute('data-current-status') === statusKey) return;
+
+                const tone = statusKey === 'connected' ? 'badge-active' : (statusKey === 'failed' ? 'badge-expired' : 'badge-closed');
+                const text = statusKey === 'connected' ? 'Active' : (statusKey === 'failed' ? 'Failed' : 'Unknown');
+                badge.className = 'badge text-[10px] px-2 py-0.5 ' + tone;
+                label.textContent = 'VPN ' + text;
+                badge.setAttribute('data-current-status', statusKey);
+            });
+        }
+
         async function refreshHealth() {
             try {
                 const res = await fetch('/admin/health/status');
                 const data = await res.json();
                 if (!data.ok) return;
                 applyStatuses(data.containers);
+                applyWatchdogStatuses(data.stuckWatchByContainer, data.vpnWatchByContainer);
             } catch (e) {
                 // leave "checking" state as-is
             }

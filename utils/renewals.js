@@ -1,6 +1,6 @@
 const db = require('../db');
 const { sendMail, notifyAdminProviderExpiring } = require('./mailer');
-const { getAllSettings } = require('./settings');
+const { getAllSettings, getSetting } = require('./settings');
 const { syncIncludedPlansForUser } = require('./includedPlans');
 
 /**
@@ -133,6 +133,8 @@ async function applyExpiryWarnings() {
  * route, which clears expiry_warning_sent_at whenever it's edited).
  */
 async function applyProviderExpiryWarnings() {
+  if (getSetting('provider_expiry_notifications_enabled', '1') !== '1') return;
+
   const due = db
     .prepare(
       `SELECT * FROM admin_providers

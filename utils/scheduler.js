@@ -7,8 +7,10 @@
 const { applyAutoRenewals, applyManualExpirations, applyExpiryWarnings, applyProviderExpiryWarnings } = require('./renewals');
 const { checkStuckWatch } = require('./stuckWatch');
 const { checkVpnWatch } = require('./vpnWatch');
+const { checkContainerWatchdog } = require('./containerWatchdog');
 
 const INTERVAL_MS = 5 * 60 * 1000; // every 5 minutes
+const CONTAINER_WATCHDOG_INTERVAL_MS = 60 * 1000; // every 1 minute - needs to be much finer-grained than the main cycle for a 2-minute threshold to mean anything
 
 async function runMaintenanceCycle() {
   try {
@@ -49,6 +51,11 @@ function startScheduler() {
   setTimeout(() => { runMaintenanceCycle(); }, 15000);
   setInterval(() => { runMaintenanceCycle(); }, INTERVAL_MS);
   console.log(`[scheduler] background maintenance running every ${INTERVAL_MS / 60000} minutes`);
+
+  setTimeout(() => { checkContainerWatchdog().catch((err) => console.error('[scheduler] container watchdog failed:', err.message)); }, 15000);
+  setInterval(() => {
+    checkContainerWatchdog().catch((err) => console.error('[scheduler] container watchdog failed:', err.message));
+  }, CONTAINER_WATCHDOG_INTERVAL_MS);
 }
 
 module.exports = { startScheduler };

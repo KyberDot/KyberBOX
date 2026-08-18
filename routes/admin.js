@@ -12,6 +12,7 @@ const { serviceLabel } = require('../utils/labels');
 const { runCommand, getContainerStatuses } = require('../utils/ssh');
 const { upload } = require('../utils/uploads');
 const { startReset, endReset, getResetState } = require('../utils/resetLock');
+const { markContainerActionStart, markContainerActionEnd } = require('../utils/containerActionLock');
 const { requireFullAdmin } = require('../middleware/auth');
 const { triggerFullReset, getFullResetState, dismissFullResetResult } = require('../utils/fullReset');
 const s3 = require('../utils/s3');
@@ -152,7 +153,10 @@ function loadSettingsPageData() {
   const stuckWatches = db.prepare('SELECT * FROM stuck_watch_containers ORDER BY created_at ASC').all();
   const vpnWatches = db.prepare('SELECT * FROM vpn_watch_containers ORDER BY created_at ASC').all();
 
-  return { settings, healthSsh, paymentMethods, admins, stuckWatches, vpnWatches };
+  const healthContainers = db.prepare('SELECT id, label, container_name FROM admin_health_containers WHERE is_active = 1 ORDER BY sort_order ASC, id ASC').all();
+  const watchedContainerIds = new Set(db.prepare('SELECT container_id FROM container_watchdog_selected').all().map((r) => r.container_id));
+
+  return { settings, healthSsh, paymentMethods, admins, stuckWatches, vpnWatches, healthContainers, watchedContainerIds };
 }
 
 router.get('/admin', (req, res) => {
@@ -160,7 +164,7 @@ router.get('/admin', (req, res) => {
   const openTickets = db.prepare("SELECT COUNT(*) c FROM tickets WHERE status != 'closed'").get().c;
   const activeSubs = db.prepare("SELECT COUNT(*) c FROM subscriptions WHERE status = 'active'").get().c;
   const planCount = db.prepare('SELECT COUNT(*) c FROM plans').get().c;
-  const healthContainerCount = db.prepare('SELECT COUNT(*) c FROM admin_health_containers').get().c;
+  const healthContainerCount = db.prepare('SELECT COUNT(*) c FROM admin_health_containers WHERE is_active = 1').get().c;
   const recentActions = db
     .prepare(
       `SELECT al.*, u.name, u.email, pa.label AS action_label FROM action_log al
@@ -1705,6 +1709,30 @@ router.post('/admin/settings/vpn-watch/:id/delete', (req, res) => {
   res.render('admin-settings', { ...loadSettingsPageData(), saved: 'vpn-watch', testResult: null, brandingError: null });
 });
 
+// ---------- Email Watchdog Notifications ----------
+// Home for provider expiry warnings' on/off switch, plus the newer
+// container health watchdog - and intended as the landing spot for any
+// further admin notification toggles added down the line, rather than
+// each new one getting its own scattered section.
+
+router.post('/admin/settings/provider-notifications', (req, res) => {
+  setSetting('provider_expiry_notifications_enabled', req.body.enabled === '1' ? '1' : '0');
+  res.render('admin-settings', { ...loadSettingsPageData(), saved: 'email-watchdog', testResult: null, brandingError: null });
+});
+
+router.post('/admin/settings/container-watchdog', (req, res) => {
+  setSetting('container_watchdog_enabled', req.body.enabled === '1' ? '1' : '0');
+  const mode = req.body.mode === 'selected' ? 'selected' : 'all';
+  setSetting('container_watchdog_mode', mode);
+
+  const ids = Array.isArray(req.body.container_ids) ? req.body.container_ids : [req.body.container_ids].filter(Boolean);
+  db.prepare('DELETE FROM container_watchdog_selected').run();
+  const insertSelected = db.prepare('INSERT OR IGNORE INTO container_watchdog_selected (container_id) VALUES (?)');
+  ids.forEach((id) => { if (/^\d+$/.test(id)) insertSelected.run(Number(id)); });
+
+  res.render('admin-settings', { ...loadSettingsPageData(), saved: 'email-watchdog', testResult: null, brandingError: null });
+});
+
 router.post('/admin/settings/payment-methods', (req, res) => {
   const name = String(req.body.name || '').trim();
   if (name) db.prepare('INSERT INTO payment_methods (name) VALUES (?)').run(name);
@@ -1793,6 +1821,7 @@ router.post('/admin/health/containers/:id/update', (req, res) => {
     const label = String(req.body.label || '').trim();
     const linkUrl = String(req.body.link_url || '').trim() || null;
     const logoBg = ['default', 'white', 'none'].includes(req.body.logo_bg) ? req.body.logo_bg : 'default';
+    const isActive = req.body.mark_inactive === '1' ? 0 : 1;
 
     if (!label || !containerName) return res.status(400).render('error', { message: 'Missing required fields - please fill in everything marked required and try again.' });
     if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(containerName)) {
@@ -1800,20 +1829,22 @@ router.post('/admin/health/containers/:id/update', (req, res) => {
     }
 
     if (req.file) {
-      db.prepare('UPDATE admin_health_containers SET container_name = ?, label = ?, link_url = ?, logo_bg = ?, logo_path = ? WHERE id = ?').run(
+      db.prepare('UPDATE admin_health_containers SET container_name = ?, label = ?, link_url = ?, logo_bg = ?, logo_path = ?, is_active = ? WHERE id = ?').run(
         containerName,
         label,
         linkUrl,
         logoBg,
         `/uploads/${req.file.filename}`,
+        isActive,
         req.params.id
       );
     } else {
-      db.prepare('UPDATE admin_health_containers SET container_name = ?, label = ?, link_url = ?, logo_bg = ? WHERE id = ?').run(
+      db.prepare('UPDATE admin_health_containers SET container_name = ?, label = ?, link_url = ?, logo_bg = ?, is_active = ? WHERE id = ?').run(
         containerName,
         label,
         linkUrl,
         logoBg,
+        isActive,
         req.params.id
       );
     }
@@ -1846,14 +1877,23 @@ router.post('/admin/health/containers/:id/move', (req, res) => {
 });
 
 router.get('/admin/health/status', async (req, res) => {
-  const containers = db.prepare('SELECT * FROM admin_health_containers').all();
-  if (containers.length === 0) return res.json({ ok: true, containers: [] });
+  const containers = db.prepare('SELECT * FROM admin_health_containers WHERE is_active = 1').all();
+
+  const stuckWatchByContainer = {};
+  db.prepare('SELECT * FROM stuck_watch_containers').all().forEach((w) => { stuckWatchByContainer[w.container_name] = w; });
+
+  const vpnWatchByContainer = {};
+  db.prepare('SELECT * FROM vpn_watch_containers').all().forEach((w) => { vpnWatchByContainer[w.container_name] = w; });
+
+  if (containers.length === 0) return res.json({ ok: true, containers: [], stuckWatchByContainer, vpnWatchByContainer });
 
   const target = db.prepare('SELECT * FROM admin_ssh LIMIT 1').get();
   if (!target) {
     return res.json({
       ok: true,
       containers: containers.map((c) => ({ id: c.id, label: c.label, container_name: c.container_name, status: 'unknown' })),
+      stuckWatchByContainer,
+      vpnWatchByContainer,
     });
   }
 
@@ -1867,6 +1907,8 @@ router.get('/admin/health/status', async (req, res) => {
       container_name: c.container_name,
       status: statuses[c.container_name] || 'unknown',
     })),
+    stuckWatchByContainer,
+    vpnWatchByContainer,
   });
 });
 
@@ -1945,7 +1987,13 @@ async function handleHealthAction(req, res, action) {
   }
 
   const command = `docker ${action} '${container.container_name}'`;
-  const result = await runCommand(target, command);
+  markContainerActionStart(container.id);
+  let result;
+  try {
+    result = await runCommand(target, command);
+  } finally {
+    markContainerActionEnd(container.id);
+  }
 
   db.prepare(
     'INSERT INTO admin_health_log (admin_user_id, container_name, action, success, output) VALUES (?, ?, ?, ?, ?)'
@@ -1990,18 +2038,27 @@ router.post('/admin/health/containers/:id/docker-update', async (req, res) => {
 
   const safePath = composePath.replace(/'/g, `'"'"'`);
   const name = container.container_name;
+  const withUpdate = req.body.with_update === '1' || req.body.with_update === undefined; // default to update, for any older cached page that posts with no body at all
   // --no-deps on the "up" step matters here: without it, docker compose
   // also starts (or even recreates) anything this container lists under
   // depends_on in the compose file - a shared VPN container, a database,
   // another *arr app, whatever it happens to be linked to - even though
   // only this one container was actually selected. stop/pull don't have
   // this cascading behavior, only up does.
-  const command = `cd '${safePath}' && docker compose stop '${name}' && docker compose pull '${name}' && docker compose up -d --no-deps '${name}'`;
-  const result = await runCommand(target, command, 5 * 60 * 1000); // up to 5 minutes for a single image pull
+  const command = withUpdate
+    ? `cd '${safePath}' && docker compose stop '${name}' && docker compose pull '${name}' && docker compose up -d --no-deps '${name}'`
+    : `cd '${safePath}' && docker compose stop '${name}' && docker compose up -d --no-deps '${name}'`;
+  markContainerActionStart(container.id);
+  let result;
+  try {
+    result = await runCommand(target, command, 5 * 60 * 1000); // up to 5 minutes for a single image pull
+  } finally {
+    markContainerActionEnd(container.id);
+  }
 
   db.prepare(
     'INSERT INTO admin_health_log (admin_user_id, container_name, action, success, output) VALUES (?, ?, ?, ?, ?)'
-  ).run(req.user.id, name, 'update', result.success ? 1 : 0, result.output);
+  ).run(req.user.id, name, withUpdate ? 'update' : 'restart', result.success ? 1 : 0, result.output);
 
   res.json({
     ok: result.success,
@@ -2227,7 +2284,13 @@ router.post('/admin/health/containers/bulk-action', async (req, res) => {
 
   const names = containers.map((c) => `'${c.container_name}'`).join(' ');
   const command = `docker ${action} ${names}`;
-  const result = await runCommand(target, command);
+  containers.forEach((c) => markContainerActionStart(c.id));
+  let result;
+  try {
+    result = await runCommand(target, command);
+  } finally {
+    containers.forEach((c) => markContainerActionEnd(c.id));
+  }
 
   containers.forEach((c) => {
     db.prepare(

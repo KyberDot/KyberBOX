@@ -261,6 +261,65 @@
             </details>
         </div>
 
+        <!-- Email Watchdog Notifications -->
+        <div class="glass rounded-2xl sm:rounded-3xl p-5 sm:p-8 mb-8">
+            <h3 class="text-sm font-bold text-white mb-1"><i class="fas fa-bell mr-2 text-sky-400"></i>Email Watchdog Notifications</h3>
+            <p class="text-slate-400 text-xs mb-4">Turn any of KyberBOX's admin notification emails on or off. New notification features land here going forward, rather than scattered across settings.</p>
+
+            <div class="pb-5 mb-5 border-b border-white/5">
+                <form method="POST" action="/admin/settings/provider-notifications" data-ajax-form class="flex items-start justify-between gap-4">
+                    <div class="min-w-0">
+                        <p class="text-white text-sm font-semibold">Provider Expiry Notifications</p>
+                        <p class="text-slate-500 text-xs mt-0.5">Emails every admin when a Providers page entry tracking an expiry date is within 2 days of it.</p>
+                    </div>
+                    <label class="flex items-center gap-2 flex-shrink-0 cursor-pointer">
+                        <input type="checkbox" name="enabled" value="1" <%= settings.provider_expiry_notifications_enabled === '1' ? 'checked' : '' %> onchange="this.form.requestSubmit()" class="accent-sky-500 w-4 h-4">
+                        <span class="text-xs text-slate-400">Enabled</span>
+                    </label>
+                </form>
+            </div>
+
+            <form method="POST" action="/admin/settings/container-watchdog" data-ajax-form>
+                <div class="flex items-start justify-between gap-4 mb-4">
+                    <div class="min-w-0">
+                        <p class="text-white text-sm font-semibold">Container Health Watchdog</p>
+                        <p class="text-slate-500 text-xs mt-0.5">Emails every admin once if a container is offline or unhealthy for over 2 minutes, outside of a restart/update triggered from KyberBOX itself.</p>
+                    </div>
+                    <label class="flex items-center gap-2 flex-shrink-0 cursor-pointer">
+                        <input type="checkbox" name="enabled" value="1" <%= settings.container_watchdog_enabled === '1' ? 'checked' : '' %> class="accent-sky-500 w-4 h-4">
+                        <span class="text-xs text-slate-400">Enabled</span>
+                    </label>
+                </div>
+
+                <% if (healthContainers.length === 0) { %>
+                    <p class="text-slate-500 text-xs mb-4">No containers added yet — add some on the <a href="/admin/health" class="text-sky-400 hover:text-sky-300">Health page</a> first.</p>
+                <% } else { %>
+                    <div class="flex items-center gap-4 mb-3 text-xs">
+                        <label class="flex items-center gap-1.5 cursor-pointer">
+                            <input type="radio" name="mode" value="all" <%= settings.container_watchdog_mode !== 'selected' ? 'checked' : '' %> onchange="toggleContainerWatchdogList(false)" class="accent-sky-500">
+                            <span class="text-slate-300">All containers</span>
+                        </label>
+                        <label class="flex items-center gap-1.5 cursor-pointer">
+                            <input type="radio" name="mode" value="selected" <%= settings.container_watchdog_mode === 'selected' ? 'checked' : '' %> onchange="toggleContainerWatchdogList(true)" class="accent-sky-500">
+                            <span class="text-slate-300">Specific containers</span>
+                        </label>
+                    </div>
+
+                    <div id="containerWatchdogList" class="<%= settings.container_watchdog_mode === 'selected' ? '' : 'hidden' %> grid sm:grid-cols-2 gap-2 mb-4">
+                        <% healthContainers.forEach(function(c) { %>
+                            <label class="flex items-center gap-2 bg-slate-900/40 rounded-lg px-3 py-2 text-xs cursor-pointer">
+                                <input type="checkbox" name="container_ids" value="<%= c.id %>" <%= watchedContainerIds.has(c.id) ? 'checked' : '' %> class="accent-sky-500 flex-shrink-0">
+                                <span class="text-slate-300 truncate"><%= c.label %></span>
+                                <span class="text-slate-600 font-mono truncate">(<%= c.container_name %>)</span>
+                            </label>
+                        <% }); %>
+                    </div>
+                <% } %>
+
+                <button type="submit" class="btn-primary py-3 rounded-xl text-sm">Save</button>
+            </form>
+        </div>
+
         <!-- Payment Methods -->
         <div class="glass rounded-2xl sm:rounded-3xl p-5 sm:p-8 mb-8">
             <h2 class="text-lg font-bold text-white mb-1"><i class="fas fa-credit-card mr-2 text-sky-400"></i>Payment Methods</h2>
@@ -328,5 +387,12 @@
             </form>
         </div>
     </main>
+
+    <script>
+        function toggleContainerWatchdogList(showList) {
+            const list = document.getElementById('containerWatchdogList');
+            if (list) list.classList.toggle('hidden', !showList);
+        }
+    </script>
 </body>
 </html>

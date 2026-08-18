@@ -84,6 +84,15 @@ CREATE TABLE IF NOT EXISTS vpn_watch_containers (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Which specific containers are watched by the Container Health Watchdog
+-- when its mode is 'selected' rather than 'all' (see the settings key
+-- container_watchdog_mode). Irrelevant, and simply ignored, when mode is
+-- 'all', since every active container is watched in that case regardless
+-- of what's in here.
+CREATE TABLE IF NOT EXISTS container_watchdog_selected (
+  container_id INTEGER PRIMARY KEY REFERENCES admin_health_containers(id) ON DELETE CASCADE
+);
+
 -- S3-compatible object storage connections (Hetzner Object Storage, AWS
 -- S3, Backblaze B2, DigitalOcean Spaces, Cloudflare R2, MinIO, etc. -
 -- anything speaking the standard S3 API) that admins can browse and
@@ -362,6 +371,9 @@ CREATE TABLE IF NOT EXISTS admin_health_containers (
   label TEXT NOT NULL,
   logo_path TEXT,
   sort_order INTEGER NOT NULL DEFAULT 0,
+  is_active INTEGER NOT NULL DEFAULT 1, -- inactive containers are excluded from live status checks and homepage stats, shown greyed out on the Health page
+  first_seen_unhealthy_at TEXT, -- when this container was first observed down/unhealthy in its current episode - cleared once it recovers
+  unhealthy_alert_sent_at TEXT, -- set once an admin email has gone out for the current unhealthy episode, so it isn't repeated every check
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -520,6 +532,9 @@ ensureColumn('tickets', 'plan_id', 'plan_id INTEGER REFERENCES plans(id)'); // s
 ensureColumn('admin_health_containers', 'logo_path', 'logo_path TEXT');
 ensureColumn('admin_health_containers', 'link_url', 'link_url TEXT');
 ensureColumn('admin_health_containers', 'logo_bg', "logo_bg TEXT NOT NULL DEFAULT 'default'"); // default | white | none
+ensureColumn('admin_health_containers', 'is_active', 'is_active INTEGER NOT NULL DEFAULT 1');
+ensureColumn('admin_health_containers', 'first_seen_unhealthy_at', 'first_seen_unhealthy_at TEXT');
+ensureColumn('admin_health_containers', 'unhealthy_alert_sent_at', 'unhealthy_alert_sent_at TEXT');
 ensureColumn('plan_actions', 'style', "style TEXT NOT NULL DEFAULT 'warning'"); // warning | danger
 
 db.exec(`

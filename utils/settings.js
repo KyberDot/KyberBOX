@@ -44,6 +44,9 @@ function getAllSettings() {
     compose_path: getSetting('compose_path', ''),
     tautulli_url: getSetting('tautulli_url', ''),
     tautulli_api_key: getSetting('tautulli_api_key', ''), // decrypted value, for internal use only
+    provider_expiry_notifications_enabled: getSetting('provider_expiry_notifications_enabled', '1'),
+    container_watchdog_enabled: getSetting('container_watchdog_enabled', '0'),
+    container_watchdog_mode: getSetting('container_watchdog_mode', 'all'), // all | selected
   };
 }
 

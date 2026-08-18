@@ -41,7 +41,7 @@ function dismissFullResetResult() {
 async function runResetSequence(target, safePath, withUpdate) {
   let combinedOutput = '';
 
-  fullResetState = { running: true, phase: 'down', pullAttempt: 0, pullMaxAttempts: PULL_MAX_ATTEMPTS, lastResult: null };
+  fullResetState = { running: true, phase: 'down', pullAttempt: 0, pullMaxAttempts: PULL_MAX_ATTEMPTS, lastResult: null, withUpdate };
   const downResult = await runCommand(target, `cd '${safePath}' && docker compose down`, 5 * 60 * 1000);
   combinedOutput += downResult.output;
   if (!downResult.success) {
@@ -52,7 +52,7 @@ async function runResetSequence(target, safePath, withUpdate) {
   if (withUpdate) {
     let pullSucceeded = false;
     for (let attempt = 1; attempt <= PULL_MAX_ATTEMPTS; attempt++) {
-      fullResetState = { running: true, phase: 'pull', pullAttempt: attempt, pullMaxAttempts: PULL_MAX_ATTEMPTS, lastResult: null };
+      fullResetState = { running: true, phase: 'pull', pullAttempt: attempt, pullMaxAttempts: PULL_MAX_ATTEMPTS, lastResult: null, withUpdate };
       const pullResult = await runCommand(target, `cd '${safePath}' && docker compose pull`, 10 * 60 * 1000);
       combinedOutput += `\n\n--- Pull attempt ${attempt}/${PULL_MAX_ATTEMPTS} ---\n${pullResult.output}`;
       if (pullResult.success) {
@@ -68,7 +68,7 @@ async function runResetSequence(target, safePath, withUpdate) {
     if (!pullSucceeded) pullFailedAfterRetries = true;
   }
 
-  fullResetState = { running: true, phase: 'up', pullAttempt: 0, pullMaxAttempts: PULL_MAX_ATTEMPTS, lastResult: null };
+  fullResetState = { running: true, phase: 'up', pullAttempt: 0, pullMaxAttempts: PULL_MAX_ATTEMPTS, lastResult: null, withUpdate };
   const upResult = await runCommand(target, `cd '${safePath}' && docker compose up -d`, 5 * 60 * 1000);
   combinedOutput += `\n\n--- Up ---\n${upResult.output}`;
 
@@ -110,8 +110,8 @@ function triggerFullReset(source, adminUserId, serviceLabel, withUpdate = true) 
 
   const safePath = composePath.replace(/'/g, `'"'"'`);
 
-  fullResetState = { running: true, phase: 'down', pullAttempt: 0, pullMaxAttempts: PULL_MAX_ATTEMPTS, lastResult: null };
-  startReset(source);
+  fullResetState = { running: true, phase: 'down', pullAttempt: 0, pullMaxAttempts: PULL_MAX_ATTEMPTS, lastResult: null, withUpdate };
+  startReset(source, withUpdate);
 
   const allActiveSubscribers = db
     .prepare(

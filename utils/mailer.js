@@ -132,6 +132,24 @@ async function notifyAdminVpnFailure(admins, serviceLabel, containerName) {
   ).catch(() => {});
 }
 
+async function notifyAdminContainerUnhealthy(admins, container, status) {
+  if (!admins || admins.length === 0) return;
+
+  await Promise.all(
+    admins.map((admin) =>
+      sendMail({
+        to: admin.email,
+        subject: `Container Watchdog: ${container.label} is ${status}`,
+        bodyHtml: `
+          <p>Hi ${admin.name},</p>
+          <p><strong>${container.label}</strong> (container: <code>${container.container_name}</code>) has been <strong>${status}</strong> for more than 2 minutes, outside of any restart or update triggered from the portal.</p>
+          <p>Check the container's logs or the Health page for more detail.</p>
+        `,
+      })
+    )
+  ).catch(() => {});
+}
+
 async function notifyAdminProviderExpiring(admins, provider, daysLeft) {
   if (!admins || admins.length === 0) return;
   const dayWord = daysLeft === 1 ? 'day' : 'days';
@@ -152,4 +170,4 @@ async function notifyAdminProviderExpiring(admins, provider, daysLeft) {
   ).catch(() => {});
 }
 
-module.exports = { sendMail, isConfigured, getTransporter, notifyResetStarted, notifyAutoResetStarted, notifyAdminVpnFailure, notifyAdminProviderExpiring };
+module.exports = { sendMail, isConfigured, getTransporter, notifyResetStarted, notifyAutoResetStarted, notifyAdminVpnFailure, notifyAdminProviderExpiring, notifyAdminContainerUnhealthy };
