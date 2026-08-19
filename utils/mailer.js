@@ -114,17 +114,17 @@ async function notifyAutoResetStarted(recipients, serviceLabel, withUpdate = tru
   ).catch(() => {});
 }
 
-async function notifyAdminVpnFailure(admins, serviceLabel, containerName) {
+async function notifyAdminVpnInactive(admins, serviceLabel, containerName) {
   if (!admins || admins.length === 0) return;
 
   await Promise.all(
     admins.map((admin) =>
       sendMail({
         to: admin.email,
-        subject: `VPN Guard Failure: ${serviceLabel}`,
+        subject: `VPN Guard: ${serviceLabel} is inactive`,
         bodyHtml: `
           <p>Hi ${admin.name},</p>
-          <p><strong>${serviceLabel}</strong> (container: <code>${containerName}</code>) reported a VPN connection failure and refused to start its service. It will keep retrying based on its restart policy, but the VPN tunnel itself may need attention.</p>
+          <p><strong>${serviceLabel}</strong> (container: <code>${containerName}</code>) has been running for more than 2 minutes without a confirmed VPN connection - either it reported a failure, or no confirmation could be found at all.</p>
           <p>Check the container's logs or the Health page for more detail.</p>
         `,
       })
@@ -179,4 +179,4 @@ async function notifyAdminProviderExpiring(admins, provider, daysLeft) {
   ).catch(() => {});
 }
 
-module.exports = { sendMail, isConfigured, getTransporter, notifyResetStarted, notifyAutoResetStarted, notifyAdminVpnFailure, notifyAdminProviderExpiring, notifyAdminContainersUnhealthy };
+module.exports = { sendMail, isConfigured, getTransporter, notifyResetStarted, notifyAutoResetStarted, notifyAdminVpnInactive, notifyAdminProviderExpiring, notifyAdminContainersUnhealthy };

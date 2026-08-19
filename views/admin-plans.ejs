@@ -184,10 +184,10 @@
                                                 <option value="warning" <%= action.style !== 'danger' ? 'selected' : '' %>>Warning (amber) — quick actions like a restart</option>
                                                 <option value="danger" <%= action.style === 'danger' ? 'selected' : '' %>>Danger (red) — slow/heavy actions like a full stack reset</option>
                                             </select>
-                                            <label class="<%= action.style === 'danger' ? 'flex' : 'hidden' %> items-center gap-2 text-xs text-slate-400 sm:col-span-2" data-banner-estimate-field>
-                                                <input type="checkbox" name="banner_with_update" value="1" <%= action.banner_time_estimate === '5-15' ? 'checked' : '' %> class="accent-sky-500">
-                                                +Update <span class="text-slate-500">(banner shows ~5–15 min like Reset &amp; Update, instead of ~4–8 min like Restart Only)</span>
-                                            </label>
+                                            <div class="<%= action.style === 'danger' ? 'flex' : 'hidden' %> items-center sm:col-span-2" data-banner-estimate-field>
+                                                <button type="button" onclick="toggleBannerUpdatePill(this)" class="badge <%= action.banner_time_estimate === '5-15' ? 'badge-active' : 'badge-closed' %> cursor-pointer text-xs px-3 py-1.5">+Update</button>
+                                                <input type="hidden" name="banner_with_update" value="<%= action.banner_time_estimate === '5-15' ? '1' : '0' %>">
+                                            </div>
                                             <button type="submit" class="btn-primary py-3 rounded-xl text-sm sm:col-span-2">Save Changes</button>
                                         </form>
                                         <form method="POST" action="/admin/plans/<%= plan.id %>/actions/<%= action.id %>/delete" data-ajax-form data-confirm="Delete this action button?" class="mt-2">
@@ -210,10 +210,10 @@
                                 <option value="warning">Warning (amber) — quick actions like a restart</option>
                                 <option value="danger">Danger (red) — slow/heavy actions like a full stack reset</option>
                             </select>
-                            <label class="hidden items-center gap-2 text-xs text-slate-400 sm:col-span-2" data-banner-estimate-field>
-                                <input type="checkbox" name="banner_with_update" value="1" class="accent-sky-500">
-                                +Update <span class="text-slate-500">(banner shows ~5–15 min like Reset &amp; Update, instead of ~4–8 min like Restart Only)</span>
-                            </label>
+                            <div class="hidden items-center sm:col-span-2" data-banner-estimate-field>
+                                <button type="button" onclick="toggleBannerUpdatePill(this)" class="badge badge-closed cursor-pointer text-xs px-3 py-1.5">+Update</button>
+                                <input type="hidden" name="banner_with_update" value="0">
+                            </div>
                             <button type="submit" class="btn-primary py-3 rounded-xl text-sm sm:col-span-4">Add Action</button>
                         </form>
                     </details>
@@ -452,6 +452,13 @@
             const showing = styleSelect.value === 'danger';
             field.classList.toggle('hidden', !showing);
             field.classList.toggle('flex', showing);
+        }
+
+        function toggleBannerUpdatePill(btn) {
+            const input = btn.nextElementSibling; // the paired hidden banner_with_update input, always immediately after the pill in the markup
+            const willBeActive = input.value === '0';
+            input.value = willBeActive ? '1' : '0';
+            btn.className = 'badge ' + (willBeActive ? 'badge-active' : 'badge-closed') + ' cursor-pointer text-xs px-3 py-1.5';
         }
 
         function formatElapsed(totalSeconds) {

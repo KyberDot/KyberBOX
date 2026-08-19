@@ -113,6 +113,15 @@ function triggerFullReset(source, adminUserId, serviceLabel, withUpdate = true) 
   fullResetState = { running: true, phase: 'down', pullAttempt: 0, pullMaxAttempts: PULL_MAX_ATTEMPTS, lastResult: null, withUpdate };
   startReset(source, withUpdate);
 
+  // Lazy-required to avoid a circular dependency - stuckWatch.js already
+  // imports triggerFullReset from this file for its own auto-reset
+  // feature, so importing it back at the top of this file would create a
+  // real load-order cycle. Not awaited - the rest of this function needs
+  // to return promptly, not wait on a live SSH-based scan.
+  const { checkVpnWatch } = require('./vpnWatch');
+  const { checkStuckWatch } = require('./stuckWatch');
+  Promise.all([checkVpnWatch(), checkStuckWatch()]).catch(() => {});
+
   const allActiveSubscribers = db
     .prepare(
       `SELECT DISTINCT u.id, u.email, u.name FROM subscriptions s
@@ -136,7 +145,7 @@ function triggerFullReset(source, adminUserId, serviceLabel, withUpdate = true) 
   }
 
   runResetSequence(target, safePath, withUpdate)
-    .then((result) => {
+    .then(async (result) => {
       db.prepare(
         'INSERT INTO admin_health_log (admin_user_id, container_name, action, success, output) VALUES (?, ?, ?, ?, ?)'
       ).run(resolvedAdminId, 'ALL (full stack)', source, result.success ? 1 : 0, result.output);
@@ -151,6 +160,14 @@ function triggerFullReset(source, adminUserId, serviceLabel, withUpdate = true) 
       } else {
         message = 'Reset complete: stack was taken down and brought back up.';
       }
+
+      // Fresh check now that the stack is back up (or the attempt is over
+      // either way) - awaited so the completion state reflects current
+      // data, rather than whatever the last background cycle happened to
+      // see, which could be several minutes stale by now.
+      const { checkVpnWatch } = require('./vpnWatch');
+      const { checkStuckWatch } = require('./stuckWatch');
+      await Promise.all([checkVpnWatch(), checkStuckWatch()]).catch(() => {});
 
       fullResetState = { running: false, phase: null, pullAttempt: 0, pullMaxAttempts: PULL_MAX_ATTEMPTS, lastResult: { ok: result.success, message, completedAt: Date.now(), withUpdate } };
       endReset();

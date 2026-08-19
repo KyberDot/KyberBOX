@@ -318,6 +318,19 @@
 
                 <button type="submit" class="btn-primary px-6 py-3 rounded-xl text-sm">Save</button>
             </form>
+
+            <div class="pt-5 mt-5 border-t border-white/5">
+                <form method="POST" action="/admin/settings/vpn-watchdog" data-ajax-form class="flex items-start justify-between gap-4">
+                    <div class="min-w-0">
+                        <p class="text-white text-sm font-semibold">VPN Guard Watchdog Notifications</p>
+                        <p class="text-slate-500 text-xs mt-0.5">Emails every admin once if a watched container's VPN has been inactive for over 2 minutes while the container itself is running.</p>
+                    </div>
+                    <label class="flex items-center gap-2 flex-shrink-0 cursor-pointer">
+                        <input type="checkbox" name="enabled" value="1" <%= settings.vpn_watchdog_enabled === '1' ? 'checked' : '' %> onchange="this.form.requestSubmit()" class="accent-sky-500 w-4 h-4">
+                        <span class="text-xs text-slate-400">Enabled</span>
+                    </label>
+                </form>
+            </div>
         </div>
 
         <!-- Payment Methods -->

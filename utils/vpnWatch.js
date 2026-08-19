@@ -39,14 +39,27 @@
 // looks like "currently running, same start time, for a long time". So
 // if a container has been running continuously well past how long these
 // scripts could plausibly still be waiting, and its logs show no
-// evidence either way, it's inferred connected rather than left stuck on
-// unknown forever. This is a best-effort inference for when the real
+// evidence either way, it's inferred active rather than left flagged
+// inactive forever. This is a best-effort inference for when the real
 // evidence is gone, not a substitute for finding it - the direct log
 // check is always tried first.
+//
+// Three-state model (matches what's shown on the Health page):
+//   active   - container running, VPN tunnel confirmed up
+//   inactive - container running (up, unhealthy, or any other running
+//              state), but the VPN isn't confirmed - either the script
+//              printed its failure line, or no determination could be
+//              made yet/at all. The container being up at all is what
+//              distinguishes this from "unknown".
+//   unknown  - container isn't running. Its VPN status genuinely can't
+//              be known while it's not up, so this isn't "inactive" -
+//              inactive specifically means "up, but VPN isn't".
 
 const db = require('../db');
 const { runCommand } = require('./ssh');
-const { notifyAdminVpnFailure } = require('./mailer');
+const { notifyAdminVpnInactive } = require('./mailer');
+const { getSetting } = require('./settings');
+const { parseStoredDate } = require('./time');
 
 const SUCCESS_MARKER = 'VPN tunnel confirmed UP';
 const FAILURE_MARKER = 'VPN connection FAILED';
@@ -56,6 +69,9 @@ const STARTUP_WINDOW_MINUTES = 30;
 // (a few minutes at most) - if a container's been running this long with
 // no failure ever observed, it didn't get here by exiting 1 repeatedly.
 const STABLE_UPTIME_FALLBACK_MINUTES = 20;
+
+// Matches the container health watchdog's own threshold, for consistency.
+const INACTIVE_ALERT_THRESHOLD_MS = 2 * 60 * 1000;
 
 function addMinutes(isoString, minutes) {
   const d = new Date(isoString);
@@ -67,6 +83,23 @@ function minutesSince(isoString) {
   return (Date.now() - new Date(isoString).getTime()) / 60000;
 }
 
+// Sends the admin alert once a watch's inactive episode has been running
+// long enough, if it hasn't already been sent for this episode. Safe to
+// call on every check regardless of whether anything just changed - time
+// passing is the trigger here, not a fresh determination, so this has to
+// be re-evaluated every pass even when the status itself is unchanged.
+async function maybeAlertInactive(watch) {
+  if (getSetting('vpn_watchdog_enabled', '1') !== '1') return;
+  if (!watch.first_seen_inactive_at || watch.inactive_alert_sent_at) return;
+
+  const firstSeen = parseStoredDate(watch.first_seen_inactive_at);
+  if (!firstSeen || Date.now() - firstSeen.getTime() < INACTIVE_ALERT_THRESHOLD_MS) return;
+
+  const admins = db.prepare("SELECT name, email FROM users WHERE role = 'admin'").all();
+  await notifyAdminVpnInactive(admins, watch.service_label, watch.container_name).catch(() => {});
+  db.prepare(`UPDATE vpn_watch_containers SET inactive_alert_sent_at = datetime('now') WHERE id = ?`).run(watch.id);
+}
+
 async function checkOneContainer(target, watch) {
   const safeName = watch.container_name.replace(/'/g, `'"'"'`);
 
@@ -76,15 +109,19 @@ async function checkOneContainer(target, watch) {
   const isRunning = runningStr === 'true';
 
   // A stopped container has no active VPN tunnel, full stop, regardless of
-  // whatever it last reported while it was actually running. This has to
+  // whatever it last reported while it was actually running - and "how
+  // long has it been inactive" no longer applies either, since that's
+  // specifically about a running-but-unconfirmed container. This has to
   // be checked before the "already have a determination" shortcut below -
   // docker inspect's StartedAt doesn't change when a container is merely
   // stopped (only when it's actually restarted), so without this check
   // that shortcut would keep treating a stopped container as if nothing
-  // had changed and leave a stale "connected" showing indefinitely.
+  // had changed and leave a stale "active" showing indefinitely.
   if (!isRunning) {
-    if (watch.last_status !== 'offline') {
-      db.prepare(`UPDATE vpn_watch_containers SET last_status = 'offline', last_checked_at = datetime('now') WHERE id = ?`).run(watch.id);
+    if (watch.last_status !== 'unknown' || watch.first_seen_inactive_at || watch.inactive_alert_sent_at) {
+      db.prepare(
+        `UPDATE vpn_watch_containers SET last_status = 'unknown', first_seen_inactive_at = NULL, inactive_alert_sent_at = NULL, last_checked_at = datetime('now') WHERE id = ?`
+      ).run(watch.id);
     } else {
       db.prepare(`UPDATE vpn_watch_containers SET last_checked_at = datetime('now') WHERE id = ?`).run(watch.id);
     }
@@ -95,9 +132,12 @@ async function checkOneContainer(target, watch) {
 
   // Already have a real determination and the container hasn't restarted
   // since - nothing new could have happened, since the script only ever
-  // runs its check once per container lifetime.
-  if (!containerRestarted && (watch.last_status === 'connected' || watch.last_status === 'failed')) {
+  // runs its check once per container lifetime. Still re-checks the
+  // inactive alert threshold though, since that's driven by time passing,
+  // not by anything a fresh log scan could reveal.
+  if (!containerRestarted && (watch.last_status === 'active' || watch.last_status === 'inactive')) {
     db.prepare(`UPDATE vpn_watch_containers SET last_checked_at = datetime('now') WHERE id = ?`).run(watch.id);
+    if (watch.last_status === 'inactive') await maybeAlertInactive(watch);
     return;
   }
 
@@ -108,37 +148,40 @@ async function checkOneContainer(target, watch) {
   const output = result.output || '';
 
   let newStatus;
-  if (output.includes(FAILURE_MARKER)) {
-    newStatus = 'failed';
-  } else if (output.includes(SUCCESS_MARKER)) {
-    newStatus = 'connected';
-  } else if (isRunning && minutesSince(startedAt) >= STABLE_UPTIME_FALLBACK_MINUTES) {
+  if (output.includes(SUCCESS_MARKER)) {
+    newStatus = 'active';
+  } else if (output.includes(FAILURE_MARKER)) {
+    newStatus = 'inactive';
+  } else if (minutesSince(startedAt) >= STABLE_UPTIME_FALLBACK_MINUTES) {
     // No direct evidence either way, most likely because Docker's own
     // log retention has already discarded the startup-period logs for a
     // long-running container - but it's been running continuously for
     // well longer than the script could still be waiting, with no
     // failure ever seen, so it's safe to infer success.
-    newStatus = 'connected';
+    newStatus = 'active';
   } else {
     // Neither marker present in the startup window, and the container
     // hasn't been running long enough yet for the stable-uptime fallback
-    // to apply - still genuinely unresolved.
-    newStatus = 'unknown';
+    // to apply - the container is up but the VPN isn't confirmed, which
+    // is exactly what "inactive" means under the new model.
+    newStatus = 'inactive';
   }
 
-  const wasAlreadyFailing = !containerRestarted && watch.last_status === 'failed';
+  if (newStatus === 'active') {
+    db.prepare(
+      `UPDATE vpn_watch_containers SET last_status = 'active', last_container_start_at = ?, first_seen_inactive_at = NULL, inactive_alert_sent_at = NULL, last_checked_at = datetime('now') WHERE id = ?`
+    ).run(startedAt, watch.id);
+    return;
+  }
+
+  // newStatus === 'inactive'. This code path is only ever reached for a
+  // genuinely new situation (the very first check for this watch, or the
+  // container having just (re)started) - any continuation of an existing
+  // inactive episode is handled by the shortcut above instead - so this
+  // always starts a fresh episode timer rather than trying to preserve one.
   db.prepare(
-    `UPDATE vpn_watch_containers SET last_status = ?, last_container_start_at = ?, last_checked_at = datetime('now') WHERE id = ?`
-  ).run(newStatus, startedAt, watch.id);
-
-  // Only alert on the transition INTO failed, not on every check while it
-  // stays failed - otherwise a VPN that's been down for a day would mean
-  // an email every 5 minutes for the same ongoing issue.
-  if (newStatus === 'failed' && !wasAlreadyFailing) {
-    const admins = db.prepare("SELECT name, email FROM users WHERE role = 'admin'").all();
-    notifyAdminVpnFailure(admins, watch.service_label, watch.container_name);
-    db.prepare(`UPDATE vpn_watch_containers SET last_alert_sent_at = datetime('now') WHERE id = ?`).run(watch.id);
-  }
+    `UPDATE vpn_watch_containers SET last_status = 'inactive', last_container_start_at = ?, first_seen_inactive_at = datetime('now'), inactive_alert_sent_at = NULL, last_checked_at = datetime('now') WHERE id = ?`
+  ).run(startedAt, watch.id);
 }
 
 async function checkVpnWatch() {

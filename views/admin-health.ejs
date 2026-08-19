@@ -124,8 +124,8 @@
                     <% } %>
 
                     <% var vpnWatch = vpnWatchByContainer[c.container_name]; %>
-                    <span data-vpn-watch-badge="<%= c.container_name %>" class="<%= vpnWatch ? '' : 'hidden' %> badge text-[10px] px-2 py-0.5 <%= !vpnWatch ? '' : (vpnWatch.last_status === 'connected' ? 'badge-active' : (vpnWatch.last_status === 'failed' ? 'badge-expired' : 'badge-closed')) %>">
-                        <i class="fas fa-shield-halved"></i> <span data-vpn-watch-label>VPN <%= !vpnWatch ? 'Unknown' : (vpnWatch.last_status === 'connected' ? 'Active' : (vpnWatch.last_status === 'failed' ? 'Failed' : (vpnWatch.last_status === 'offline' ? 'Offline' : 'Unknown'))) %></span>
+                    <span data-vpn-watch-badge="<%= c.container_name %>" class="<%= vpnWatch ? '' : 'hidden' %> badge text-[10px] px-2 py-0.5 <%= !vpnWatch ? '' : (vpnWatch.last_status === 'active' ? 'badge-active' : (vpnWatch.last_status === 'inactive' ? 'badge-expired' : 'badge-closed')) %>">
+                        <i class="fas fa-shield-halved"></i> <span data-vpn-watch-label>VPN <%= !vpnWatch ? 'Unknown' : (vpnWatch.last_status === 'active' ? 'Active' : (vpnWatch.last_status === 'inactive' ? 'Inactive' : 'Unknown')) %></span>
                     </span>
 
                     <div class="flex items-center gap-1.5 flex-wrap justify-center w-full">
@@ -1333,17 +1333,17 @@
                 const statusKey = w.last_status || 'unknown';
                 if (badge.getAttribute('data-current-status') === statusKey) return;
 
-                const tone = statusKey === 'connected' ? 'badge-active' : (statusKey === 'failed' ? 'badge-expired' : 'badge-closed');
-                const text = statusKey === 'connected' ? 'Active' : (statusKey === 'failed' ? 'Failed' : (statusKey === 'offline' ? 'Offline' : 'Unknown'));
+                const tone = statusKey === 'active' ? 'badge-active' : (statusKey === 'inactive' ? 'badge-expired' : 'badge-closed');
+                const text = statusKey === 'active' ? 'Active' : (statusKey === 'inactive' ? 'Inactive' : 'Unknown');
                 badge.className = 'badge text-[10px] px-2 py-0.5 ' + tone;
                 label.textContent = 'VPN ' + text;
                 badge.setAttribute('data-current-status', statusKey);
             });
         }
 
-        async function refreshHealth() {
+        async function refreshHealth(live = true) {
             try {
-                const res = await fetch('/admin/health/status');
+                const res = await fetch('/admin/health/status' + (live ? '?live=1' : ''));
                 const data = await res.json();
                 if (!data.ok) return;
                 applyStatuses(data.containers);
@@ -1364,7 +1364,7 @@
         // the DOM when something's actually different - so it self-
         // corrects within a few seconds either way, without flickering
         // pills that haven't changed.
-        setInterval(refreshHealth, 4000);
+        setInterval(function () { refreshHealth(false); }, 4000);
 
         // ---------- Refresh all statuses ----------
         async function refreshAllStatuses() {

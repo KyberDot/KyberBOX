@@ -78,9 +78,11 @@ CREATE TABLE IF NOT EXISTS vpn_watch_containers (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   container_name TEXT NOT NULL UNIQUE,
   service_label TEXT NOT NULL,
-  last_status TEXT NOT NULL DEFAULT 'unknown', -- unknown | connected | failed | offline
+  last_status TEXT NOT NULL DEFAULT 'unknown', -- active (VPN confirmed up) | inactive (container running but VPN not confirmed, for any reason) | unknown (container offline/down)
   last_checked_at TEXT,
   last_alert_sent_at TEXT,
+  first_seen_inactive_at TEXT, -- when this container's VPN was first observed inactive in its current episode - cleared once it recovers to active (or the container goes offline, since "inactive" no longer applies there)
+  inactive_alert_sent_at TEXT, -- set once an admin email has gone out for the current inactive episode, so it isn't repeated every check
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -432,7 +434,9 @@ function ensureColumn(table, column, ddl) {
   const cols = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
   if (!cols.includes(column)) {
     db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
+    return true; // just added for the first time
   }
+  return false; // already existed from a previous run
 }
 
 ensureColumn('subscriptions', 'plan_id', 'plan_id INTEGER REFERENCES plans(id)');
@@ -453,6 +457,22 @@ ensureColumn('users', 'plex_username', 'plex_username TEXT');
 ensureColumn('users', 'plex_user_id', 'plex_user_id TEXT'); // Plex.tv account id, matched by email - used for Tautulli watch history/now-watching only
 ensureColumn('plan_containers', 'link_url', 'link_url TEXT');
 ensureColumn('vpn_watch_containers', 'last_container_start_at', 'last_container_start_at TEXT');
+const isFirstRunOfVpnStatusMigration = ensureColumn('vpn_watch_containers', 'first_seen_inactive_at', 'first_seen_inactive_at TEXT');
+ensureColumn('vpn_watch_containers', 'inactive_alert_sent_at', 'inactive_alert_sent_at TEXT');
+// One-time only (gated on the column above having just been added for the
+// first time) - without that gate, this would keep re-running on every
+// app restart and incorrectly reclassify legitimately-offline containers
+// (which use 'unknown' in the new scheme too) as 'inactive' forever.
+// Order matters: the old 'unknown' (meaning "running, VPN status not yet
+// determined") must convert to the new 'inactive' BEFORE 'offline'
+// converts to the new 'unknown' - otherwise both would briefly share the
+// same 'unknown' value with no way to tell them apart.
+if (isFirstRunOfVpnStatusMigration) {
+  db.prepare(`UPDATE vpn_watch_containers SET last_status = 'inactive' WHERE last_status = 'unknown'`).run();
+  db.prepare(`UPDATE vpn_watch_containers SET last_status = 'active' WHERE last_status = 'connected'`).run();
+  db.prepare(`UPDATE vpn_watch_containers SET last_status = 'inactive' WHERE last_status = 'failed'`).run();
+  db.prepare(`UPDATE vpn_watch_containers SET last_status = 'unknown' WHERE last_status = 'offline'`).run();
+}
 ensureColumn('stuck_watch_containers', 'last_container_start_at', 'last_container_start_at TEXT');
 ensureColumn('storage_buckets', 'total_capacity_bytes', 'total_capacity_bytes INTEGER');
 ensureColumn('sftp_storage_boxes', 'total_capacity_bytes', 'total_capacity_bytes INTEGER');

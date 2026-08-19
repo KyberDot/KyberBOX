@@ -10,6 +10,8 @@ const { syncIncludedPlansForUser } = require('../utils/includedPlans');
 const { londonInputToUtcIso, formatUK, formatUKForEmail } = require('../utils/time');
 const { serviceLabel } = require('../utils/labels');
 const { runCommand, getContainerStatuses } = require('../utils/ssh');
+const { checkVpnWatch } = require('../utils/vpnWatch');
+const { checkStuckWatch } = require('../utils/stuckWatch');
 const { upload } = require('../utils/uploads');
 const { startReset, endReset, getResetState } = require('../utils/resetLock');
 const { markContainerActionStart, markContainerActionEnd } = require('../utils/containerActionLock');
@@ -1747,6 +1749,11 @@ router.post('/admin/settings/container-watchdog', (req, res) => {
   res.render('admin-settings', { ...loadSettingsPageData(), saved: 'email-watchdog', testResult: null, brandingError: null });
 });
 
+router.post('/admin/settings/vpn-watchdog', (req, res) => {
+  setSetting('vpn_watchdog_enabled', req.body.enabled === '1' ? '1' : '0');
+  res.render('admin-settings', { ...loadSettingsPageData(), saved: 'email-watchdog', testResult: null, brandingError: null });
+});
+
 router.post('/admin/settings/payment-methods', (req, res) => {
   const name = String(req.body.name || '').trim();
   if (name) db.prepare('INSERT INTO payment_methods (name) VALUES (?)').run(name);
@@ -1967,6 +1974,10 @@ router.post('/admin/health/mounts/:id/unmount', async (req, res) => {
 });
 
 router.get('/admin/health/status', async (req, res) => {
+  if (req.query.live === '1') {
+    await Promise.all([checkVpnWatch(), checkStuckWatch()]);
+  }
+
   const containers = db.prepare('SELECT * FROM admin_health_containers WHERE is_active = 1').all();
 
   const stuckWatchByContainer = {};
