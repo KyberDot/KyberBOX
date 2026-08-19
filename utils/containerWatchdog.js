@@ -3,7 +3,7 @@ const { getContainerStatuses } = require('./ssh');
 const { getResetState } = require('./resetLock');
 const { isContainerActionActive } = require('./containerActionLock');
 const { getSetting } = require('./settings');
-const { notifyAdminContainerUnhealthy } = require('./mailer');
+const { notifyAdminContainersUnhealthy } = require('./mailer');
 const { parseStoredDate } = require('./time');
 
 const UNHEALTHY_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes
@@ -33,6 +33,12 @@ async function checkContainerWatchdog() {
   const statuses = await getContainerStatuses(target, containers.map((c) => c.container_name));
   const admins = db.prepare("SELECT name, email FROM users WHERE role = 'admin'").all();
 
+  // Collected across this whole pass rather than emailed one-by-one inside
+  // the loop, so several containers crossing the threshold together (e.g. a
+  // shared dependency going down and taking others with it) become a single
+  // combined email instead of a burst of separate ones.
+  const newlyUnhealthy = [];
+
   for (const container of containers) {
     if (isContainerActionActive(container.id)) continue; // intentional stop/restart/update in progress - expected downtime
 
@@ -61,8 +67,12 @@ async function checkContainerWatchdog() {
     const firstSeen = parseStoredDate(container.first_seen_unhealthy_at);
     if (!firstSeen || Date.now() - firstSeen.getTime() < UNHEALTHY_THRESHOLD_MS) continue; // not down long enough yet
 
-    await notifyAdminContainerUnhealthy(admins, container, status).catch(() => {});
+    newlyUnhealthy.push({ container, status });
     db.prepare(`UPDATE admin_health_containers SET unhealthy_alert_sent_at = datetime('now') WHERE id = ?`).run(container.id);
+  }
+
+  if (newlyUnhealthy.length > 0) {
+    await notifyAdminContainersUnhealthy(admins, newlyUnhealthy).catch(() => {});
   }
 }
 

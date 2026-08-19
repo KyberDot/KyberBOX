@@ -132,18 +132,27 @@ async function notifyAdminVpnFailure(admins, serviceLabel, containerName) {
   ).catch(() => {});
 }
 
-async function notifyAdminContainerUnhealthy(admins, container, status) {
-  if (!admins || admins.length === 0) return;
+async function notifyAdminContainersUnhealthy(admins, items) {
+  if (!admins || admins.length === 0 || !items || items.length === 0) return;
+
+  const subject = items.length === 1
+    ? `Container Watchdog: ${items[0].container.label} is ${items[0].status}`
+    : `Container Watchdog: ${items.length} containers need attention`;
+
+  const intro = items.length === 1
+    ? `<p><strong>${items[0].container.label}</strong> (container: <code>${items[0].container.container_name}</code>) has been <strong>${items[0].status}</strong> for more than 2 minutes, outside of any restart or update triggered from the portal.</p>`
+    : `<p>The following ${items.length} containers have each been offline or unhealthy for more than 2 minutes, outside of any restart or update triggered from the portal:</p>
+       <ul>${items.map(({ container, status }) => `<li><strong>${container.label}</strong> (<code>${container.container_name}</code>) — <strong>${status}</strong></li>`).join('')}</ul>`;
 
   await Promise.all(
     admins.map((admin) =>
       sendMail({
         to: admin.email,
-        subject: `Container Watchdog: ${container.label} is ${status}`,
+        subject,
         bodyHtml: `
           <p>Hi ${admin.name},</p>
-          <p><strong>${container.label}</strong> (container: <code>${container.container_name}</code>) has been <strong>${status}</strong> for more than 2 minutes, outside of any restart or update triggered from the portal.</p>
-          <p>Check the container's logs or the Health page for more detail.</p>
+          ${intro}
+          <p>Check each container's logs or the Health page for more detail.</p>
         `,
       })
     )
@@ -170,4 +179,4 @@ async function notifyAdminProviderExpiring(admins, provider, daysLeft) {
   ).catch(() => {});
 }
 
-module.exports = { sendMail, isConfigured, getTransporter, notifyResetStarted, notifyAutoResetStarted, notifyAdminVpnFailure, notifyAdminProviderExpiring, notifyAdminContainerUnhealthy };
+module.exports = { sendMail, isConfigured, getTransporter, notifyResetStarted, notifyAutoResetStarted, notifyAdminVpnFailure, notifyAdminProviderExpiring, notifyAdminContainersUnhealthy };

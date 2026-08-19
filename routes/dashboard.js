@@ -255,7 +255,19 @@ router.post('/dashboard/actions/:actionId/run', async (req, res) => {
     // Deliberately just the action label, not who triggered it - this string
     // flows straight into the site-wide banner and the "already in progress"
     // messages other people see, which shouldn't expose someone's name.
-    startReset(action.label);
+    // No withUpdate passed (defaults to null) - this is a subscriber plan
+    // action, not the admin Full Reset feature, so there's no 4-8/5-15
+    // minute distinction to make. The banner shows a generic "shortly"
+    // for any reset with a null withUpdate - see partials/nav.ejs.
+    // Maps the admin's chosen banner estimate for this action (see the
+    // plan action's own settings) onto the same false/true/null shape
+    // startReset already uses for the admin Full Reset feature - false for
+    // '4-8', true for '5-15', null (generic "shortly") if none was set.
+    // action.banner_time_estimate === '5-15' -> true (matches Reset & Update).
+    // Anything else (including the now-backfilled '4-8', or an unexpected
+    // value) -> false, matching Restart Only's 4-8 minute estimate.
+    const bannerWithUpdate = action.banner_time_estimate === '5-15';
+    startReset(action.label, bannerWithUpdate);
 
     const otherSubscribers = db
       .prepare(

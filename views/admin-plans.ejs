@@ -180,10 +180,14 @@
                                                     <option value="<%= iconOption %>" <%= action.icon === iconOption ? 'selected' : '' %>><%= iconOption %></option>
                                                 <% }); %>
                                             </select>
-                                            <select name="style" class="input sm:col-span-2">
+                                            <select name="style" onchange="toggleBannerEstimateField(this)" class="input sm:col-span-2">
                                                 <option value="warning" <%= action.style !== 'danger' ? 'selected' : '' %>>Warning (amber) — quick actions like a restart</option>
                                                 <option value="danger" <%= action.style === 'danger' ? 'selected' : '' %>>Danger (red) — slow/heavy actions like a full stack reset</option>
                                             </select>
+                                            <label class="<%= action.style === 'danger' ? 'flex' : 'hidden' %> items-center gap-2 text-xs text-slate-400 sm:col-span-2" data-banner-estimate-field>
+                                                <input type="checkbox" name="banner_with_update" value="1" <%= action.banner_time_estimate === '5-15' ? 'checked' : '' %> class="accent-sky-500">
+                                                +Update <span class="text-slate-500">(banner shows ~5–15 min like Reset &amp; Update, instead of ~4–8 min like Restart Only)</span>
+                                            </label>
                                             <button type="submit" class="btn-primary py-3 rounded-xl text-sm sm:col-span-2">Save Changes</button>
                                         </form>
                                         <form method="POST" action="/admin/plans/<%= plan.id %>/actions/<%= action.id %>/delete" data-ajax-form data-confirm="Delete this action button?" class="mt-2">
@@ -202,10 +206,14 @@
                                     <option value="<%= iconOption %>"><%= iconOption %></option>
                                 <% }); %>
                             </select>
-                            <select name="style" class="input sm:col-span-2">
+                            <select name="style" onchange="toggleBannerEstimateField(this)" class="input sm:col-span-2">
                                 <option value="warning">Warning (amber) — quick actions like a restart</option>
                                 <option value="danger">Danger (red) — slow/heavy actions like a full stack reset</option>
                             </select>
+                            <label class="hidden items-center gap-2 text-xs text-slate-400 sm:col-span-2" data-banner-estimate-field>
+                                <input type="checkbox" name="banner_with_update" value="1" class="accent-sky-500">
+                                +Update <span class="text-slate-500">(banner shows ~5–15 min like Reset &amp; Update, instead of ~4–8 min like Restart Only)</span>
+                            </label>
                             <button type="submit" class="btn-primary py-3 rounded-xl text-sm sm:col-span-4">Add Action</button>
                         </form>
                     </details>
@@ -438,6 +446,14 @@
     </main>
 
     <script>
+        function toggleBannerEstimateField(styleSelect) {
+            const field = styleSelect.closest('form').querySelector('[data-banner-estimate-field]');
+            if (!field) return;
+            const showing = styleSelect.value === 'danger';
+            field.classList.toggle('hidden', !showing);
+            field.classList.toggle('flex', showing);
+        }
+
         function formatElapsed(totalSeconds) {
             const s = Math.max(0, totalSeconds);
             const days = Math.floor(s / 86400);

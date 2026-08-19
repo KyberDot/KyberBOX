@@ -193,7 +193,13 @@
         const text = document.getElementById('resetBannerText');
         if (!banner) return;
         if (data.active) {
-          if (text) text.textContent = (data.source || 'A server reset') + ' is currently in progress — service may be briefly interrupted. Expected to resume within 5–15 minutes.';
+          if (text) {
+            let timeRange;
+            if (data.withUpdate === false) timeRange = 'within 4–8 minutes';
+            else if (data.withUpdate === true) timeRange = 'within 5–15 minutes';
+            else timeRange = 'shortly'; // not the admin Full Reset feature at all - no fixed time range applies
+            text.textContent = (data.source || 'A server reset') + ' is currently in progress — service may be briefly interrupted. Expected to resume ' + timeRange + '.';
+          }
           banner.classList.remove('hidden');
         } else {
           banner.classList.add('hidden');

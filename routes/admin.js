@@ -351,6 +351,18 @@ function sanitizeActionIcon(value) {
   return ACTION_ICONS.includes(value) ? value : 'fa-rotate';
 }
 
+// Only stored for danger-style actions - a warning-style action never
+// triggers the reset banner at all, so this field is meaningless for it.
+// Mirrors the admin Full Reset feature's own binary choice exactly - a
+// simple "+Update" checkbox, not a 3-way pick. Unchecked defaults to the
+// same 4-8 minute estimate as Restart Only; checked matches Reset & Update's
+// 5-15 minutes. Only meaningful for danger-style actions (a warning-style
+// action never triggers the reset banner at all).
+function sanitizeBannerEstimate(withUpdateChecked, style) {
+  if (style !== 'danger') return null;
+  return withUpdateChecked ? '5-15' : '4-8';
+}
+
 // Catches the specific mistake that caused "fa-exclamation-triangle: command
 // not found" - someone pasted an icon class into the Command field. Command
 // text should never be just a bare "fa-..." token.
@@ -363,6 +375,7 @@ router.post('/admin/plans/:id/actions', (req, res) => {
   const command = String(req.body.command || '').trim();
   const icon = sanitizeActionIcon(String(req.body.icon || 'fa-rotate').trim());
   const style = req.body.style === 'danger' ? 'danger' : 'warning';
+  const bannerTimeEstimate = sanitizeBannerEstimate(req.body.banner_with_update === '1', style);
   const cooldownHours = Math.max(0, parseInt(req.body.cooldown_hours, 10) || 6);
 
   if (!label || !command) return res.status(400).render('error', { message: 'Missing required fields - please fill in everything marked required and try again.' });
@@ -372,8 +385,8 @@ router.post('/admin/plans/:id/actions', (req, res) => {
 
   const maxOrder = db.prepare('SELECT MAX(sort_order) AS m FROM plan_actions WHERE plan_id = ?').get(req.params.id).m || 0;
   db.prepare(
-    'INSERT INTO plan_actions (plan_id, label, command, icon, style, cooldown_hours, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)'
-  ).run(req.params.id, label, command, icon, style, cooldownHours, maxOrder + 1);
+    'INSERT INTO plan_actions (plan_id, label, command, icon, style, banner_time_estimate, cooldown_hours, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+  ).run(req.params.id, label, command, icon, style, bannerTimeEstimate, cooldownHours, maxOrder + 1);
 
   res.redirect('/admin/plans');
 });
@@ -383,6 +396,7 @@ router.post('/admin/plans/:id/actions/:actionId/update', (req, res) => {
   const command = String(req.body.command || '').trim();
   const icon = sanitizeActionIcon(String(req.body.icon || 'fa-rotate').trim());
   const style = req.body.style === 'danger' ? 'danger' : 'warning';
+  const bannerTimeEstimate = sanitizeBannerEstimate(req.body.banner_with_update === '1', style);
   const cooldownHours = Math.max(0, parseInt(req.body.cooldown_hours, 10) || 6);
 
   if (!label || !command) return res.status(400).render('error', { message: 'Missing required fields - please fill in everything marked required and try again.' });
@@ -391,8 +405,8 @@ router.post('/admin/plans/:id/actions/:actionId/update', (req, res) => {
   }
 
   db.prepare(
-    'UPDATE plan_actions SET label = ?, command = ?, icon = ?, style = ?, cooldown_hours = ? WHERE id = ? AND plan_id = ?'
-  ).run(label, command, icon, style, cooldownHours, req.params.actionId, req.params.id);
+    'UPDATE plan_actions SET label = ?, command = ?, icon = ?, style = ?, banner_time_estimate = ?, cooldown_hours = ? WHERE id = ? AND plan_id = ?'
+  ).run(label, command, icon, style, bannerTimeEstimate, cooldownHours, req.params.actionId, req.params.id);
 
   res.redirect('/admin/plans');
 });

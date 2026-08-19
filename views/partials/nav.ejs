@@ -84,6 +84,12 @@
 <div id="resetBanner" class="max-w-7xl mx-auto px-4 sm:px-8 mb-4 <%= (resetInProgress && resetInProgress.active) ? '' : 'hidden' %>">
     <div class="px-4 sm:px-5 py-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-sm flex items-center gap-2">
         <i class="fas fa-triangle-exclamation flex-shrink-0"></i>
-        <span id="resetBannerText"><%= (resetInProgress && resetInProgress.source) ? resetInProgress.source : 'A server reset' %> is currently in progress — service may be briefly interrupted. Expected to resume within <%= (resetInProgress && resetInProgress.withUpdate === false) ? '4–8' : '5–15' %> minutes.</span>
+        <%
+          let resetResumeText;
+          if (resetInProgress && resetInProgress.withUpdate === false) resetResumeText = 'within 4–8 minutes';
+          else if (resetInProgress && resetInProgress.withUpdate === true) resetResumeText = 'within 5–15 minutes';
+          else resetResumeText = 'shortly'; // not the admin Full Reset feature at all (e.g. a subscriber's own plan action) - no fixed time range applies
+        %>
+        <span id="resetBannerText"><%= (resetInProgress && resetInProgress.source) ? resetInProgress.source : 'A server reset' %> is currently in progress — service may be briefly interrupted. Expected to resume <%= resetResumeText %>.</span>
     </div>
 </div>

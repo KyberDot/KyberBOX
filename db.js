@@ -249,6 +249,7 @@ CREATE TABLE IF NOT EXISTS plan_actions (
   command TEXT NOT NULL,
   icon TEXT NOT NULL DEFAULT 'fa-rotate',
   style TEXT NOT NULL DEFAULT 'warning', -- warning (amber) | danger (red, for slow/destructive actions)
+  banner_time_estimate TEXT, -- NULL | '4-8' | '5-15' - only meaningful for style='danger'; controls the site-wide reset banner's stated duration while this action runs, matching the same two options the admin Full Reset feature offers
   cooldown_hours INTEGER NOT NULL DEFAULT 6,
   sort_order INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -444,6 +445,8 @@ ensureColumn('plans', 'pricing_mode', "pricing_mode TEXT NOT NULL DEFAULT 'paid'
 ensureColumn('plans', 'included_with_plan_id', 'included_with_plan_id INTEGER REFERENCES plans(id)'); // deprecated, superseded by included_with_plan_ids below
 ensureColumn('plans', 'included_with_plan_ids', 'included_with_plan_ids TEXT'); // comma-separated plan ids - having an active sub to ANY of these auto-grants this plan
 ensureColumn('plans', 'server_connection_info', 'server_connection_info TEXT'); // e.g. a Minecraft server address, shown to subscribers
+ensureColumn('plan_actions', 'banner_time_estimate', 'banner_time_estimate TEXT'); // '4-8' | '5-15' - only meaningful for style='danger'
+db.prepare(`UPDATE plan_actions SET banner_time_estimate = '4-8' WHERE style = 'danger' AND banner_time_estimate IS NULL`).run();
 ensureColumn('subscriptions', 'auto_granted_via_plan_id', 'auto_granted_via_plan_id INTEGER REFERENCES plans(id)'); // set when this subscription was auto-added because of another plan's inclusion, not manually assigned - lets it be safely auto-removed later
 ensureColumn('users', 'payment_method_id', 'payment_method_id INTEGER REFERENCES payment_methods(id)');
 ensureColumn('users', 'plex_username', 'plex_username TEXT');
