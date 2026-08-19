@@ -75,6 +75,22 @@ async function checkOneContainer(target, watch) {
   const [startedAt, runningStr] = (startedResult.output || '').trim().split('|');
   const isRunning = runningStr === 'true';
 
+  // A stopped container has no active VPN tunnel, full stop, regardless of
+  // whatever it last reported while it was actually running. This has to
+  // be checked before the "already have a determination" shortcut below -
+  // docker inspect's StartedAt doesn't change when a container is merely
+  // stopped (only when it's actually restarted), so without this check
+  // that shortcut would keep treating a stopped container as if nothing
+  // had changed and leave a stale "connected" showing indefinitely.
+  if (!isRunning) {
+    if (watch.last_status !== 'offline') {
+      db.prepare(`UPDATE vpn_watch_containers SET last_status = 'offline', last_checked_at = datetime('now') WHERE id = ?`).run(watch.id);
+    } else {
+      db.prepare(`UPDATE vpn_watch_containers SET last_checked_at = datetime('now') WHERE id = ?`).run(watch.id);
+    }
+    return;
+  }
+
   const containerRestarted = watch.last_container_start_at !== startedAt;
 
   // Already have a real determination and the container hasn't restarted

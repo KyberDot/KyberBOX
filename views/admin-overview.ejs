@@ -150,28 +150,52 @@
             <% if (recentActions.length === 0) { %>
                 <p class="text-slate-500 text-sm p-6">No action requests yet.</p>
             <% } else { %>
+                <% var logPageSize = 5; var logPageCount = Math.ceil(recentActions.length / logPageSize); %>
                 <table class="kb-table min-w-[560px]">
                     <thead><tr><th>User</th><th>Action</th><th>Time</th><th>Result</th></tr></thead>
-                    <tbody>
-                        <% recentActions.forEach(function(r) { %>
-                            <tr>
-                                <td><%= r.name %><br><span class="text-slate-500 text-xs"><%= r.email %></span></td>
-                                <td class="text-slate-300"><%= r.action_label %></td>
-                                <td class="text-slate-400"><%= formatUK(r.requested_at) %></td>
-                                <td>
-                                    <% if (r.success) { %>
-                                        <span class="badge badge-active">Success</span>
-                                    <% } else { %>
-                                        <span class="badge badge-expired">Failed</span>
-                                    <% } %>
-                                </td>
-                            </tr>
-                        <% }); %>
-                    </tbody>
+                    <% for (var p = 0; p < logPageCount; p++) { %>
+                        <tbody data-log-page="<%= p %>" class="<%= p === 0 ? '' : 'hidden' %>">
+                            <% recentActions.slice(p * logPageSize, p * logPageSize + logPageSize).forEach(function(r) { %>
+                                <tr>
+                                    <td><%= r.name %><br><span class="text-slate-500 text-xs"><%= r.email %></span></td>
+                                    <td class="text-slate-300"><%= r.action_label %></td>
+                                    <td class="text-slate-400"><%= formatUK(r.requested_at) %></td>
+                                    <td>
+                                        <% if (r.success) { %>
+                                            <span class="badge badge-active">Success</span>
+                                        <% } else { %>
+                                            <span class="badge badge-expired">Failed</span>
+                                        <% } %>
+                                    </td>
+                                </tr>
+                            <% }); %>
+                        </tbody>
+                    <% } %>
                 </table>
+                <% if (logPageCount > 1) { %>
+                    <div class="flex items-center justify-center gap-1.5 p-4 border-t border-white/5">
+                        <% for (var p = 0; p < logPageCount; p++) { %>
+                            <button type="button" onclick="showLogPage(<%= p %>)" data-log-page-btn="<%= p %>" class="w-7 h-7 rounded-lg text-xs font-semibold <%= p === 0 ? 'bg-sky-500/20 text-sky-400 border border-sky-500/40' : 'text-slate-400 hover:text-white hover:bg-white/5' %>"><%= p + 1 %></button>
+                        <% } %>
+                    </div>
+                <% } %>
             <% } %>
         </div>
     </main>
+
+    <script>
+        function showLogPage(page) {
+            document.querySelectorAll('[data-log-page]').forEach(function (tbody) {
+                tbody.classList.toggle('hidden', tbody.getAttribute('data-log-page') !== String(page));
+            });
+            document.querySelectorAll('[data-log-page-btn]').forEach(function (btn) {
+                const isActive = btn.getAttribute('data-log-page-btn') === String(page);
+                btn.className = 'w-7 h-7 rounded-lg text-xs font-semibold ' + (isActive
+                    ? 'bg-sky-500/20 text-sky-400 border border-sky-500/40'
+                    : 'text-slate-400 hover:text-white hover:bg-white/5');
+            });
+        }
+    </script>
 
     <!-- Now Watching Modal -->
     <div id="nowWatchingModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden items-center justify-center z-50 px-4 py-8 overflow-y-auto">

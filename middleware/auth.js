@@ -7,6 +7,15 @@ const { applyAutoRenewals, applyManualExpirations, applyExpiryWarnings } = requi
 const { getResetState } = require('../utils/resetLock');
 
 function attachUser(req, res, next) {
+  // Applies to every dynamic response (HTML pages and JSON API calls alike)
+  // - static assets never reach this middleware, see server.js's ordering.
+  // Without this, a stale cached render of an authenticated page can
+  // briefly flash on navigation/back-forward before the current server
+  // state loads - most noticeably with something like the reset banner,
+  // which can otherwise appear to show an earlier reset's details for a
+  // moment before correcting itself.
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+
   const token = req.cookies.kb_session;
   req.user = null;
   if (token) {

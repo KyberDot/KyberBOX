@@ -78,7 +78,7 @@ CREATE TABLE IF NOT EXISTS vpn_watch_containers (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   container_name TEXT NOT NULL UNIQUE,
   service_label TEXT NOT NULL,
-  last_status TEXT NOT NULL DEFAULT 'unknown', -- unknown | connected | failed
+  last_status TEXT NOT NULL DEFAULT 'unknown', -- unknown | connected | failed | offline
   last_checked_at TEXT,
   last_alert_sent_at TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -363,6 +363,18 @@ CREATE TABLE IF NOT EXISTS admin_ssh (
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Named filesystem mounts an admin wants quick access to check/unmount
+-- from the Health page (e.g. a network share several containers depend
+-- on). folder_name is just the leaf directory under /mnt - e.g. "media"
+-- for /mnt/media - not a full path, so a stray path traversal here can't
+-- point the check/unmount commands somewhere outside /mnt.
+CREATE TABLE IF NOT EXISTS admin_mounts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  folder_name TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- The list of containers shown on the Admin Health page (independent of
 -- any plan's own container list, though the same container can appear in both).
 CREATE TABLE IF NOT EXISTS admin_health_containers (
@@ -382,7 +394,7 @@ CREATE TABLE IF NOT EXISTS admin_health_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   admin_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   container_name TEXT NOT NULL,
-  action TEXT NOT NULL, -- stop | restart
+  action TEXT NOT NULL, -- stop | restart | update | full-reset | unmount
   requested_at TEXT NOT NULL DEFAULT (datetime('now')),
   success INTEGER NOT NULL DEFAULT 0,
   output TEXT

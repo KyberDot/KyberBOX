@@ -170,7 +170,7 @@ router.get('/admin', (req, res) => {
       `SELECT al.*, u.name, u.email, pa.label AS action_label FROM action_log al
        JOIN users u ON u.id = al.user_id
        JOIN plan_actions pa ON pa.id = al.plan_action_id
-       ORDER BY al.requested_at DESC LIMIT 8`
+       ORDER BY al.requested_at DESC LIMIT 25`
     )
     .all();
   const mailConfigured = isConfigured(getAllSettings());
@@ -1770,7 +1770,7 @@ router.get('/admin/health', (req, res) => {
     .prepare(
       `SELECT l.*, u.name AS admin_name FROM admin_health_log l
        JOIN users u ON u.id = l.admin_user_id
-       ORDER BY l.requested_at DESC LIMIT 10`
+       ORDER BY l.requested_at DESC LIMIT 25`
     )
     .all();
 
@@ -1786,7 +1786,9 @@ router.get('/admin/health', (req, res) => {
   const vpnWatchByContainer = {};
   db.prepare('SELECT * FROM vpn_watch_containers').all().forEach((w) => { vpnWatchByContainer[w.container_name] = w; });
 
-  res.render('admin-health', { sshConfigured, containers, recentLog, stuckWatchByContainer, vpnWatchByContainer });
+  const mounts = db.prepare('SELECT * FROM admin_mounts ORDER BY name ASC').all();
+
+  res.render('admin-health', { sshConfigured, containers, recentLog, stuckWatchByContainer, vpnWatchByContainer, mounts });
 });
 
 router.post('/admin/health/containers', (req, res) => {
@@ -1874,6 +1876,80 @@ router.post('/admin/health/containers/:id/move', (req, res) => {
   update.run(current.sort_order, swap.id);
 
   res.redirect('/admin/health');
+});
+
+// ---------- Mounts ----------
+// Named filesystem mounts an admin wants quick check/unmount access to
+// from this page (e.g. a network share several containers depend on).
+// Deliberately just a name/folder pair with no other metadata - this
+// isn't trying to model mount options, filesystem type, etc, just give a
+// quick "is it there" / "get it out of the way" tool.
+
+function safeMountFolderName(value) {
+  const name = String(value || '').trim();
+  // Same safe-name pattern used elsewhere in this app (container names,
+  // etc) - letters/numbers/dot/dash/underscore only, so this can never
+  // become a path (no slashes) or carry shell metacharacters into the
+  // mountpoint/umount commands built from it below.
+  return /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(name) ? name : null;
+}
+
+router.post('/admin/health/mounts', (req, res) => {
+  const name = String(req.body.name || '').trim();
+  const folderName = safeMountFolderName(req.body.folder_name);
+
+  if (!name || !folderName) {
+    return res.status(400).render('error', { message: "Missing required fields, or the folder name contains characters that aren't allowed (letters, numbers, dots, dashes, and underscores only) - please fill in everything marked required and try again." });
+  }
+
+  db.prepare('INSERT INTO admin_mounts (name, folder_name) VALUES (?, ?)').run(name, folderName);
+  res.redirect('/admin/health');
+});
+
+router.post('/admin/health/mounts/:id/delete', (req, res) => {
+  db.prepare('DELETE FROM admin_mounts WHERE id = ?').run(req.params.id);
+  res.redirect('/admin/health');
+});
+
+router.post('/admin/health/mounts/:id/check', async (req, res) => {
+  const mount = db.prepare('SELECT * FROM admin_mounts WHERE id = ?').get(req.params.id);
+  if (!mount) return res.status(404).json({ ok: false, message: 'Mount not found.' });
+
+  const target = db.prepare('SELECT * FROM admin_ssh LIMIT 1').get();
+  if (!target) return res.status(400).json({ ok: false, message: 'No admin SSH access configured yet. Set it up in Settings first.' });
+
+  // mountpoint -q exits 0 if the path IS currently a mountpoint, non-zero
+  // otherwise - runCommand's own success flag already reflects the exit
+  // code, so that's the answer, no output parsing needed.
+  const result = await runCommand(target, `mountpoint -q '/mnt/${mount.folder_name}'`, 15000);
+  if (result.connectionFailed) {
+    return res.json({ ok: false, message: 'Could not reach the server to check this mount.' });
+  }
+
+  res.json({
+    ok: true,
+    active: result.success,
+    message: result.success ? `${mount.name} is currently mounted.` : `${mount.name} is NOT currently mounted.`,
+  });
+});
+
+router.post('/admin/health/mounts/:id/unmount', async (req, res) => {
+  const mount = db.prepare('SELECT * FROM admin_mounts WHERE id = ?').get(req.params.id);
+  if (!mount) return res.status(404).json({ ok: false, message: 'Mount not found.' });
+
+  const target = db.prepare('SELECT * FROM admin_ssh LIMIT 1').get();
+  if (!target) return res.status(400).json({ ok: false, message: 'No admin SSH access configured yet. Set it up in Settings first.' });
+
+  const result = await runCommand(target, `sudo umount -l '/mnt/${mount.folder_name}'`, 30000);
+
+  db.prepare(
+    'INSERT INTO admin_health_log (admin_user_id, container_name, action, success, output) VALUES (?, ?, ?, ?, ?)'
+  ).run(req.user.id, `mount:${mount.folder_name}`, 'unmount', result.success ? 1 : 0, result.output);
+
+  res.json({
+    ok: result.success,
+    message: result.success ? `${mount.name} unmounted successfully.` : `Failed to unmount ${mount.name}: ${result.output}`,
+  });
 });
 
 router.get('/admin/health/status', async (req, res) => {

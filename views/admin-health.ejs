@@ -36,6 +36,9 @@
                 <button type="button" onclick="openLiveStats()" title="Live server & container stats" class="w-10 h-10 flex items-center justify-center rounded-xl btn-outline">
                     <i class="fas fa-gauge-high"></i>
                 </button>
+                <button type="button" onclick="openModal('mountsModal')" title="Mounts" class="w-10 h-10 flex items-center justify-center rounded-xl btn-outline">
+                    <i class="fas fa-hard-drive"></i>
+                </button>
                 <button type="button" id="bulkModeToggle" onclick="toggleBulkMode()" class="btn-outline px-4 py-2.5 rounded-xl text-sm">
                     <i class="fas fa-check-double mr-2"></i>Bulk Actions
                 </button>
@@ -122,7 +125,7 @@
 
                     <% var vpnWatch = vpnWatchByContainer[c.container_name]; %>
                     <span data-vpn-watch-badge="<%= c.container_name %>" class="<%= vpnWatch ? '' : 'hidden' %> badge text-[10px] px-2 py-0.5 <%= !vpnWatch ? '' : (vpnWatch.last_status === 'connected' ? 'badge-active' : (vpnWatch.last_status === 'failed' ? 'badge-expired' : 'badge-closed')) %>">
-                        <i class="fas fa-shield-halved"></i> <span data-vpn-watch-label>VPN <%= !vpnWatch ? 'Unknown' : (vpnWatch.last_status === 'connected' ? 'Active' : (vpnWatch.last_status === 'failed' ? 'Failed' : 'Unknown')) %></span>
+                        <i class="fas fa-shield-halved"></i> <span data-vpn-watch-label>VPN <%= !vpnWatch ? 'Unknown' : (vpnWatch.last_status === 'connected' ? 'Active' : (vpnWatch.last_status === 'failed' ? 'Failed' : (vpnWatch.last_status === 'offline' ? 'Offline' : 'Unknown'))) %></span>
                     </span>
 
                     <div class="flex items-center gap-1.5 flex-wrap justify-center w-full">
@@ -175,10 +178,8 @@
                                 <i class="fas fa-image"></i>Choose Image
                             </label>
                             <input type="file" name="logo" id="logo-file-<%= c.id %>" accept="image/png,image/jpeg,image/webp,image/svg+xml" class="hidden">
-                            <label class="flex items-center gap-2 text-[11px] text-slate-400 cursor-pointer px-1">
-                                <input type="checkbox" name="mark_inactive" value="1" <%= c.is_active ? '' : 'checked' %> class="rounded border-white/20 bg-white/5">
-                                Mark as inactive (hides from live status &amp; homepage stats)
-                            </label>
+                            <button type="button" onclick="toggleActivePill(this)" data-active-pill class="badge <%= c.is_active ? 'badge-active' : 'badge-closed' %> text-[11px] px-3 py-1.5 mx-auto w-fit cursor-pointer"><%= c.is_active ? 'Active' : 'Inactive' %></button>
+                            <input type="hidden" name="mark_inactive" value="<%= c.is_active ? '0' : '1' %>">
                             <button type="submit" class="btn-primary px-4 py-1.5 rounded-lg text-[11px]">Save</button>
                         </form>
                         <form method="POST" action="/admin/health/containers/<%= c.id %>/delete" data-ajax-form data-confirm="Stop monitoring this container?" class="pt-2 border-t border-white/5">
@@ -201,20 +202,30 @@
             <% if (recentLog.length === 0) { %>
                 <p class="text-slate-500 text-sm p-6">No requests yet.</p>
             <% } else { %>
+                <% var logPageSize = 5; var logPageCount = Math.ceil(recentLog.length / logPageSize); %>
                 <table class="kb-table min-w-[560px]">
                     <thead><tr><th>Admin</th><th>Container</th><th>Action</th><th>Time (UK)</th><th>Result</th></tr></thead>
-                    <tbody>
-                        <% recentLog.forEach(function(l) { %>
-                            <tr>
-                                <td class="text-slate-300"><%= l.admin_name %></td>
-                                <td class="text-slate-400 font-mono"><%= l.container_name %></td>
-                                <td class="text-slate-400 capitalize"><%= l.action %></td>
-                                <td class="text-slate-500 text-xs"><%= formatUK(l.requested_at) %></td>
-                                <td><span class="badge <%= l.success ? 'badge-active' : 'badge-expired' %>"><%= l.success ? 'Success' : 'Failed' %></span></td>
-                            </tr>
-                        <% }); %>
-                    </tbody>
+                    <% for (var p = 0; p < logPageCount; p++) { %>
+                        <tbody data-log-page="<%= p %>" class="<%= p === 0 ? '' : 'hidden' %>">
+                            <% recentLog.slice(p * logPageSize, p * logPageSize + logPageSize).forEach(function(l) { %>
+                                <tr>
+                                    <td class="text-slate-300"><%= l.admin_name %></td>
+                                    <td class="text-slate-400 font-mono"><%= l.container_name %></td>
+                                    <td class="text-slate-400 capitalize"><%= l.action %></td>
+                                    <td class="text-slate-500 text-xs"><%= formatUK(l.requested_at) %></td>
+                                    <td><span class="badge <%= l.success ? 'badge-active' : 'badge-expired' %>"><%= l.success ? 'Success' : 'Failed' %></span></td>
+                                </tr>
+                            <% }); %>
+                        </tbody>
+                    <% } %>
                 </table>
+                <% if (logPageCount > 1) { %>
+                    <div class="flex items-center justify-center gap-1.5 p-4 border-t border-white/5">
+                        <% for (var p = 0; p < logPageCount; p++) { %>
+                            <button type="button" onclick="showLogPage(<%= p %>)" data-log-page-btn="<%= p %>" class="w-7 h-7 rounded-lg text-xs font-semibold <%= p === 0 ? 'bg-sky-500/20 text-sky-400 border border-sky-500/40' : 'text-slate-400 hover:text-white hover:bg-white/5' %>"><%= p + 1 %></button>
+                        <% } %>
+                    </div>
+                <% } %>
             <% } %>
         </div>
 
@@ -259,6 +270,55 @@
                         <p class="text-slate-400 text-xs">Also pulls the latest image first, then brings it back up. Takes a bit longer.</p>
                     </button>
                 </div>
+            </div>
+        </div>
+
+        <!-- Mounts Modal -->
+        <div id="mountsModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden items-center justify-center z-50 px-4 py-8 overflow-y-auto">
+            <div class="glass rounded-3xl p-6 sm:p-8 max-w-lg w-full my-auto">
+                <div class="flex items-center justify-between mb-2">
+                    <h3 class="text-lg font-bold text-white"><i class="fas fa-hard-drive mr-2 text-sky-400"></i>Mounts</h3>
+                    <button type="button" onclick="closeModal('mountsModal')" title="Close" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5"><i class="fas fa-xmark"></i></button>
+                </div>
+                <p class="text-slate-400 text-sm mb-5">Check whether a filesystem mount is active, or unmount it.</p>
+
+                <div id="mountsResult" class="hidden text-sm rounded-xl p-3 mb-4"></div>
+
+                <div class="space-y-2 mb-5 max-h-64 overflow-y-auto">
+                    <% if (mounts.length === 0) { %>
+                        <p class="text-slate-500 text-xs">No mounts added yet.</p>
+                    <% } %>
+                    <% mounts.forEach(function(m) { %>
+                        <div class="flex items-center justify-between gap-2 bg-slate-900/40 rounded-xl px-3 py-2.5">
+                            <div class="min-w-0">
+                                <p class="text-white text-sm font-semibold truncate"><%= m.name %></p>
+                                <p class="text-slate-500 text-xs font-mono truncate">/mnt/<%= m.folder_name %></p>
+                            </div>
+                            <div class="flex items-center gap-1.5 flex-shrink-0">
+                                <button type="button" onclick="checkMount('<%= m.id %>', '<%= m.name %>')" title="Check if mounted" class="w-8 h-8 flex items-center justify-center rounded-lg btn-outline text-xs">
+                                    <i class="fas fa-magnifying-glass"></i>
+                                </button>
+                                <button type="button" onclick="unmountMount('<%= m.id %>', '<%= m.name %>')" title="Unmount" class="w-8 h-8 flex items-center justify-center rounded-lg btn-outline text-xs text-amber-400 hover:text-amber-300">
+                                    <i class="fas fa-eject"></i>
+                                </button>
+                                <form method="POST" action="/admin/health/mounts/<%= m.id %>/delete" data-ajax-form data-confirm="Remove this mount entry? This only removes it from this list - it doesn't unmount anything." class="inline">
+                                    <button type="submit" title="Remove entry" class="w-8 h-8 flex items-center justify-center rounded-lg btn-outline text-xs text-red-400 hover:text-red-300">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    <% }); %>
+                </div>
+
+                <form method="POST" action="/admin/health/mounts" data-ajax-form class="grid grid-cols-2 gap-3 pt-4 border-t border-white/5">
+                    <input type="text" name="name" required class="input" placeholder="Display name (e.g. Media Share)">
+                    <div class="relative">
+                        <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm font-mono pointer-events-none">/mnt/</span>
+                        <input type="text" name="folder_name" required pattern="[a-zA-Z0-9][a-zA-Z0-9_.\-]*" title="Letters, numbers, dots, dashes, and underscores only" class="input pl-11" placeholder="media">
+                    </div>
+                    <button type="submit" class="btn-primary px-6 py-3 rounded-xl text-sm col-span-2">Add Mount</button>
+                </form>
             </div>
         </div>
 
@@ -1070,6 +1130,75 @@
             }
         }
 
+        function showLogPage(page) {
+            document.querySelectorAll('[data-log-page]').forEach(function (tbody) {
+                tbody.classList.toggle('hidden', tbody.getAttribute('data-log-page') !== String(page));
+            });
+            document.querySelectorAll('[data-log-page-btn]').forEach(function (btn) {
+                const isActive = btn.getAttribute('data-log-page-btn') === String(page);
+                btn.className = 'w-7 h-7 rounded-lg text-xs font-semibold ' + (isActive
+                    ? 'bg-sky-500/20 text-sky-400 border border-sky-500/40'
+                    : 'text-slate-400 hover:text-white hover:bg-white/5');
+            });
+        }
+
+        // ---------- Mounts ----------
+        // Add/Delete inside this modal use data-ajax-form, which fully
+        // re-renders <main> - the modal isn't part of what that mechanism
+        // preserves across the swap (only data-toggle-key/data-ajax-key
+        // elements are), so without this it would close on every add or
+        // delete. Only re-opens if it was actually open at submit time, so
+        // this has no effect on any other form on the page.
+        document.addEventListener('submit', function (e) {
+            const form = e.target.closest('#mountsModal form[data-ajax-form]');
+            if (form) window.__mountsModalWasOpen = true;
+        });
+        document.addEventListener('main:updated', function () {
+            if (window.__mountsModalWasOpen) {
+                window.__mountsModalWasOpen = false;
+                openModal('mountsModal');
+            }
+        });
+
+        const MOUNT_TONE_OK = 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400';
+        const MOUNT_TONE_WARN = 'bg-amber-500/10 border border-amber-500/30 text-amber-400';
+        const MOUNT_TONE_ERROR = 'bg-red-500/10 border border-red-500/30 text-red-400';
+
+        function setMountsResult(html, toneClass) {
+            const box = document.getElementById('mountsResult');
+            if (!box) return;
+            box.classList.remove('hidden');
+            box.className = 'text-sm rounded-xl p-3 mb-4 ' + toneClass;
+            box.innerHTML = html;
+        }
+
+        async function checkMount(id, name) {
+            setMountsResult('<i class="fas fa-spinner fa-spin mr-2"></i>Checking "' + name + '"…', MOUNT_TONE_WARN);
+            try {
+                const res = await fetch('/admin/health/mounts/' + id + '/check', { method: 'POST' });
+                const data = await res.json();
+                setMountsResult(data.message, data.ok ? (data.active ? MOUNT_TONE_OK : MOUNT_TONE_WARN) : MOUNT_TONE_ERROR);
+            } catch (e) {
+                setMountsResult('Could not reach the server to check this mount.', MOUNT_TONE_ERROR);
+            }
+        }
+
+        async function unmountMount(id, name) {
+            if (!confirm('Unmount "' + name + '"? This could corrupt any running containers still using it — make sure you\'ve stopped any containers relying on this mount first. Continue?')) return;
+
+            setMountsResult('<i class="fas fa-spinner fa-spin mr-2"></i>Unmounting "' + name + '"…', MOUNT_TONE_WARN);
+            try {
+                const res = await fetch('/admin/health/mounts/' + id + '/unmount', { method: 'POST' });
+                const data = await res.json();
+                setMountsResult(data.message, data.ok ? MOUNT_TONE_OK : MOUNT_TONE_ERROR);
+                showToast(data.message, data.ok ? 'success' : 'error');
+                closeModal('mountsModal');
+            } catch (e) {
+                setMountsResult('Could not reach the server to unmount this.', MOUNT_TONE_ERROR);
+                showToast('Could not reach the server to unmount this.', 'error');
+            }
+        }
+
         // ---------- Update / Restart (choice modal) ----------
         let pendingContainerUpdate = null; // { id, label }
 
@@ -1168,6 +1297,14 @@
             });
         }
 
+        function toggleActivePill(btn) {
+            const input = btn.nextElementSibling; // the paired hidden mark_inactive input, always immediately after the pill in the markup
+            const willBeActive = input.value === '1'; // currently marked inactive -> this click makes it active again
+            input.value = willBeActive ? '0' : '1';
+            btn.textContent = willBeActive ? 'Active' : 'Inactive';
+            btn.className = 'badge ' + (willBeActive ? 'badge-active' : 'badge-closed') + ' text-[11px] px-3 py-1.5 mx-auto w-fit cursor-pointer';
+        }
+
         function applyWatchdogStatuses(stuckWatchByContainer, vpnWatchByContainer) {
             document.querySelectorAll('[data-stuck-watch-wrap]').forEach(function (wrap) {
                 const name = wrap.getAttribute('data-stuck-watch-wrap');
@@ -1194,7 +1331,7 @@
                 if (badge.getAttribute('data-current-status') === statusKey) return;
 
                 const tone = statusKey === 'connected' ? 'badge-active' : (statusKey === 'failed' ? 'badge-expired' : 'badge-closed');
-                const text = statusKey === 'connected' ? 'Active' : (statusKey === 'failed' ? 'Failed' : 'Unknown');
+                const text = statusKey === 'connected' ? 'Active' : (statusKey === 'failed' ? 'Failed' : (statusKey === 'offline' ? 'Offline' : 'Unknown'));
                 badge.className = 'badge text-[10px] px-2 py-0.5 ' + tone;
                 label.textContent = 'VPN ' + text;
                 badge.setAttribute('data-current-status', statusKey);
