@@ -278,7 +278,10 @@
             <div class="glass rounded-3xl p-6 sm:p-8 max-w-lg w-full my-auto">
                 <div class="flex items-center justify-between mb-2">
                     <h3 class="text-lg font-bold text-white"><i class="fas fa-hard-drive mr-2 text-sky-400"></i>Mounts</h3>
-                    <button type="button" onclick="closeModal('mountsModal')" title="Close" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5"><i class="fas fa-xmark"></i></button>
+                    <div class="flex items-center gap-1">
+                        <button type="button" data-toggle-target="addMountForm" title="Add a mount" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5"><i class="fas fa-plus"></i></button>
+                        <button type="button" onclick="closeModal('mountsModal')" title="Close" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5"><i class="fas fa-xmark"></i></button>
+                    </div>
                 </div>
                 <p class="text-slate-400 text-sm mb-5">Check whether a filesystem mount is active, or unmount it.</p>
 
@@ -311,11 +314,11 @@
                     <% }); %>
                 </div>
 
-                <form method="POST" action="/admin/health/mounts" data-ajax-form class="grid grid-cols-2 gap-3 pt-4 border-t border-white/5">
+                <form method="POST" action="/admin/health/mounts" data-ajax-form data-toggle-key="addMountForm" data-no-preserve class="hidden grid grid-cols-2 gap-3 pt-4 border-t border-white/5">
                     <input type="text" name="name" required class="input" placeholder="Display name (e.g. Media Share)">
                     <div class="relative">
                         <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm font-mono pointer-events-none">/mnt/</span>
-                        <input type="text" name="folder_name" required pattern="[a-zA-Z0-9][a-zA-Z0-9_.\-]*" title="Letters, numbers, dots, dashes, and underscores only" class="input pl-11" placeholder="media">
+                        <input type="text" name="folder_name" required pattern="[a-zA-Z0-9][a-zA-Z0-9_.\-]*" title="Letters, numbers, dots, dashes, and underscores only" class="input pl-16" placeholder="media">
                     </div>
                     <button type="submit" class="btn-primary px-6 py-3 rounded-xl text-sm col-span-2">Add Mount</button>
                 </form>
