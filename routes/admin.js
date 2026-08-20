@@ -1976,6 +1976,43 @@ router.post('/admin/health/mounts/:id/unmount', async (req, res) => {
 // above - this isn't trying to be a full gluetun dashboard, just a quick
 // "is it connected" check alongside everything else on this page.
 
+// The hostname in a configured gluetun URL (e.g. "gluetun" in
+// http://gluetun:8888) is normally that container's own Docker service/
+// container name - resolvable via Docker's embedded DNS, but only BETWEEN
+// containers on the same Docker network. It's never resolvable from the
+// host's own shell, which is where every SSH command from this app
+// actually runs - so a plain curl against that hostname would just fail
+// to resolve it at all. This resolves the hostname to the container's
+// real IP via `docker inspect` first (daemon-level, no network DNS
+// involved) and rebuilds the URL with that IP substituted in. Returns the
+// URL unchanged if the hostname is already a plain IP address (nothing to
+// resolve), or null if the container can't be found/inspected at all.
+async function resolveGluetunUrl(target, rawUrl) {
+  let parsed;
+  try {
+    parsed = new URL(rawUrl);
+  } catch (e) {
+    return null;
+  }
+
+  const hostname = parsed.hostname;
+  if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname)) return rawUrl; // already a plain IP - nothing to resolve
+
+  const safeHostname = hostname.replace(/'/g, `'"'"'`);
+  const result = await runCommand(
+    target,
+    `docker inspect --format='{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}' '${safeHostname}' 2>&1`,
+    10000
+  );
+  if (!result.success) return null;
+
+  const ip = result.output.trim().split(/\s+/)[0];
+  if (!ip || !/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(ip)) return null;
+
+  parsed.hostname = ip;
+  return parsed.toString();
+}
+
 router.post('/admin/health/vpn-monitors', (req, res) => {
   const name = String(req.body.name || '').trim();
   const url = String(req.body.url || '').trim();
@@ -2003,7 +2040,12 @@ router.post('/admin/health/vpn-monitors/:id/check', async (req, res) => {
   const target = db.prepare('SELECT * FROM admin_ssh LIMIT 1').get();
   if (!target) return res.status(400).json({ ok: false, message: 'No admin SSH access configured yet. Set it up in Settings first.' });
 
-  const safeUrl = monitor.url.replace(/'/g, `'"'"'`);
+  const resolvedUrl = await resolveGluetunUrl(target, monitor.url);
+  if (!resolvedUrl) {
+    return res.json({ ok: false, message: `Could not resolve ${monitor.name}'s address on the server - is the container name in the URL correct?` });
+  }
+
+  const safeUrl = resolvedUrl.replace(/'/g, `'"'"'`);
   const marker = '::KBVPNSTATUS::';
   // Gluetun's own control server - tries the standard status endpoint
   // first. -m 5 keeps a genuinely unreachable instance from hanging the
@@ -2058,7 +2100,12 @@ router.post('/admin/health/vpn-monitors/:id/details', async (req, res) => {
   const target = db.prepare('SELECT * FROM admin_ssh LIMIT 1').get();
   if (!target) return res.status(400).json({ ok: false, message: 'No admin SSH access configured yet. Set it up in Settings first.' });
 
-  const safeUrl = monitor.url.replace(/'/g, `'"'"'`);
+  const resolvedUrl = await resolveGluetunUrl(target, monitor.url);
+  if (!resolvedUrl) {
+    return res.json({ ok: false, message: `Could not resolve ${monitor.name}'s address on the server - is the container name in the URL correct?` });
+  }
+
+  const safeUrl = resolvedUrl.replace(/'/g, `'"'"'`);
   const segmentMarker = '::KBVPN_SEGMENT::';
   const endpoints = ['/v1/vpn/status', '/v1/publicip/ip', '/v1/portforward', '/v1/dns/status', '/v1/vpn/settings'];
   const command = endpoints
@@ -2097,8 +2144,13 @@ router.post('/admin/health/vpn-monitors/:id/:action', async (req, res) => {
   const target = db.prepare('SELECT * FROM admin_ssh LIMIT 1').get();
   if (!target) return res.status(400).json({ ok: false, message: 'No admin SSH access configured yet. Set it up in Settings first.' });
 
+  const resolvedUrl = await resolveGluetunUrl(target, monitor.url);
+  if (!resolvedUrl) {
+    return res.json({ ok: false, message: `Could not resolve ${monitor.name}'s address on the server - is the container name in the URL correct?` });
+  }
+
   const desiredStatus = req.params.action === 'start' ? 'running' : 'stopped';
-  const safeUrl = monitor.url.replace(/'/g, `'"'"'`);
+  const safeUrl = resolvedUrl.replace(/'/g, `'"'"'`);
   const safeBody = JSON.stringify({ status: desiredStatus }).replace(/'/g, `'"'"'`);
   const marker = '::KBVPNACTION::';
   const command = `curl -s -m 10 -X PUT -H 'Content-Type: application/json' -d '${safeBody}' -o - -w '${marker}%{http_code}' '${safeUrl}/v1/vpn/status' 2>&1`;
