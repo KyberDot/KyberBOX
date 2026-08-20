@@ -496,10 +496,22 @@
 
     <script>
         // ---------- Search ----------
-        let containerStatusFilter = 'all';
+        const CONTAINER_STATUS_FILTER_STORAGE_KEY = 'kyberbox_container_status_filter';
+
+        function loadSavedContainerStatusFilter() {
+            try {
+                const saved = localStorage.getItem(CONTAINER_STATUS_FILTER_STORAGE_KEY);
+                return ['all', 'active', 'inactive'].includes(saved) ? saved : 'all';
+            } catch (e) {
+                return 'all';
+            }
+        }
+
+        let containerStatusFilter = loadSavedContainerStatusFilter();
 
         function setContainerStatusFilter(filter) {
             containerStatusFilter = filter;
+            try { localStorage.setItem(CONTAINER_STATUS_FILTER_STORAGE_KEY, filter); } catch (e) {}
             document.querySelectorAll('[data-filter-pill]').forEach(function (pill) {
                 const active = pill.getAttribute('data-filter-pill') === filter;
                 pill.className = 'px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer transition ' + (active ? 'bg-sky-500/20 text-sky-400' : 'text-slate-400 hover:text-white');
@@ -507,8 +519,15 @@
             filterContainers();
         }
 
+        // Restores the saved filter's pill styling and applies it to the
+        // rows on load, since the server always renders "All" as selected
+        // by default regardless of what was previously chosen.
+        setContainerStatusFilter(containerStatusFilter);
+
         function filterContainers() {
-            const query = document.getElementById('containerSearch').value.trim().toLowerCase();
+            const searchInput = document.getElementById('containerSearch');
+            if (!searchInput) return; // no containers configured yet - the search/filter UI isn't rendered at all
+            const query = searchInput.value.trim().toLowerCase();
             const rows = document.querySelectorAll('[data-container-row]');
             let visible = 0;
             rows.forEach(function (row) {
