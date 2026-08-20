@@ -1357,11 +1357,29 @@
         // objects/arrays are shown as their own JSON string rather than
         // recursed into, which keeps this simple and still shows everything
         // gluetun actually sent, just without deep formatting.
-        function renderVpnDataBlock(title, icon, data) {
+        function renderVpnDataBlock(title, icon, segment) {
             const header = '<p class="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-2"><i class="' + icon + ' mr-1"></i>' + title + '</p>';
-            if (!data || typeof data !== 'object') {
+
+            if (!segment) {
                 return '<div class="mb-4">' + header + '<p class="text-slate-600 text-xs bg-slate-900/40 rounded-xl p-3">Not available.</p></div>';
             }
+
+            const data = segment.parsed;
+            if (!data || typeof data !== 'object') {
+                // Didn't parse as JSON - show whatever actually came back
+                // (curl's own error text, an HTML error page, an auth
+                // rejection, etc) rather than hiding it behind a generic
+                // "not available" that looks identical to gluetun simply
+                // not returning this field.
+                const httpLine = segment.httpCode ? ('HTTP ' + segment.httpCode + (segment.httpCode === '000' ? ' (unreachable)' : '')) : '';
+                const rawText = segment.raw ? segment.raw.slice(0, 300) : '(empty response)';
+                return '<div class="mb-4">' + header
+                    + '<div class="bg-slate-900/40 rounded-xl p-3">'
+                    + (httpLine ? '<p class="text-amber-400 text-xs font-semibold mb-1">' + httpLine + '</p>' : '')
+                    + '<p class="text-slate-500 text-xs font-mono break-all whitespace-pre-wrap">' + rawText.replace(/</g, '&lt;') + '</p>'
+                    + '</div></div>';
+            }
+
             const entries = Object.entries(data);
             if (entries.length === 0) {
                 return '<div class="mb-4">' + header + '<p class="text-slate-600 text-xs bg-slate-900/40 rounded-xl p-3">Empty response.</p></div>';

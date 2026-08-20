@@ -2040,6 +2040,11 @@ router.post('/admin/health/vpn-monitors/:id/check', async (req, res) => {
   const target = db.prepare('SELECT * FROM admin_ssh LIMIT 1').get();
   if (!target) return res.status(400).json({ ok: false, message: 'No admin SSH access configured yet. Set it up in Settings first.' });
 
+  const curlCheck = await runCommand(target, 'command -v curl 2>&1', 10000);
+  if (!curlCheck.success || !curlCheck.output.trim()) {
+    return res.json({ ok: false, message: 'curl isn\'t installed on the server - install it (e.g. `apt install curl`) to check VPN status.' });
+  }
+
   const resolvedUrl = await resolveGluetunUrl(target, monitor.url);
   if (!resolvedUrl) {
     return res.json({ ok: false, message: `Could not resolve ${monitor.name}'s address on the server - is the container name in the URL correct?` });
@@ -2100,6 +2105,14 @@ router.post('/admin/health/vpn-monitors/:id/details', async (req, res) => {
   const target = db.prepare('SELECT * FROM admin_ssh LIMIT 1').get();
   if (!target) return res.status(400).json({ ok: false, message: 'No admin SSH access configured yet. Set it up in Settings first.' });
 
+  // curl isn't used anywhere else in this app - worth confirming it's
+  // actually installed on the target server before blaming gluetun itself
+  // for what might just be a missing dependency.
+  const curlCheck = await runCommand(target, 'command -v curl 2>&1', 10000);
+  if (!curlCheck.success || !curlCheck.output.trim()) {
+    return res.json({ ok: false, message: 'curl isn\'t installed on the server - install it (e.g. `apt install curl`) to use VPN details.' });
+  }
+
   const resolvedUrl = await resolveGluetunUrl(target, monitor.url);
   if (!resolvedUrl) {
     return res.json({ ok: false, message: `Could not resolve ${monitor.name}'s address on the server - is the container name in the URL correct?` });
@@ -2109,7 +2122,7 @@ router.post('/admin/health/vpn-monitors/:id/details', async (req, res) => {
   const segmentMarker = '::KBVPN_SEGMENT::';
   const endpoints = ['/v1/vpn/status', '/v1/publicip/ip', '/v1/portforward', '/v1/dns/status', '/v1/vpn/settings'];
   const command = endpoints
-    .map((ep) => `curl -s -m 5 '${safeUrl}${ep}' 2>&1`)
+    .map((ep) => `curl -s -m 5 -w '\\nHTTP_CODE:%{http_code}' '${safeUrl}${ep}' 2>&1`)
     .join(` ; echo '${segmentMarker}' ; `);
 
   const result = await runCommand(target, command, 20000);
@@ -2119,19 +2132,37 @@ router.post('/admin/health/vpn-monitors/:id/details', async (req, res) => {
 
   const segments = result.output.split(segmentMarker).map((s) => s.trim());
 
-  function safeParse(raw) {
-    if (!raw) return null;
-    try { return JSON.parse(raw); } catch (e) { return null; }
+  // Each segment carries its own trailing HTTP code (appended by curl -w
+  // above) - split that back off so the parsed JSON body and the
+  // diagnostic raw text shown on failure don't include it.
+  function splitHttpCode(segment) {
+    const idx = segment.lastIndexOf('HTTP_CODE:');
+    if (idx === -1) return { body: segment, httpCode: null };
+    return { body: segment.slice(0, idx).trim(), httpCode: segment.slice(idx + 'HTTP_CODE:'.length).trim() };
+  }
+
+  // Returns both the parsed JSON (or null if it didn't parse) and the raw
+  // response text, so a genuine failure - auth required, connection
+  // refused, an HTML error page, curl's own error message - is visible to
+  // the admin instead of collapsing into an indistinguishable "not
+  // available" the same as a field gluetun simply didn't return.
+  function parseSegment(segment) {
+    const { body, httpCode } = splitHttpCode(segment);
+    let parsed = null;
+    if (body) {
+      try { parsed = JSON.parse(body); } catch (e) { /* not JSON - raw is still returned below */ }
+    }
+    return { parsed, raw: body || null, httpCode };
   }
 
   res.json({
     ok: true,
     name: monitor.name,
-    status: safeParse(segments[0]),
-    publicIp: safeParse(segments[1]),
-    portForward: safeParse(segments[2]),
-    dns: safeParse(segments[3]),
-    settings: safeParse(segments[4]),
+    status: parseSegment(segments[0]),
+    publicIp: parseSegment(segments[1]),
+    portForward: parseSegment(segments[2]),
+    dns: parseSegment(segments[3]),
+    settings: parseSegment(segments[4]),
   });
 });
 
