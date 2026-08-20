@@ -1805,8 +1805,9 @@ router.get('/admin/health', (req, res) => {
   db.prepare('SELECT * FROM vpn_watch_containers').all().forEach((w) => { vpnWatchByContainer[w.container_name] = w; });
 
   const mounts = db.prepare('SELECT * FROM admin_mounts ORDER BY name ASC').all();
+  const vpnMonitors = db.prepare('SELECT * FROM admin_vpn_monitors ORDER BY name ASC').all();
 
-  res.render('admin-health', { sshConfigured, containers, recentLog, stuckWatchByContainer, vpnWatchByContainer, mounts });
+  res.render('admin-health', { sshConfigured, containers, recentLog, stuckWatchByContainer, vpnWatchByContainer, mounts, vpnMonitors });
 });
 
 router.post('/admin/health/containers', (req, res) => {
@@ -1968,6 +1969,80 @@ router.post('/admin/health/mounts/:id/unmount', async (req, res) => {
     ok: result.success,
     message: result.success ? `${mount.name} unmounted successfully.` : `Failed to unmount ${mount.name}: ${result.output}`,
   });
+});
+
+// Gluetun instances an admin wants a quick VPN-status check for from this
+// page. Deliberately just a name/URL pair, same minimal approach as Mounts
+// above - this isn't trying to be a full gluetun dashboard, just a quick
+// "is it connected" check alongside everything else on this page.
+
+router.post('/admin/health/vpn-monitors', (req, res) => {
+  const name = String(req.body.name || '').trim();
+  const url = String(req.body.url || '').trim();
+
+  if (!name || !url) {
+    return res.status(400).render('error', { message: 'Missing required fields - please fill in everything marked required and try again.' });
+  }
+  if (!/^https?:\/\/[a-zA-Z0-9.-]+(:\d+)?(\/.*)?$/.test(url)) {
+    return res.status(400).render('error', { message: 'That URL doesn\'t look valid - it should look like http://gluetun:8888 or http://gluetun-decypharr:8789.' });
+  }
+
+  db.prepare('INSERT INTO admin_vpn_monitors (name, url) VALUES (?, ?)').run(name, url);
+  res.redirect('/admin/health');
+});
+
+router.post('/admin/health/vpn-monitors/:id/delete', (req, res) => {
+  db.prepare('DELETE FROM admin_vpn_monitors WHERE id = ?').run(req.params.id);
+  res.redirect('/admin/health');
+});
+
+router.post('/admin/health/vpn-monitors/:id/check', async (req, res) => {
+  const monitor = db.prepare('SELECT * FROM admin_vpn_monitors WHERE id = ?').get(req.params.id);
+  if (!monitor) return res.status(404).json({ ok: false, message: 'VPN monitor not found.' });
+
+  const target = db.prepare('SELECT * FROM admin_ssh LIMIT 1').get();
+  if (!target) return res.status(400).json({ ok: false, message: 'No admin SSH access configured yet. Set it up in Settings first.' });
+
+  const safeUrl = monitor.url.replace(/'/g, `'"'"'`);
+  const marker = '::KBVPNSTATUS::';
+  // Gluetun's own control server - tries the standard status endpoint
+  // first. -m 5 keeps a genuinely unreachable instance from hanging the
+  // whole check. The trailing HTTP code (after the marker) lets this tell
+  // "reached it, but got an unexpected response" apart from "couldn't
+  // reach it at all" even if the JSON body below doesn't parse as expected.
+  const command = `curl -s -m 5 -o - -w '${marker}%{http_code}' '${safeUrl}/v1/openvpn/status' 2>&1`;
+  const result = await runCommand(target, command, 10000);
+
+  if (result.connectionFailed) {
+    return res.json({ ok: false, message: 'Could not reach the server to check this VPN.' });
+  }
+
+  const markerIndex = result.output.lastIndexOf(marker);
+  const body = markerIndex === -1 ? result.output : result.output.slice(0, markerIndex);
+  const httpCode = markerIndex === -1 ? null : result.output.slice(markerIndex + marker.length).trim();
+  const reached = httpCode && /^2\d\d$/.test(httpCode);
+
+  if (!reached) {
+    return res.json({ ok: true, connected: false, message: `${monitor.name} is not reachable.` });
+  }
+
+  // Best-effort parse of gluetun's own JSON shape - falls back to just
+  // "reached it" if the body doesn't look like what's expected, rather
+  // than treating an unexpected shape as a hard failure.
+  let statusText = null;
+  try {
+    const parsed = JSON.parse(body);
+    if (parsed && typeof parsed.status === 'string') statusText = parsed.status;
+  } catch (e) {
+    // not JSON, or not the expected shape - fall through to the generic reachable message below
+  }
+
+  const connected = statusText ? statusText.toLowerCase() === 'running' : true;
+  const message = statusText
+    ? `${monitor.name}: VPN is ${statusText}.`
+    : `${monitor.name} is reachable (status format not recognized).`;
+
+  res.json({ ok: true, connected, message });
 });
 
 router.get('/admin/health/status', async (req, res) => {

@@ -378,6 +378,18 @@ CREATE TABLE IF NOT EXISTS admin_mounts (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Gluetun instances an admin wants quick VPN-status checks for from this
+-- page (e.g. a torrent/downloader VPN, a separate debrid VPN). Just a
+-- name/URL pair, same minimal-metadata approach as admin_mounts above -
+-- this isn't trying to replace a full gluetun dashboard, just give a
+-- quick "is it connected" check.
+CREATE TABLE IF NOT EXISTS admin_vpn_monitors (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  url TEXT NOT NULL, -- gluetun's own control server base URL, e.g. http://gluetun:8888 - reached via SSH on the target server, since this is normally only resolvable on that server's internal docker network, not from wherever KyberBOX itself runs
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- The list of containers shown on the Admin Health page (independent of
 -- any plan's own container list, though the same container can appear in both).
 CREATE TABLE IF NOT EXISTS admin_health_containers (

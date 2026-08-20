@@ -46,6 +46,9 @@
                 <button type="button" onclick="openModal('mountsModal')" title="Mounts" class="w-10 h-10 flex items-center justify-center rounded-xl btn-outline">
                     <i class="fas fa-hard-drive"></i>
                 </button>
+                <button type="button" onclick="openModal('vpnMonitorsModal')" title="VPN Monitor" class="w-10 h-10 flex items-center justify-center rounded-xl btn-outline">
+                    <i class="fas fa-shield-halved"></i>
+                </button>
                 <button type="button" id="bulkModeToggle" onclick="toggleBulkMode()" class="btn-outline px-4 py-2.5 rounded-xl text-sm">
                     <i class="fas fa-check-double mr-2"></i>Bulk Actions
                 </button>
@@ -335,6 +338,52 @@
                         <input type="text" name="folder_name" required pattern="[a-zA-Z0-9][a-zA-Z0-9_.\-]*" title="Letters, numbers, dots, dashes, and underscores only" class="flex-1 min-w-0 bg-transparent border-0 outline-none text-white text-sm p-0" placeholder="media">
                     </div>
                     <button type="submit" class="btn-primary px-6 py-3 rounded-xl text-sm col-span-2">Add Mount</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- VPN Monitors Modal -->
+        <div id="vpnMonitorsModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden items-center justify-center z-50 px-4 py-8 overflow-y-auto">
+            <div class="glass rounded-3xl p-6 sm:p-8 max-w-lg w-full my-auto">
+                <div class="flex items-center justify-between mb-2">
+                    <h3 class="text-lg font-bold text-white"><i class="fas fa-shield-halved mr-2 text-sky-400"></i>VPN Monitor</h3>
+                    <div class="flex items-center gap-1">
+                        <button type="button" data-toggle-target="addVpnMonitorForm" title="Add a VPN to monitor" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5"><i class="fas fa-plus"></i></button>
+                        <button type="button" onclick="closeModal('vpnMonitorsModal')" title="Close" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5"><i class="fas fa-xmark"></i></button>
+                    </div>
+                </div>
+                <p class="text-slate-400 text-sm mb-5">Check whether a Gluetun VPN instance is currently connected.</p>
+
+                <div id="vpnMonitorsResult" class="hidden text-sm rounded-xl p-3 mb-4"></div>
+
+                <div class="space-y-2 mb-5 max-h-64 overflow-y-auto">
+                    <% if (vpnMonitors.length === 0) { %>
+                        <p class="text-slate-500 text-xs">No VPNs added yet.</p>
+                    <% } %>
+                    <% vpnMonitors.forEach(function(v) { %>
+                        <div class="flex items-center justify-between gap-2 bg-slate-900/40 rounded-xl px-3 py-2.5">
+                            <div class="min-w-0">
+                                <p class="text-white text-sm font-semibold truncate"><%= v.name %></p>
+                                <p class="text-slate-500 text-xs font-mono truncate"><%= v.url %></p>
+                            </div>
+                            <div class="flex items-center gap-1.5 flex-shrink-0">
+                                <button type="button" onclick="checkVpnMonitor('<%= v.id %>', '<%= v.name %>')" title="Check VPN status" class="w-8 h-8 flex items-center justify-center rounded-lg btn-outline text-xs">
+                                    <i class="fas fa-magnifying-glass"></i>
+                                </button>
+                                <form method="POST" action="/admin/health/vpn-monitors/<%= v.id %>/delete" data-ajax-form data-confirm="Remove this VPN entry? This only removes it from this list - it doesn't affect the VPN itself." class="inline">
+                                    <button type="submit" title="Remove entry" class="w-8 h-8 flex items-center justify-center rounded-lg btn-outline text-xs text-red-400 hover:text-red-300">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    <% }); %>
+                </div>
+
+                <form method="POST" action="/admin/health/vpn-monitors" data-ajax-form data-toggle-key="addVpnMonitorForm" data-no-preserve class="hidden grid grid-cols-2 gap-3 pt-4 border-t border-white/5">
+                    <input type="text" name="name" required class="input" placeholder="Display name (e.g. ProvadoVPN)">
+                    <input type="text" name="url" required class="input" placeholder="http://gluetun:8888">
+                    <button type="submit" class="btn-primary px-6 py-3 rounded-xl text-sm col-span-2">Add VPN</button>
                 </form>
             </div>
         </div>
@@ -1202,11 +1251,17 @@
         document.addEventListener('submit', function (e) {
             const form = e.target.closest('#mountsModal form[data-ajax-form]');
             if (form) window.__mountsModalWasOpen = true;
+            const vpnForm = e.target.closest('#vpnMonitorsModal form[data-ajax-form]');
+            if (vpnForm) window.__vpnMonitorsModalWasOpen = true;
         });
         document.addEventListener('main:updated', function () {
             if (window.__mountsModalWasOpen) {
                 window.__mountsModalWasOpen = false;
                 openModal('mountsModal');
+            }
+            if (window.__vpnMonitorsModalWasOpen) {
+                window.__vpnMonitorsModalWasOpen = false;
+                openModal('vpnMonitorsModal');
             }
             if (document.getElementById('containerSearch')) {
                 document.querySelectorAll('[data-filter-pill]').forEach(function (pill) {
@@ -1253,6 +1308,25 @@
             } catch (e) {
                 setMountsResult('Could not reach the server to unmount this.', MOUNT_TONE_ERROR);
                 showToast('Could not reach the server to unmount this.', 'error');
+            }
+        }
+
+        function setVpnMonitorsResult(html, toneClass) {
+            const box = document.getElementById('vpnMonitorsResult');
+            if (!box) return;
+            box.classList.remove('hidden');
+            box.className = 'text-sm rounded-xl p-3 mb-4 ' + toneClass;
+            box.innerHTML = html;
+        }
+
+        async function checkVpnMonitor(id, name) {
+            setVpnMonitorsResult('<i class="fas fa-spinner fa-spin mr-2"></i>Checking "' + name + '"…', MOUNT_TONE_WARN);
+            try {
+                const res = await fetch('/admin/health/vpn-monitors/' + id + '/check', { method: 'POST' });
+                const data = await res.json();
+                setVpnMonitorsResult(data.message, data.ok ? (data.connected ? MOUNT_TONE_OK : MOUNT_TONE_WARN) : MOUNT_TONE_ERROR);
+            } catch (e) {
+                setVpnMonitorsResult('Could not reach the server to check this VPN.', MOUNT_TONE_ERROR);
             }
         }
 
