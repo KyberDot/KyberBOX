@@ -1987,7 +1987,7 @@ router.post('/admin/health/mounts/:id/unmount', async (req, res) => {
 // involved) and rebuilds the URL with that IP substituted in. Returns the
 // URL unchanged if the hostname is already a plain IP address (nothing to
 // resolve), or null if the container can't be found/inspected at all.
-async function resolveGluetunUrl(target, rawUrl) {
+async function resolveGluetunHost(target, rawUrl) {
   let parsed;
   try {
     parsed = new URL(rawUrl);
@@ -1996,7 +1996,11 @@ async function resolveGluetunUrl(target, rawUrl) {
   }
 
   const hostname = parsed.hostname;
-  if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname)) return rawUrl; // already a plain IP - nothing to resolve
+  const port = parsed.port || (parsed.protocol === 'https:' ? '443' : '80');
+
+  if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname)) {
+    return { resolveFlag: '' }; // already a plain IP - no DNS involved at all, nothing to resolve
+  }
 
   const safeHostname = hostname.replace(/'/g, `'"'"'`);
   const result = await runCommand(
@@ -2009,8 +2013,12 @@ async function resolveGluetunUrl(target, rawUrl) {
   const ip = result.output.trim().split(/\s+/)[0];
   if (!ip || !/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(ip)) return null;
 
-  parsed.hostname = ip;
-  return parsed.toString();
+  const safeIp = ip.replace(/'/g, `'"'"'`);
+  const safePort = port.replace(/'/g, `'"'"'`);
+  // --resolve maps hostname:port to this IP for connection purposes only -
+  // the request itself (including the Host header curl sends) still uses
+  // the original hostname, exactly as gluetun-webui's own request would.
+  return { resolveFlag: `--resolve '${hostname}:${safePort}:${safeIp}' ` };
 }
 
 router.post('/admin/health/vpn-monitors', (req, res) => {
@@ -2045,12 +2053,12 @@ router.post('/admin/health/vpn-monitors/:id/check', async (req, res) => {
     return res.json({ ok: false, message: 'curl isn\'t installed on the server - install it (e.g. `apt install curl`) to check VPN status.' });
   }
 
-  const resolvedUrl = await resolveGluetunUrl(target, monitor.url);
-  if (!resolvedUrl) {
+  const hostResolution = await resolveGluetunHost(target, monitor.url);
+  if (!hostResolution) {
     return res.json({ ok: false, message: `Could not resolve ${monitor.name}'s address on the server - is the container name in the URL correct?` });
   }
 
-  const safeUrl = resolvedUrl.replace(/'/g, `'"'"'`);
+  const safeUrl = monitor.url.replace(/'/g, `'"'"'`);
   const marker = '::KBVPNSTATUS::';
 
   async function tryStatusPath(path) {
@@ -2059,7 +2067,7 @@ router.post('/admin/health/vpn-monitors/:id/check', async (req, res) => {
     // (after the marker) lets this tell "reached it, but got an
     // unexpected response" apart from "couldn't reach it at all" even if
     // the JSON body doesn't parse as expected.
-    const command = `curl -s -m 5 -o - -w '${marker}%{http_code}' '${safeUrl}${path}' 2>&1`;
+    const command = `curl -s -m 5 ${hostResolution.resolveFlag}-o - -w '${marker}%{http_code}' '${safeUrl}${path}' 2>&1`;
     const result = await runCommand(target, command, 10000);
     if (result.connectionFailed) return { connectionFailed: true };
     const markerIndex = result.output.lastIndexOf(marker);
@@ -2130,12 +2138,12 @@ router.post('/admin/health/vpn-monitors/:id/details', async (req, res) => {
     return res.json({ ok: false, message: 'curl isn\'t installed on the server - install it (e.g. `apt install curl`) to use VPN details.' });
   }
 
-  const resolvedUrl = await resolveGluetunUrl(target, monitor.url);
-  if (!resolvedUrl) {
+  const hostResolution = await resolveGluetunHost(target, monitor.url);
+  if (!hostResolution) {
     return res.json({ ok: false, message: `Could not resolve ${monitor.name}'s address on the server - is the container name in the URL correct?` });
   }
 
-  const safeUrl = resolvedUrl.replace(/'/g, `'"'"'`);
+  const safeUrl = monitor.url.replace(/'/g, `'"'"'`);
   const segmentMarker = '::KBVPN_SEGMENT::';
 
   // Newer gluetun versions generalized these paths to cover WireGuard as
@@ -2151,7 +2159,7 @@ router.post('/admin/health/vpn-monitors/:id/details', async (req, res) => {
 
   async function fetchSegments(paths) {
     const command = paths
-      .map((p) => `curl -s -m 5 -w '\\nHTTP_CODE:%{http_code}' '${safeUrl}${p}' 2>&1`)
+      .map((p) => `curl -s -m 5 ${hostResolution.resolveFlag}-w '\\nHTTP_CODE:%{http_code}' '${safeUrl}${p}' 2>&1`)
       .join(` ; echo '${segmentMarker}' ; `);
     const result = await runCommand(target, command, 20000);
     if (result.connectionFailed) return null;
@@ -2229,16 +2237,16 @@ router.post('/admin/health/vpn-monitors/:id/:action', async (req, res) => {
   const target = db.prepare('SELECT * FROM admin_ssh LIMIT 1').get();
   if (!target) return res.status(400).json({ ok: false, message: 'No admin SSH access configured yet. Set it up in Settings first.' });
 
-  const resolvedUrl = await resolveGluetunUrl(target, monitor.url);
-  if (!resolvedUrl) {
+  const hostResolution = await resolveGluetunHost(target, monitor.url);
+  if (!hostResolution) {
     return res.json({ ok: false, message: `Could not resolve ${monitor.name}'s address on the server - is the container name in the URL correct?` });
   }
 
   const desiredStatus = req.params.action === 'start' ? 'running' : 'stopped';
-  const safeUrl = resolvedUrl.replace(/'/g, `'"'"'`);
+  const safeUrl = monitor.url.replace(/'/g, `'"'"'`);
   const safeBody = JSON.stringify({ status: desiredStatus }).replace(/'/g, `'"'"'`);
   const marker = '::KBVPNACTION::';
-  const command = `curl -s -m 10 -X PUT -H 'Content-Type: application/json' -d '${safeBody}' -o - -w '${marker}%{http_code}' '${safeUrl}/v1/vpn/status' 2>&1`;
+  const command = `curl -s -m 10 ${hostResolution.resolveFlag}-X PUT -H 'Content-Type: application/json' -d '${safeBody}' -o - -w '${marker}%{http_code}' '${safeUrl}/v1/vpn/status' 2>&1`;
 
   const result = await runCommand(target, command, 15000);
   if (result.connectionFailed) {
