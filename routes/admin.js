@@ -2052,21 +2052,38 @@ router.post('/admin/health/vpn-monitors/:id/check', async (req, res) => {
 
   const safeUrl = resolvedUrl.replace(/'/g, `'"'"'`);
   const marker = '::KBVPNSTATUS::';
-  // Gluetun's own control server - tries the standard status endpoint
-  // first. -m 5 keeps a genuinely unreachable instance from hanging the
-  // whole check. The trailing HTTP code (after the marker) lets this tell
-  // "reached it, but got an unexpected response" apart from "couldn't
-  // reach it at all" even if the JSON body below doesn't parse as expected.
-  const command = `curl -s -m 5 -o - -w '${marker}%{http_code}' '${safeUrl}/v1/vpn/status' 2>&1`;
-  const result = await runCommand(target, command, 10000);
 
-  if (result.connectionFailed) {
-    return res.json({ ok: false, message: 'Could not reach the server to check this VPN.' });
+  async function tryStatusPath(path) {
+    // Gluetun's own control server - -m 5 keeps a genuinely unreachable
+    // instance from hanging the whole check. The trailing HTTP code
+    // (after the marker) lets this tell "reached it, but got an
+    // unexpected response" apart from "couldn't reach it at all" even if
+    // the JSON body doesn't parse as expected.
+    const command = `curl -s -m 5 -o - -w '${marker}%{http_code}' '${safeUrl}${path}' 2>&1`;
+    const result = await runCommand(target, command, 10000);
+    if (result.connectionFailed) return { connectionFailed: true };
+    const markerIndex = result.output.lastIndexOf(marker);
+    const body = markerIndex === -1 ? result.output : result.output.slice(0, markerIndex);
+    const httpCode = markerIndex === -1 ? null : result.output.slice(markerIndex + marker.length).trim();
+    return { body, httpCode };
   }
 
-  const markerIndex = result.output.lastIndexOf(marker);
-  const body = markerIndex === -1 ? result.output : result.output.slice(0, markerIndex);
-  const httpCode = markerIndex === -1 ? null : result.output.slice(markerIndex + marker.length).trim();
+  let { connectionFailed, body, httpCode } = await tryStatusPath('/v1/vpn/status');
+  if (connectionFailed) {
+    return res.json({ ok: false, message: 'Could not reach the server to check this VPN.' });
+  }
+  // Older gluetun versions used this path before the API was generalized
+  // to also cover WireGuard - only retried on a 404, since anything else
+  // (a real error, an unreachable port) wouldn't be fixed by trying a
+  // different path on the same server.
+  if (httpCode === '404') {
+    const fallback = await tryStatusPath('/v1/openvpn/status');
+    if (!fallback.connectionFailed && fallback.httpCode !== '404') {
+      body = fallback.body;
+      httpCode = fallback.httpCode;
+    }
+  }
+
   const reached = httpCode && /^2\d\d$/.test(httpCode);
 
   if (!reached) {
@@ -2120,17 +2137,26 @@ router.post('/admin/health/vpn-monitors/:id/details', async (req, res) => {
 
   const safeUrl = resolvedUrl.replace(/'/g, `'"'"'`);
   const segmentMarker = '::KBVPN_SEGMENT::';
-  const endpoints = ['/v1/vpn/status', '/v1/publicip/ip', '/v1/portforward', '/v1/dns/status', '/v1/vpn/settings'];
-  const command = endpoints
-    .map((ep) => `curl -s -m 5 -w '\\nHTTP_CODE:%{http_code}' '${safeUrl}${ep}' 2>&1`)
-    .join(` ; echo '${segmentMarker}' ; `);
 
-  const result = await runCommand(target, command, 20000);
-  if (result.connectionFailed) {
-    return res.json({ ok: false, message: 'Could not reach the server to get VPN details.' });
+  // Newer gluetun versions generalized these paths to cover WireGuard as
+  // well as OpenVPN; older versions used the "openvpn"-specific paths
+  // instead. fallback is null where no older-style alternative is known.
+  const endpointPairs = [
+    { key: 'status', primary: '/v1/vpn/status', fallback: '/v1/openvpn/status' },
+    { key: 'publicIp', primary: '/v1/publicip/ip', fallback: null },
+    { key: 'portForward', primary: '/v1/portforward', fallback: '/v1/openvpn/portforwarded' },
+    { key: 'dns', primary: '/v1/dns/status', fallback: null },
+    { key: 'settings', primary: '/v1/vpn/settings', fallback: '/v1/openvpn/settings' },
+  ];
+
+  async function fetchSegments(paths) {
+    const command = paths
+      .map((p) => `curl -s -m 5 -w '\\nHTTP_CODE:%{http_code}' '${safeUrl}${p}' 2>&1`)
+      .join(` ; echo '${segmentMarker}' ; `);
+    const result = await runCommand(target, command, 20000);
+    if (result.connectionFailed) return null;
+    return result.output.split(segmentMarker).map((s) => s.trim());
   }
-
-  const segments = result.output.split(segmentMarker).map((s) => s.trim());
 
   // Each segment carries its own trailing HTTP code (appended by curl -w
   // above) - split that back off so the parsed JSON body and the
@@ -2155,14 +2181,42 @@ router.post('/admin/health/vpn-monitors/:id/details', async (req, res) => {
     return { parsed, raw: body || null, httpCode };
   }
 
+  const primarySegments = await fetchSegments(endpointPairs.map((e) => e.primary));
+  if (!primarySegments) {
+    return res.json({ ok: false, message: 'Could not reach the server to get VPN details.' });
+  }
+
+  const results = {};
+  const retryIndexes = [];
+  endpointPairs.forEach((pair, i) => {
+    const parsedSegment = parseSegment(primarySegments[i]);
+    results[pair.key] = parsedSegment;
+    if (parsedSegment.httpCode === '404' && pair.fallback) retryIndexes.push(i);
+  });
+
+  if (retryIndexes.length > 0) {
+    const fallbackSegments = await fetchSegments(retryIndexes.map((i) => endpointPairs[i].fallback));
+    if (fallbackSegments) {
+      retryIndexes.forEach((originalIndex, retryPosition) => {
+        const fallbackResult = parseSegment(fallbackSegments[retryPosition]);
+        // Only replace the primary (404) result if the fallback path
+        // actually found something - otherwise keep showing the original
+        // 404 diagnostic, which is still more informative than nothing.
+        if (fallbackResult.httpCode && fallbackResult.httpCode !== '404') {
+          results[endpointPairs[originalIndex].key] = fallbackResult;
+        }
+      });
+    }
+  }
+
   res.json({
     ok: true,
     name: monitor.name,
-    status: parseSegment(segments[0]),
-    publicIp: parseSegment(segments[1]),
-    portForward: parseSegment(segments[2]),
-    dns: parseSegment(segments[3]),
-    settings: parseSegment(segments[4]),
+    status: results.status,
+    publicIp: results.publicIp,
+    portForward: results.portForward,
+    dns: results.dns,
+    settings: results.settings,
   });
 });
 
