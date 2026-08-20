@@ -28,11 +28,13 @@
 
         <!-- Toolbar -->
         <div class="flex items-center justify-between mb-6 flex-wrap gap-3">
-            <h2 class="text-sm uppercase tracking-widest text-slate-500 font-bold">Containers (<span id="containerVisibleCount"><%= containers.length %></span>)</h2>
-            <div class="flex items-center gap-1.5" data-container-status-filter>
-                <button type="button" onclick="setContainerStatusFilter('all')" data-filter-pill="all" class="badge badge-active cursor-pointer text-xs px-3 py-1">All</button>
-                <button type="button" onclick="setContainerStatusFilter('active')" data-filter-pill="active" class="badge badge-closed cursor-pointer text-xs px-3 py-1">Active</button>
-                <button type="button" onclick="setContainerStatusFilter('inactive')" data-filter-pill="inactive" class="badge badge-closed cursor-pointer text-xs px-3 py-1">Inactive</button>
+            <div class="flex items-center gap-3">
+                <h2 class="text-sm uppercase tracking-widest text-slate-500 font-bold whitespace-nowrap">Containers (<span id="containerVisibleCount"><%= containers.length %></span>)</h2>
+                <div class="flex items-center gap-0.5 bg-slate-900/50 border border-white/10 rounded-xl p-1" data-container-status-filter>
+                    <button type="button" onclick="setContainerStatusFilter('all')" data-filter-pill="all" class="px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer transition bg-sky-500/20 text-sky-400">All</button>
+                    <button type="button" onclick="setContainerStatusFilter('active')" data-filter-pill="active" class="px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer transition text-slate-400 hover:text-white">Active</button>
+                    <button type="button" onclick="setContainerStatusFilter('inactive')" data-filter-pill="inactive" class="px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer transition text-slate-400 hover:text-white">Inactive</button>
+                </div>
             </div>
             <div class="flex items-center gap-2 flex-wrap">
                 <button type="button" id="refreshAllBtn" onclick="refreshAllStatuses()" title="Refresh all statuses" class="w-10 h-10 flex items-center justify-center rounded-xl btn-outline">
@@ -112,11 +114,10 @@
                     <div class="w-full min-w-0">
                         <% var stuckWatch = stuckWatchByContainer[c.container_name]; %>
                         <%
-                          var stuckWatchColorClass = 'text-sky-400';
+                          var stuckWatchColorClass = 'text-slate-500';
                           if (stuckWatch) {
                             if (stuckWatch.last_status === 'ok') stuckWatchColorClass = 'text-emerald-400';
                             else if (stuckWatch.last_status === 'waiting') stuckWatchColorClass = 'text-red-400';
-                            else if (stuckWatch.last_status === 'offline') stuckWatchColorClass = 'text-slate-500';
                           }
                         %>
                         <span data-stuck-watch-wrap="<%= c.container_name %>" class="<%= stuckWatch ? '' : 'hidden' %>">
@@ -501,7 +502,7 @@
             containerStatusFilter = filter;
             document.querySelectorAll('[data-filter-pill]').forEach(function (pill) {
                 const active = pill.getAttribute('data-filter-pill') === filter;
-                pill.className = 'badge ' + (active ? 'badge-active' : 'badge-closed') + ' cursor-pointer text-xs px-3 py-1';
+                pill.className = 'px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer transition ' + (active ? 'bg-sky-500/20 text-sky-400' : 'text-slate-400 hover:text-white');
             });
             filterContainers();
         }
@@ -1191,7 +1192,7 @@
             if (document.getElementById('containerSearch')) {
                 document.querySelectorAll('[data-filter-pill]').forEach(function (pill) {
                     const active = pill.getAttribute('data-filter-pill') === containerStatusFilter;
-                    pill.className = 'badge ' + (active ? 'badge-active' : 'badge-closed') + ' cursor-pointer text-xs px-3 py-1';
+                    pill.className = 'px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer transition ' + (active ? 'bg-sky-500/20 text-sky-400' : 'text-slate-400 hover:text-white');
                 });
                 filterContainers();
             }
@@ -1310,7 +1311,7 @@
             up: ['badge-active', 'fa-circle-check', 'Online'],
             starting: ['badge-suspended', 'fa-circle-notch fa-spin', 'Starting'],
             unhealthy: ['badge-expired', 'fa-triangle-exclamation', 'Unhealthy'],
-            down: ['badge-expired', 'fa-circle-xmark', 'Offline'],
+            down: ['badge-expired', 'fa-circle-xmark', 'Stopped'],
             unknown: ['badge-closed', 'fa-question', 'Unknown'],
         };
 
@@ -1351,10 +1352,9 @@
                 wrap.classList.toggle('hidden', !w);
                 if (!w || !icon) return;
 
-                let stuckWatchColorClass = 'text-sky-400';
+                let stuckWatchColorClass = 'text-slate-500';
                 if (w.last_status === 'ok') stuckWatchColorClass = 'text-emerald-400';
                 else if (w.last_status === 'waiting') stuckWatchColorClass = 'text-red-400';
-                else if (w.last_status === 'offline') stuckWatchColorClass = 'text-slate-500';
 
                 icon.className = 'fas fa-eye ' + stuckWatchColorClass + ' text-[10px] mr-1' + (w.last_status === 'waiting' ? ' animate-pulse' : '');
                 icon.title = 'Watched for stuck startup (' + w.service_label + ' - status: ' + w.last_status

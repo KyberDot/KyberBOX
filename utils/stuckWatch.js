@@ -145,7 +145,8 @@ async function checkOneContainer(target, watch) {
       null,
       watch.service_label,
       false,
-      `Admin: the system has detected an issue with (${watch.service_label}) an automatic restart`
+      `Admin: the system has detected an issue with (${watch.service_label}) an automatic restart`,
+      true
     );
     db.prepare(
       `UPDATE stuck_watch_containers SET consecutive_stuck_checks = 0, last_signature = NULL, last_reset_triggered_at = datetime('now') WHERE id = ?`

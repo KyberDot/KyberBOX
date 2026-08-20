@@ -125,7 +125,13 @@ async function getContainerStatuses(target, containerNames) {
   // docker inspect exits non-zero if ANY name is missing, but still prints
   // a line for every name it did find - so we parse output regardless of
   // exit code and only fall back to "unknown" if the connection itself failed.
-  const command = `docker inspect --format='{{.Name}}::{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' ${quoted} 2>&1`;
+  // .State.Running is checked first and separately from the health/status
+  // field - Docker keeps reporting a container's LAST health check result
+  // even after it stops (until it's started again and re-evaluated), so a
+  // container that was unhealthy right before being stopped would
+  // otherwise keep showing "Unhealthy" forever, never "Stopped", despite
+  // not running at all.
+  const command = `docker inspect --format='{{.Name}}::{{.State.Running}}::{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' ${quoted} 2>&1`;
 
   const result = await execOnTarget(target, command);
   const statuses = {};
@@ -136,11 +142,11 @@ async function getContainerStatuses(target, containerNames) {
   }
 
   result.output.split('\n').forEach((line) => {
-    const [rawName, rawStatus] = line.split('::');
+    const [rawName, runningStr, rawStatus] = line.split('::');
     if (!rawName) return;
     const name = rawName.replace(/^\//, '').trim();
     if (name && safeNames.includes(name)) {
-      statuses[name] = normalizeStatus(rawStatus) || 'down';
+      statuses[name] = runningStr === 'false' ? 'down' : (normalizeStatus(rawStatus) || 'down');
     }
   });
 

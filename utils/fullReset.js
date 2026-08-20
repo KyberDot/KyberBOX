@@ -7,7 +7,7 @@ const db = require('../db');
 const { runCommand } = require('./ssh');
 const { getAllSettings } = require('./settings');
 const { startReset, endReset, getResetState } = require('./resetLock');
-const { notifyResetStarted, notifyAutoResetStarted } = require('./mailer');
+const { notifyResetStarted, notifyAutoResetStarted, notifyAdminStuckMountAutoReset } = require('./mailer');
 
 const PULL_MAX_ATTEMPTS = 5;
 
@@ -86,7 +86,7 @@ async function runResetSequence(target, safePath, withUpdate) {
 // would be fragile if that wording ever changes.
 // withUpdate controls whether images are pulled first (down, pull, up) or
 // this is just a restart (down, up) with no pull step at all.
-function triggerFullReset(source, adminUserId, serviceLabel, withUpdate = true, subscriberSource = null) {
+function triggerFullReset(source, adminUserId, serviceLabel, withUpdate = true, subscriberSource = null, isAutomated = false) {
   const globalState = getResetState();
   if (globalState.active) {
     return { ok: false, message: `A reset is already in progress (${globalState.source || 'another action'}) - wait for it to finish first.` };
@@ -134,12 +134,17 @@ function triggerFullReset(source, adminUserId, serviceLabel, withUpdate = true, 
          )`
     )
     .all();
-  // Automated triggers (source starts with "Auto:") get a distinct email
-  // explaining the system itself detected and is fixing an issue - a
-  // manual reset email here would be confusing since nobody actually
-  // clicked anything.
-  if (source.startsWith('Auto:')) {
+  // Automated triggers get a distinct subscriber email explaining the
+  // system itself detected and is fixing an issue - a manual reset email
+  // here would be confusing since nobody actually clicked anything. Also
+  // emails every admin, since unlike a manual reset (which the admin
+  // obviously already knows about, having just triggered it themselves)
+  // an automated one could otherwise go unnoticed unless they happen to
+  // be logged in and see the banner at the exact right moment.
+  if (isAutomated) {
     notifyAutoResetStarted(allActiveSubscribers, serviceLabel, withUpdate);
+    const admins = db.prepare("SELECT name, email FROM users WHERE role = 'admin'").all();
+    notifyAdminStuckMountAutoReset(admins, serviceLabel, withUpdate);
   } else {
     notifyResetStarted(allActiveSubscribers, withUpdate);
   }

@@ -161,6 +161,7 @@
                                     data-action-label="<%= action.label %>"
                                     data-action-style="<%= action.style || 'warning' %>"
                                     data-cooldown-hours="<%= action.cooldown_hours %>"
+                                    data-banner-time-estimate="<%= action.banner_time_estimate || '' %>"
                                     <%= (isDisabled || action.nextAllowedAt || pv.plan.maintenance_mode) ? 'disabled' : '' %>
                                 >
                                     <span class="flex items-center">
@@ -341,12 +342,14 @@
                 const hours = btn.getAttribute('data-cooldown-hours');
                 const style = btn.getAttribute('data-action-style') || 'warning';
                 const isDanger = style === 'danger';
+                const bannerTimeEstimate = btn.getAttribute('data-banner-time-estimate');
 
                 document.getElementById('actionModalTitle').textContent = label + ' now?';
 
                 let body = 'This will run "' + label + '" on your server. You\'ll only be able to do this again in ' + hours + ' hour(s).';
                 if (isDanger) {
-                    body += ' This action can take between 5–15 minutes to finish — please don\'t close this tab while it runs.';
+                    const timeRange = bannerTimeEstimate === '5-15' ? '5–15' : '4–8';
+                    body += ' This action can take between ' + timeRange + ' minutes to finish — please don\'t close this tab while it runs.';
                 }
                 document.getElementById('actionModalBody').textContent = body;
 

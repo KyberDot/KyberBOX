@@ -114,6 +114,27 @@ async function notifyAutoResetStarted(recipients, serviceLabel, withUpdate = tru
   ).catch(() => {});
 }
 
+async function notifyAdminStuckMountAutoReset(admins, serviceLabel, withUpdate = false) {
+  if (!admins || admins.length === 0) return;
+  const window = withUpdate ? '5–15 minutes' : '4–8 minutes';
+
+  const serviceMention = serviceLabel ? `<strong>${serviceLabel}</strong>` : 'one of the services';
+
+  await Promise.all(
+    admins.map((admin) =>
+      sendMail({
+        to: admin.email,
+        subject: 'Stuck-Mount Watchdog: Automatic Reset In Progress',
+        bodyHtml: `
+          <p>Hi ${admin.name},</p>
+          <p>Stuck-Mount detected an issue with ${serviceMention} and is automatically restarting the affected systems to fix it. Services may be briefly interrupted while this completes.</p>
+          <p>We expect to resume within <strong>${window}</strong>. No action is needed on your end.</p>
+        `,
+      })
+    )
+  ).catch(() => {});
+}
+
 async function notifyAdminVpnInactive(admins, serviceLabel, containerName) {
   if (!admins || admins.length === 0) return;
 
@@ -179,4 +200,4 @@ async function notifyAdminProviderExpiring(admins, provider, daysLeft) {
   ).catch(() => {});
 }
 
-module.exports = { sendMail, isConfigured, getTransporter, notifyResetStarted, notifyAutoResetStarted, notifyAdminVpnInactive, notifyAdminProviderExpiring, notifyAdminContainersUnhealthy };
+module.exports = { sendMail, isConfigured, getTransporter, notifyResetStarted, notifyAutoResetStarted, notifyAdminStuckMountAutoReset, notifyAdminVpnInactive, notifyAdminProviderExpiring, notifyAdminContainersUnhealthy };
