@@ -3,12 +3,13 @@
 // disruptive enough (and this app runs as a single process) that the safest
 // default is "only one at a time, anywhere, blocking everyone" rather than
 // trying to reason about which targets might overlap.
-let state = { active: false, source: null, startedAt: null, expectedResumeBy: null, withUpdate: null };
+let state = { active: false, source: null, subscriberSource: null, startedAt: null, expectedResumeBy: null, withUpdate: null };
 
-function startReset(source, withUpdate = null) {
+function startReset(source, withUpdate = null, subscriberSource = null) {
   state = {
     active: true,
     source,
+    subscriberSource: subscriberSource || source,
     startedAt: new Date().toISOString(),
     // Conservative upper bound shown to people while it's running - actual
     // completion is whatever it is, this is just what the banner promises.
@@ -18,7 +19,7 @@ function startReset(source, withUpdate = null) {
 }
 
 function endReset() {
-  state = { active: false, source: null, startedAt: null, expectedResumeBy: null, withUpdate: null };
+  state = { active: false, source: null, subscriberSource: null, startedAt: null, expectedResumeBy: null, withUpdate: null };
 }
 
 function getResetState() {

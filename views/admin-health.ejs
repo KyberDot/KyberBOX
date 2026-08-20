@@ -29,6 +29,11 @@
         <!-- Toolbar -->
         <div class="flex items-center justify-between mb-6 flex-wrap gap-3">
             <h2 class="text-sm uppercase tracking-widest text-slate-500 font-bold">Containers (<span id="containerVisibleCount"><%= containers.length %></span>)</h2>
+            <div class="flex items-center gap-1.5" data-container-status-filter>
+                <button type="button" onclick="setContainerStatusFilter('all')" data-filter-pill="all" class="badge badge-active cursor-pointer text-xs px-3 py-1">All</button>
+                <button type="button" onclick="setContainerStatusFilter('active')" data-filter-pill="active" class="badge badge-closed cursor-pointer text-xs px-3 py-1">Active</button>
+                <button type="button" onclick="setContainerStatusFilter('inactive')" data-filter-pill="inactive" class="badge badge-closed cursor-pointer text-xs px-3 py-1">Inactive</button>
+            </div>
             <div class="flex items-center gap-2 flex-wrap">
                 <button type="button" id="refreshAllBtn" onclick="refreshAllStatuses()" title="Refresh all statuses" class="w-10 h-10 flex items-center justify-center rounded-xl btn-outline">
                     <i class="fas fa-arrows-rotate"></i>
@@ -77,7 +82,7 @@
         <!-- Containers -->
         <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4 mb-6" id="healthContainerList" data-bulk-mode="off">
             <% containers.forEach(function(c, index) { %>
-                <div class="glass rounded-2xl p-3 sm:p-4 flex flex-col items-center text-center gap-2 relative <%= c.is_active ? '' : 'opacity-50 grayscale' %>" data-container-row data-container-id="<%= c.id %>" data-container-search="<%= (c.label + ' ' + c.container_name).toLowerCase() %>">
+                <div class="glass rounded-2xl p-3 sm:p-4 flex flex-col items-center text-center gap-2 relative <%= c.is_active ? '' : 'opacity-50 grayscale' %>" data-container-row data-container-id="<%= c.id %>" data-container-active="<%= c.is_active ? '1' : '0' %>" data-container-search="<%= (c.label + ' ' + c.container_name).toLowerCase() %>">
                     <input type="checkbox" class="bulk-select-checkbox absolute top-2 left-2 w-4 h-4 accent-sky-500" data-bulk-checkbox value="<%= c.id %>">
                     <button type="button" class="container-actions-btn absolute top-2 left-2 w-5 h-5 flex items-center justify-center rounded text-slate-500 hover:text-white hover:bg-white/5 text-[10px]" title="Actions" onclick="openContainerActions('<%= c.id %>', '<%= c.label %>')" data-custom-actions="<%= JSON.stringify(c.customActions) %>">
                         <i class="fas fa-sliders"></i>
@@ -106,8 +111,16 @@
 
                     <div class="w-full min-w-0">
                         <% var stuckWatch = stuckWatchByContainer[c.container_name]; %>
+                        <%
+                          var stuckWatchColorClass = 'text-sky-400';
+                          if (stuckWatch) {
+                            if (stuckWatch.last_status === 'ok') stuckWatchColorClass = 'text-emerald-400';
+                            else if (stuckWatch.last_status === 'waiting') stuckWatchColorClass = 'text-red-400';
+                            else if (stuckWatch.last_status === 'offline') stuckWatchColorClass = 'text-slate-500';
+                          }
+                        %>
                         <span data-stuck-watch-wrap="<%= c.container_name %>" class="<%= stuckWatch ? '' : 'hidden' %>">
-                            <i data-stuck-watch-icon class="fas fa-eye text-sky-400 text-[10px] mr-1 <%= (stuckWatch && stuckWatch.last_status === 'waiting') ? 'animate-pulse' : '' %>" title="<%= stuckWatch ? ('Watched for stuck startup (' + stuckWatch.service_label + ' - status: ' + stuckWatch.last_status + (stuckWatch.last_status === 'waiting' ? (', ' + stuckWatch.consecutive_stuck_checks + '/3 stuck checks') : '') + ')') : '' %>"></i>
+                            <i data-stuck-watch-icon class="fas fa-eye <%= stuckWatchColorClass %> text-[10px] mr-1 <%= (stuckWatch && stuckWatch.last_status === 'waiting') ? 'animate-pulse' : '' %>" title="<%= stuckWatch ? ('Watched for stuck startup (' + stuckWatch.service_label + ' - status: ' + stuckWatch.last_status + (stuckWatch.last_status === 'waiting' ? (', ' + stuckWatch.consecutive_stuck_checks + '/3 stuck checks') : '') + ')') : '' %>"></i>
                         </span>
                         <% if (c.link_url) { %>
                             <a href="<%= c.link_url %>" target="_blank" rel="noopener noreferrer" class="font-semibold text-white text-xs truncate hover:text-sky-400"><%= c.label %></a>
@@ -482,13 +495,27 @@
 
     <script>
         // ---------- Search ----------
+        let containerStatusFilter = 'all';
+
+        function setContainerStatusFilter(filter) {
+            containerStatusFilter = filter;
+            document.querySelectorAll('[data-filter-pill]').forEach(function (pill) {
+                const active = pill.getAttribute('data-filter-pill') === filter;
+                pill.className = 'badge ' + (active ? 'badge-active' : 'badge-closed') + ' cursor-pointer text-xs px-3 py-1';
+            });
+            filterContainers();
+        }
+
         function filterContainers() {
             const query = document.getElementById('containerSearch').value.trim().toLowerCase();
             const rows = document.querySelectorAll('[data-container-row]');
             let visible = 0;
             rows.forEach(function (row) {
                 const haystack = row.getAttribute('data-container-search') || '';
-                const match = !query || haystack.indexOf(query) !== -1;
+                const searchMatch = !query || haystack.indexOf(query) !== -1;
+                const isActive = row.getAttribute('data-container-active') === '1';
+                const statusMatch = containerStatusFilter === 'all' || (containerStatusFilter === 'active' && isActive) || (containerStatusFilter === 'inactive' && !isActive);
+                const match = searchMatch && statusMatch;
                 row.classList.toggle('hidden', !match);
                 if (match) visible++;
             });
@@ -1161,6 +1188,13 @@
                 window.__mountsModalWasOpen = false;
                 openModal('mountsModal');
             }
+            if (document.getElementById('containerSearch')) {
+                document.querySelectorAll('[data-filter-pill]').forEach(function (pill) {
+                    const active = pill.getAttribute('data-filter-pill') === containerStatusFilter;
+                    pill.className = 'badge ' + (active ? 'badge-active' : 'badge-closed') + ' cursor-pointer text-xs px-3 py-1';
+                });
+                filterContainers();
+            }
         });
 
         const MOUNT_TONE_OK = 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400';
@@ -1317,7 +1351,12 @@
                 wrap.classList.toggle('hidden', !w);
                 if (!w || !icon) return;
 
-                icon.className = 'fas fa-eye text-sky-400 text-[10px] mr-1' + (w.last_status === 'waiting' ? ' animate-pulse' : '');
+                let stuckWatchColorClass = 'text-sky-400';
+                if (w.last_status === 'ok') stuckWatchColorClass = 'text-emerald-400';
+                else if (w.last_status === 'waiting') stuckWatchColorClass = 'text-red-400';
+                else if (w.last_status === 'offline') stuckWatchColorClass = 'text-slate-500';
+
+                icon.className = 'fas fa-eye ' + stuckWatchColorClass + ' text-[10px] mr-1' + (w.last_status === 'waiting' ? ' animate-pulse' : '');
                 icon.title = 'Watched for stuck startup (' + w.service_label + ' - status: ' + w.last_status
                     + (w.last_status === 'waiting' ? (', ' + w.consecutive_stuck_checks + '/3 stuck checks') : '') + ')';
             });

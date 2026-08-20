@@ -1746,11 +1746,8 @@ router.post('/admin/settings/container-watchdog', (req, res) => {
   const insertSelected = db.prepare('INSERT OR IGNORE INTO container_watchdog_selected (container_id) VALUES (?)');
   ids.forEach((id) => { if (/^\d+$/.test(id)) insertSelected.run(Number(id)); });
 
-  res.render('admin-settings', { ...loadSettingsPageData(), saved: 'email-watchdog', testResult: null, brandingError: null });
-});
+  setSetting('vpn_watchdog_enabled', req.body.vpn_enabled === '1' ? '1' : '0');
 
-router.post('/admin/settings/vpn-watchdog', (req, res) => {
-  setSetting('vpn_watchdog_enabled', req.body.enabled === '1' ? '1' : '0');
   res.render('admin-settings', { ...loadSettingsPageData(), saved: 'email-watchdog', testResult: null, brandingError: null });
 });
 

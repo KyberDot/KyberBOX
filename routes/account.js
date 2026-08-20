@@ -34,7 +34,11 @@ function accountViewData(user, overrides = {}) {
 // (admin Full Reset, or any user's danger-style action) is in progress
 // anywhere in the app.
 router.get('/system/reset-status', (req, res) => {
-  res.json(getResetState());
+  const state = getResetState();
+  if (!state.active) return res.json(state);
+
+  const source = (req.user && req.user.role === 'admin') ? state.source : (state.subscriberSource || state.source);
+  res.json({ ...state, source });
 });
 
 router.get('/account', async (req, res) => {

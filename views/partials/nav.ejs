@@ -89,7 +89,12 @@
           if (resetInProgress && resetInProgress.withUpdate === false) resetResumeText = 'within 4–8 minutes';
           else if (resetInProgress && resetInProgress.withUpdate === true) resetResumeText = 'within 5–15 minutes';
           else resetResumeText = 'shortly'; // not the admin Full Reset feature at all (e.g. a subscriber's own plan action) - no fixed time range applies
+
+          let resetSourceText = 'A server reset';
+          if (resetInProgress && resetInProgress.source) {
+            resetSourceText = (currentUser && currentUser.role === 'admin') ? resetInProgress.source : (resetInProgress.subscriberSource || resetInProgress.source);
+          }
         %>
-        <span id="resetBannerText"><%= (resetInProgress && resetInProgress.source) ? resetInProgress.source : 'A server reset' %> is currently in progress — service may be briefly interrupted. Expected to resume <%= resetResumeText %>.</span>
+        <span id="resetBannerText"><%= resetSourceText %> is currently in progress — service may be briefly interrupted. Expected to resume <%= resetResumeText %>.</span>
     </div>
 </div>

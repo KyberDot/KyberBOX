@@ -267,7 +267,12 @@ router.post('/dashboard/actions/:actionId/run', async (req, res) => {
     // Anything else (including the now-backfilled '4-8', or an unexpected
     // value) -> false, matching Restart Only's 4-8 minute estimate.
     const bannerWithUpdate = action.banner_time_estimate === '5-15';
-    startReset(action.label, bannerWithUpdate);
+    // +Update on -> a generic "Server Update & Reset" banner, same idea as
+    // the admin Full Reset feature switching to "& Update" wording rather
+    // than the specific action name once an update is involved. +Update
+    // off keeps showing the action's own label, as before.
+    const resetSource = bannerWithUpdate ? 'Server Update & Reset' : action.label;
+    startReset(resetSource, bannerWithUpdate);
 
     const otherSubscribers = db
       .prepare(

@@ -60,7 +60,7 @@ CREATE TABLE IF NOT EXISTS stuck_watch_containers (
   success_marker TEXT NOT NULL,
   consecutive_stuck_checks INTEGER NOT NULL DEFAULT 0,
   last_signature TEXT,
-  last_status TEXT NOT NULL DEFAULT 'unknown',
+  last_status TEXT NOT NULL DEFAULT 'unknown', -- ok (confirmed booted) | waiting (running, working through a startup step) | unknown (running, ambiguous log output) | offline (container isn't running)
   last_checked_at TEXT,
   last_reset_triggered_at TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -78,7 +78,7 @@ CREATE TABLE IF NOT EXISTS vpn_watch_containers (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   container_name TEXT NOT NULL UNIQUE,
   service_label TEXT NOT NULL,
-  last_status TEXT NOT NULL DEFAULT 'unknown', -- active (VPN confirmed up) | inactive (container running but VPN not confirmed, for any reason) | unknown (container offline/down)
+  last_status TEXT NOT NULL DEFAULT 'unknown', -- active (container running, Docker reports it healthy or has no healthcheck) | inactive (container running, Docker reports unhealthy or still starting) | unknown (container isn't running)
   last_checked_at TEXT,
   last_alert_sent_at TEXT,
   first_seen_inactive_at TEXT, -- when this container's VPN was first observed inactive in its current episode - cleared once it recovers to active (or the container goes offline, since "inactive" no longer applies there)
@@ -456,7 +456,7 @@ ensureColumn('users', 'payment_method_id', 'payment_method_id INTEGER REFERENCES
 ensureColumn('users', 'plex_username', 'plex_username TEXT');
 ensureColumn('users', 'plex_user_id', 'plex_user_id TEXT'); // Plex.tv account id, matched by email - used for Tautulli watch history/now-watching only
 ensureColumn('plan_containers', 'link_url', 'link_url TEXT');
-ensureColumn('vpn_watch_containers', 'last_container_start_at', 'last_container_start_at TEXT');
+ensureColumn('vpn_watch_containers', 'last_container_start_at', 'last_container_start_at TEXT'); // no longer read by vpnWatch.js - detection is now based directly on Docker's own health status, not log scanning that needed to know if the container had restarted
 const isFirstRunOfVpnStatusMigration = ensureColumn('vpn_watch_containers', 'first_seen_inactive_at', 'first_seen_inactive_at TEXT');
 ensureColumn('vpn_watch_containers', 'inactive_alert_sent_at', 'inactive_alert_sent_at TEXT');
 // One-time only (gated on the column above having just been added for the

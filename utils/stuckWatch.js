@@ -61,9 +61,25 @@ function extractWaitingSignature(output) {
 async function checkOneContainer(target, watch) {
   const safeName = watch.container_name.replace(/'/g, `'"'"'`);
 
-  const startedResult = await runCommand(target, `docker inspect --format='{{.State.StartedAt}}' '${safeName}' 2>&1`, 15000);
+  const startedResult = await runCommand(target, `docker inspect --format='{{.State.StartedAt}}|{{.State.Running}}' '${safeName}' 2>&1`, 15000);
   if (!startedResult.success) return; // container not found / SSH hiccup - skip, try again next cycle
-  const startedAt = (startedResult.output || '').trim();
+  const [startedAt, runningStr] = (startedResult.output || '').trim().split('|');
+  const isRunning = runningStr === 'true';
+
+  // A stopped container isn't "stuck" or "ok" - those concepts only apply
+  // while it's actually running and working through its startup steps.
+  // Checked before the "already confirmed healthy" shortcut below, since
+  // StartedAt alone doesn't change when a container is merely stopped
+  // (only when actually restarted) - without this, a stopped container
+  // that was last known 'ok' would keep showing as 'ok' indefinitely.
+  if (!isRunning) {
+    if (watch.last_status !== 'offline') {
+      db.prepare(`UPDATE stuck_watch_containers SET last_status = 'offline', consecutive_stuck_checks = 0, last_signature = NULL, last_checked_at = datetime('now') WHERE id = ?`).run(watch.id);
+    } else {
+      db.prepare(`UPDATE stuck_watch_containers SET last_checked_at = datetime('now') WHERE id = ?`).run(watch.id);
+    }
+    return;
+  }
 
   const containerRestarted = watch.last_container_start_at !== startedAt;
 
@@ -116,7 +132,21 @@ async function checkOneContainer(target, watch) {
   ).run(newCount, signature, startedAt, watch.id);
 
   if (newCount >= STUCK_THRESHOLD) {
-    triggerFullReset(`Auto: stuck-mount watchdog (${watch.service_label})`, null, watch.service_label);
+    // withUpdate=false: a stuck startup calls for a restart (down/up), not
+    // a fresh image pull - pulling wouldn't address a stuck-startup issue
+    // and would only add unnecessary downtime. Explicit here since
+    // triggerFullReset's own default is true, which would otherwise show
+    // the wrong (5-15 min) banner for what's actually a quick restart.
+    // Admins see the technical "which watchdog fired" wording; subscribers
+    // get a simpler version that doesn't assume they know what a
+    // stuck-mount watchdog is - same event, different audiences.
+    triggerFullReset(
+      `Watchdog: stuck-mount detected an issue with (${watch.service_label}) a restart`,
+      null,
+      watch.service_label,
+      false,
+      `Admin: the system has detected an issue with (${watch.service_label}) an automatic restart`
+    );
     db.prepare(
       `UPDATE stuck_watch_containers SET consecutive_stuck_checks = 0, last_signature = NULL, last_reset_triggered_at = datetime('now') WHERE id = ?`
     ).run(watch.id);

@@ -86,7 +86,7 @@ async function runResetSequence(target, safePath, withUpdate) {
 // would be fragile if that wording ever changes.
 // withUpdate controls whether images are pulled first (down, pull, up) or
 // this is just a restart (down, up) with no pull step at all.
-function triggerFullReset(source, adminUserId, serviceLabel, withUpdate = true) {
+function triggerFullReset(source, adminUserId, serviceLabel, withUpdate = true, subscriberSource = null) {
   const globalState = getResetState();
   if (globalState.active) {
     return { ok: false, message: `A reset is already in progress (${globalState.source || 'another action'}) - wait for it to finish first.` };
@@ -111,7 +111,7 @@ function triggerFullReset(source, adminUserId, serviceLabel, withUpdate = true) 
   const safePath = composePath.replace(/'/g, `'"'"'`);
 
   fullResetState = { running: true, phase: 'down', pullAttempt: 0, pullMaxAttempts: PULL_MAX_ATTEMPTS, lastResult: null, withUpdate };
-  startReset(source, withUpdate);
+  startReset(source, withUpdate, subscriberSource);
 
   // Lazy-required to avoid a circular dependency - stuckWatch.js already
   // imports triggerFullReset from this file for its own auto-reset
