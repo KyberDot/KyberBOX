@@ -367,7 +367,7 @@
                                 <p class="text-slate-500 text-xs font-mono truncate"><%= v.url %></p>
                             </div>
                             <div class="flex items-center gap-1.5 flex-shrink-0">
-                                <button type="button" onclick="checkVpnMonitor('<%= v.id %>', '<%= v.name %>')" title="Check VPN status" class="w-8 h-8 flex items-center justify-center rounded-lg btn-outline text-xs">
+                                <button type="button" onclick="openVpnDetails('<%= v.id %>', '<%= v.name %>')" title="View details" class="w-8 h-8 flex items-center justify-center rounded-lg btn-outline text-xs">
                                     <i class="fas fa-magnifying-glass"></i>
                                 </button>
                                 <form method="POST" action="/admin/health/vpn-monitors/<%= v.id %>/delete" data-ajax-form data-confirm="Remove this VPN entry? This only removes it from this list - it doesn't affect the VPN itself." class="inline">
@@ -385,6 +385,25 @@
                     <input type="text" name="url" required class="input" placeholder="http://gluetun:8888">
                     <button type="submit" class="btn-primary px-6 py-3 rounded-xl text-sm col-span-2">Add VPN</button>
                 </form>
+            </div>
+        </div>
+
+        <!-- VPN Details Modal -->
+        <div id="vpnDetailsModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden items-center justify-center z-50 px-4 py-8 overflow-y-auto">
+            <div class="glass rounded-3xl p-6 sm:p-8 max-w-lg w-full my-auto">
+                <div class="flex items-center justify-between mb-2">
+                    <h3 class="text-lg font-bold text-white"><i class="fas fa-shield-halved mr-2 text-sky-400"></i><span id="vpnDetailsTitle"></span></h3>
+                    <button type="button" onclick="closeModal('vpnDetailsModal')" title="Close" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5"><i class="fas fa-xmark"></i></button>
+                </div>
+
+                <div class="flex items-center gap-2 mb-5">
+                    <button type="button" id="vpnDetailsStartBtn" onclick="controlVpnMonitor('start')" class="btn-emerald flex-1 py-2.5 rounded-xl text-sm"><i class="fas fa-play mr-2"></i>Start</button>
+                    <button type="button" id="vpnDetailsStopBtn" onclick="controlVpnMonitor('stop')" class="btn-danger flex-1 py-2.5 rounded-xl text-sm"><i class="fas fa-stop mr-2"></i>Stop</button>
+                </div>
+
+                <div id="vpnDetailsBody" class="max-h-96 overflow-y-auto">
+                    <p class="text-slate-500 text-sm"><i class="fas fa-circle-notch fa-spin mr-2"></i>Loading…</p>
+                </div>
             </div>
         </div>
 
@@ -1327,6 +1346,81 @@
                 setVpnMonitorsResult(data.message, data.ok ? (data.connected ? MOUNT_TONE_OK : MOUNT_TONE_WARN) : MOUNT_TONE_ERROR);
             } catch (e) {
                 setVpnMonitorsResult('Could not reach the server to check this VPN.', MOUNT_TONE_ERROR);
+            }
+        }
+
+        let currentVpnMonitorId = null;
+
+        // Renders any plain object as a simple key/value list - deliberately
+        // generic rather than picking out specific named fields, since the
+        // exact shape gluetun returns can vary by version. Nested
+        // objects/arrays are shown as their own JSON string rather than
+        // recursed into, which keeps this simple and still shows everything
+        // gluetun actually sent, just without deep formatting.
+        function renderVpnDataBlock(title, icon, data) {
+            const header = '<p class="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-2"><i class="' + icon + ' mr-1"></i>' + title + '</p>';
+            if (!data || typeof data !== 'object') {
+                return '<div class="mb-4">' + header + '<p class="text-slate-600 text-xs bg-slate-900/40 rounded-xl p-3">Not available.</p></div>';
+            }
+            const entries = Object.entries(data);
+            if (entries.length === 0) {
+                return '<div class="mb-4">' + header + '<p class="text-slate-600 text-xs bg-slate-900/40 rounded-xl p-3">Empty response.</p></div>';
+            }
+            const rows = entries.map(function (entry) {
+                const key = entry[0];
+                const value = entry[1];
+                const displayValue = (typeof value === 'object' && value !== null) ? JSON.stringify(value) : String(value);
+                return '<div class="flex justify-between gap-3 py-1.5 text-xs border-b border-white/5 last:border-0">'
+                    + '<span class="text-slate-500 flex-shrink-0">' + key + '</span>'
+                    + '<span class="text-white font-mono text-right break-all">' + displayValue + '</span>'
+                    + '</div>';
+            }).join('');
+            return '<div class="mb-4">' + header + '<div class="bg-slate-900/40 rounded-xl px-3 py-1">' + rows + '</div></div>';
+        }
+
+        async function openVpnDetails(id, name) {
+            currentVpnMonitorId = id;
+            document.getElementById('vpnDetailsTitle').textContent = name;
+            document.getElementById('vpnDetailsBody').innerHTML = '<p class="text-slate-500 text-sm"><i class="fas fa-circle-notch fa-spin mr-2"></i>Loading…</p>';
+            openModal('vpnDetailsModal');
+
+            try {
+                const res = await fetch('/admin/health/vpn-monitors/' + id + '/details', { method: 'POST' });
+                const data = await res.json();
+
+                if (!data.ok) {
+                    document.getElementById('vpnDetailsBody').innerHTML = '<p class="text-red-400 text-sm">' + (data.message || 'Could not load details.') + '</p>';
+                    return;
+                }
+
+                document.getElementById('vpnDetailsBody').innerHTML =
+                    renderVpnDataBlock('VPN Status', 'fas fa-power-off', data.status) +
+                    renderVpnDataBlock('Public IP', 'fas fa-globe', data.publicIp) +
+                    renderVpnDataBlock('Port Forwarding', 'fas fa-diagram-project', data.portForward) +
+                    renderVpnDataBlock('DNS', 'fas fa-server', data.dns) +
+                    renderVpnDataBlock('Settings', 'fas fa-gear', data.settings);
+            } catch (e) {
+                document.getElementById('vpnDetailsBody').innerHTML = '<p class="text-red-400 text-sm">Could not reach the server to load details.</p>';
+            }
+        }
+
+        async function controlVpnMonitor(action) {
+            if (!currentVpnMonitorId) return;
+            const startBtn = document.getElementById('vpnDetailsStartBtn');
+            const stopBtn = document.getElementById('vpnDetailsStopBtn');
+            startBtn.disabled = true;
+            stopBtn.disabled = true;
+
+            try {
+                const res = await fetch('/admin/health/vpn-monitors/' + currentVpnMonitorId + '/' + action, { method: 'POST' });
+                const data = await res.json();
+                showToast(data.message, data.ok ? 'success' : 'error');
+                if (data.ok) openVpnDetails(currentVpnMonitorId, document.getElementById('vpnDetailsTitle').textContent);
+            } catch (e) {
+                showToast('Could not reach the server to ' + action + ' this VPN.', 'error');
+            } finally {
+                startBtn.disabled = false;
+                stopBtn.disabled = false;
             }
         }
 

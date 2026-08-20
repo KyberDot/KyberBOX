@@ -2010,7 +2010,7 @@ router.post('/admin/health/vpn-monitors/:id/check', async (req, res) => {
   // whole check. The trailing HTTP code (after the marker) lets this tell
   // "reached it, but got an unexpected response" apart from "couldn't
   // reach it at all" even if the JSON body below doesn't parse as expected.
-  const command = `curl -s -m 5 -o - -w '${marker}%{http_code}' '${safeUrl}/v1/openvpn/status' 2>&1`;
+  const command = `curl -s -m 5 -o - -w '${marker}%{http_code}' '${safeUrl}/v1/vpn/status' 2>&1`;
   const result = await runCommand(target, command, 10000);
 
   if (result.connectionFailed) {
@@ -2043,6 +2043,81 @@ router.post('/admin/health/vpn-monitors/:id/check', async (req, res) => {
     : `${monitor.name} is reachable (status format not recognized).`;
 
   res.json({ ok: true, connected, message });
+});
+
+// Full details view (status, public IP, port forwarding, DNS, settings) -
+// everything gluetun's own control server exposes, fetched in one combined
+// SSH round trip rather than five separate ones. Each endpoint's raw JSON
+// is returned as-is (not picked apart into specific named fields) so the
+// page can display whatever gluetun actually sends back, regardless of
+// which fields a given gluetun version happens to include.
+router.post('/admin/health/vpn-monitors/:id/details', async (req, res) => {
+  const monitor = db.prepare('SELECT * FROM admin_vpn_monitors WHERE id = ?').get(req.params.id);
+  if (!monitor) return res.status(404).json({ ok: false, message: 'VPN monitor not found.' });
+
+  const target = db.prepare('SELECT * FROM admin_ssh LIMIT 1').get();
+  if (!target) return res.status(400).json({ ok: false, message: 'No admin SSH access configured yet. Set it up in Settings first.' });
+
+  const safeUrl = monitor.url.replace(/'/g, `'"'"'`);
+  const segmentMarker = '::KBVPN_SEGMENT::';
+  const endpoints = ['/v1/vpn/status', '/v1/publicip/ip', '/v1/portforward', '/v1/dns/status', '/v1/vpn/settings'];
+  const command = endpoints
+    .map((ep) => `curl -s -m 5 '${safeUrl}${ep}' 2>&1`)
+    .join(` ; echo '${segmentMarker}' ; `);
+
+  const result = await runCommand(target, command, 20000);
+  if (result.connectionFailed) {
+    return res.json({ ok: false, message: 'Could not reach the server to get VPN details.' });
+  }
+
+  const segments = result.output.split(segmentMarker).map((s) => s.trim());
+
+  function safeParse(raw) {
+    if (!raw) return null;
+    try { return JSON.parse(raw); } catch (e) { return null; }
+  }
+
+  res.json({
+    ok: true,
+    name: monitor.name,
+    status: safeParse(segments[0]),
+    publicIp: safeParse(segments[1]),
+    portForward: safeParse(segments[2]),
+    dns: safeParse(segments[3]),
+    settings: safeParse(segments[4]),
+  });
+});
+
+router.post('/admin/health/vpn-monitors/:id/:action', async (req, res) => {
+  if (!['start', 'stop'].includes(req.params.action)) return res.status(404).json({ ok: false, message: 'Unknown action.' });
+
+  const monitor = db.prepare('SELECT * FROM admin_vpn_monitors WHERE id = ?').get(req.params.id);
+  if (!monitor) return res.status(404).json({ ok: false, message: 'VPN monitor not found.' });
+
+  const target = db.prepare('SELECT * FROM admin_ssh LIMIT 1').get();
+  if (!target) return res.status(400).json({ ok: false, message: 'No admin SSH access configured yet. Set it up in Settings first.' });
+
+  const desiredStatus = req.params.action === 'start' ? 'running' : 'stopped';
+  const safeUrl = monitor.url.replace(/'/g, `'"'"'`);
+  const safeBody = JSON.stringify({ status: desiredStatus }).replace(/'/g, `'"'"'`);
+  const marker = '::KBVPNACTION::';
+  const command = `curl -s -m 10 -X PUT -H 'Content-Type: application/json' -d '${safeBody}' -o - -w '${marker}%{http_code}' '${safeUrl}/v1/vpn/status' 2>&1`;
+
+  const result = await runCommand(target, command, 15000);
+  if (result.connectionFailed) {
+    return res.json({ ok: false, message: `Could not reach the server to ${req.params.action} ${monitor.name}.` });
+  }
+
+  const markerIndex = result.output.lastIndexOf(marker);
+  const httpCode = markerIndex === -1 ? null : result.output.slice(markerIndex + marker.length).trim();
+  const succeeded = httpCode && /^2\d\d$/.test(httpCode);
+
+  res.json({
+    ok: succeeded,
+    message: succeeded
+      ? `${monitor.name} ${req.params.action === 'start' ? 'started' : 'stopped'} successfully.`
+      : `Failed to ${req.params.action} ${monitor.name} (HTTP ${httpCode || 'unreachable'}).`,
+  });
 });
 
 router.get('/admin/health/status', async (req, res) => {
