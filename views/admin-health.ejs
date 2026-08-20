@@ -146,7 +146,7 @@
                         <button class="btn-outline flex-1 py-1.5 rounded-lg text-[11px]" data-health-btn data-health-action="stop" data-health-id="<%= c.id %>" data-health-label="<%= c.label %>" title="Stop">
                             <i class="fas fa-stop"></i>
                         </button>
-                        <button class="btn-outline flex-1 py-1.5 rounded-lg text-[11px]" data-update-btn data-update-id="<%= c.id %>" data-update-label="<%= c.label %>" title="Restart or Update">
+                        <button class="btn-outline flex-1 py-1.5 rounded-lg text-[11px]" data-update-btn data-update-id="<%= c.id %>" data-update-label="<%= c.label %>" title="Reset or Update">
                             <i class="fas fa-cloud-arrow-down"></i>
                         </button>
                         <button class="btn-amber flex-1 py-1.5 rounded-lg text-[11px]" data-health-btn data-health-action="restart" data-health-id="<%= c.id %>" data-health-label="<%= c.label %>" title="Restart">
@@ -254,7 +254,7 @@
 
                 <div class="grid gap-3">
                     <button type="button" onclick="startFullReset(false)" class="text-left p-4 rounded-xl border border-white/10 hover:border-sky-500/40 hover:bg-white/5 transition">
-                        <p class="font-bold text-white text-sm mb-1"><i class="fas fa-rotate mr-2 text-sky-400"></i>Restart Only <span class="text-slate-500 font-normal">· ~4–8 min</span></p>
+                        <p class="font-bold text-white text-sm mb-1"><i class="fas fa-rotate mr-2 text-sky-400"></i>Reset Only <span class="text-slate-500 font-normal">· ~4–8 min</span></p>
                         <p class="text-slate-400 text-xs">Stops and brings the stack back up on the images already on disk. Faster - no images are downloaded.</p>
                     </button>
                     <button type="button" onclick="startFullReset(true)" class="text-left p-4 rounded-xl border border-white/10 hover:border-red-500/40 hover:bg-white/5 transition">
@@ -276,7 +276,7 @@
 
                 <div class="grid gap-3">
                     <button type="button" onclick="startContainerUpdate(false)" class="text-left p-4 rounded-xl border border-white/10 hover:border-sky-500/40 hover:bg-white/5 transition">
-                        <p class="font-bold text-white text-sm mb-1"><i class="fas fa-rotate mr-2 text-sky-400"></i>Restart Only</p>
+                        <p class="font-bold text-white text-sm mb-1"><i class="fas fa-rotate mr-2 text-sky-400"></i>Reset Only</p>
                         <p class="text-slate-400 text-xs">Stops and brings it back up on the image already on disk. Faster - nothing is downloaded.</p>
                     </button>
                     <button type="button" onclick="startContainerUpdate(true)" class="text-left p-4 rounded-xl border border-white/10 hover:border-red-500/40 hover:bg-white/5 transition">
@@ -738,7 +738,7 @@
                 // A reset finished recently while nobody was watching this
                 // page - still worth surfacing. The cutoff matches each
                 // option's own time estimate (Reset & Update: ~5-15 min,
-                // Restart Only: ~4-8 min) rather than one flat window for
+                // Reset Only: ~4-8 min) rather than one flat window for
                 // both - without a cutoff at all, the same result would show
                 // up on every single page load forever, since the backend
                 // has no reason to clear it on its own until either the next
@@ -1311,7 +1311,8 @@
             up: ['badge-active', 'fa-circle-check', 'Online'],
             starting: ['badge-suspended', 'fa-circle-notch fa-spin', 'Starting'],
             unhealthy: ['badge-expired', 'fa-triangle-exclamation', 'Unhealthy'],
-            down: ['badge-expired', 'fa-circle-xmark', 'Stopped'],
+            stopped: ['badge-expired', 'fa-circle-xmark', 'Stopped'],
+            down: ['badge-expired', 'fa-circle-xmark', 'Offline'],
             unknown: ['badge-closed', 'fa-question', 'Unknown'],
         };
 

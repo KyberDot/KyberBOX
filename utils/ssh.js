@@ -90,9 +90,6 @@ const STATUS_MAP = {
   running: 'up',
   starting: 'starting',
   unhealthy: 'unhealthy',
-  paused: 'down',
-  exited: 'down',
-  dead: 'down',
   created: 'starting',
   restarting: 'starting',
 };
@@ -105,13 +102,19 @@ function normalizeStatus(raw) {
 /**
  * Checks the live status of one or more containers on a server in a single
  * SSH round trip. Returns a map of container_name -> normalized status:
- * 'up' | 'starting' | 'unhealthy' | 'down' | 'unknown'.
+ * 'up' | 'starting' | 'unhealthy' | 'stopped' | 'down' | 'unknown'.
  *
  * - 'unknown' is reserved for when we genuinely couldn't reach the server
  *   at all (SSH connection/auth failure) - we have no information.
- * - 'down' (shown to users as "Offline") is used whenever the server was
- *   reachable but a specific container is stopped, removed, or otherwise
- *   doesn't exist - i.e. we DO know its state, and its state is "not up".
+ * - 'stopped' (shown to users as "Stopped") is used whenever the container
+ *   was found (docker inspect knows about it) but isn't running - exited,
+ *   paused, dead, or created and never started. This applies regardless of
+ *   why or how it stopped - a Stop click in KyberBOX, `docker stop` run
+ *   directly on the server, or a crash all look identical from here, and
+ *   deliberately aren't distinguished.
+ * - 'down' (shown to users as "Offline") is reserved specifically for when
+ *   the container can't be found/detected at all - removed, never existed,
+ *   or the configured name doesn't match anything on the server.
  */
 async function getContainerStatuses(target, containerNames) {
   if (!containerNames || containerNames.length === 0) return {};
@@ -146,12 +149,16 @@ async function getContainerStatuses(target, containerNames) {
     if (!rawName) return;
     const name = rawName.replace(/^\//, '').trim();
     if (name && safeNames.includes(name)) {
-      statuses[name] = runningStr === 'false' ? 'down' : (normalizeStatus(rawStatus) || 'down');
+      // Found, but not running - 'stopped' regardless of the specific
+      // underlying state (exited/paused/dead all look the same here) and
+      // regardless of what caused it.
+      statuses[name] = runningStr === 'false' ? 'stopped' : (normalizeStatus(rawStatus) || 'stopped');
     }
   });
 
   // The server responded but gave us no line for this name at all (e.g.
-  // "No such object") - we know it's not running, so it's offline, not unknown.
+  // "No such object") - genuinely not found/detected, which is a
+  // different situation from a container that exists but is stopped.
   safeNames.forEach((n) => {
     if (!(n in statuses)) statuses[n] = 'down';
   });
