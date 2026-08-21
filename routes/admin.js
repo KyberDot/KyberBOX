@@ -2104,7 +2104,7 @@ router.get('/admin/health/vpn-monitors/status', async (req, res) => {
     // polls" still spans a meaningful multi-hour window rather than just
     // the last several on-page refreshes.
     db.prepare(
-      `UPDATE admin_vpn_monitors SET last_status = ?, last_public_ip = ?, last_public_country = ?, last_checked_at = datetime('now') WHERE id = ?`
+      `UPDATE admin_vpn_monitors SET last_status = ?, last_public_ip = COALESCE(?, last_public_ip), last_public_country = COALESCE(?, last_public_country), last_checked_at = datetime('now') WHERE id = ?`
     ).run(status, publicIp, publicCountry, monitor.id);
   }
 
@@ -2363,7 +2363,7 @@ router.post('/admin/health/vpn-monitors/:id/details', async (req, res) => {
     ? results.publicIp.parsed.country
     : null;
   db.prepare(
-    `UPDATE admin_vpn_monitors SET last_status = ?, last_public_ip = ?, last_public_country = ?, last_checked_at = datetime('now') WHERE id = ?`
+    `UPDATE admin_vpn_monitors SET last_status = ?, last_public_ip = COALESCE(?, last_public_ip), last_public_country = COALESCE(?, last_public_country), last_checked_at = datetime('now') WHERE id = ?`
   ).run(listStatus, listPublicIp, listPublicCountry, monitor.id);
 
   res.json({

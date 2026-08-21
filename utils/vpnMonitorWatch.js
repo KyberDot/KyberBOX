@@ -28,10 +28,10 @@ function splitHttpCode(segment) {
   return { body: segment.slice(0, idx).trim(), httpCode: segment.slice(idx + 'HTTP_CODE:'.length).trim() };
 }
 
-// Determines a single monitor's current status/public IP - no database
-// writes at all, so this is safe to call from a fast on-page "refresh now"
-// action as often as needed without affecting the longer-term poll
-// history, as well as from the background watchdog below.
+// Determines a single monitor's current status/public IP/country - no
+// database writes at all here, so this is safe to call from a fast
+// on-page "refresh now" action as often as needed without affecting the
+// longer-term poll history, as well as from the background watchdog below.
 async function getLiveVpnStatus(target, monitor) {
   const hostResolution = await resolveGluetunHost(target, monitor.url);
   if (!hostResolution) return { status: 'unknown', publicIp: null };
@@ -72,23 +72,25 @@ async function getLiveVpnStatus(target, monitor) {
   // else: no HTTP code at all means the connection itself failed - stays 'unknown'
 
   let publicIp = null;
+  let publicCountry = null;
   if (ipSegment.httpCode && /^2\d\d$/.test(ipSegment.httpCode)) {
     try {
       const parsed = JSON.parse(ipSegment.body);
       if (parsed && typeof parsed.public_ip === 'string') publicIp = parsed.public_ip;
+      if (parsed && typeof parsed.country === 'string') publicCountry = parsed.country;
     } catch (e) {
-      // couldn't parse - publicIp stays null, not a reason to fail the whole poll
+      // couldn't parse - publicIp/publicCountry stay null, not a reason to fail the whole poll
     }
   }
 
-  return { status, publicIp };
+  return { status, publicIp, publicCountry };
 }
 
-function recordHistory(monitorId, status, publicIp) {
+function recordHistory(monitorId, status, publicIp, publicCountry) {
   db.prepare('INSERT INTO admin_vpn_monitor_history (monitor_id, status) VALUES (?, ?)').run(monitorId, status);
   db.prepare(
-    `UPDATE admin_vpn_monitors SET last_status = ?, last_public_ip = ?, last_checked_at = datetime('now') WHERE id = ?`
-  ).run(status, publicIp, monitorId);
+    `UPDATE admin_vpn_monitors SET last_status = ?, last_public_ip = COALESCE(?, last_public_ip), last_public_country = COALESCE(?, last_public_country), last_checked_at = datetime('now') WHERE id = ?`
+  ).run(status, publicIp, publicCountry, monitorId);
 
   // Prune to the most recent HISTORY_LIMIT rows for this monitor - keeps
   // the table from growing unbounded, since this runs on every poll cycle
@@ -101,8 +103,8 @@ function recordHistory(monitorId, status, publicIp) {
 }
 
 async function pollOneMonitor(target, monitor) {
-  const { status, publicIp } = await getLiveVpnStatus(target, monitor);
-  recordHistory(monitor.id, status, publicIp);
+  const { status, publicIp, publicCountry } = await getLiveVpnStatus(target, monitor);
+  recordHistory(monitor.id, status, publicIp, publicCountry);
 }
 
 async function checkVpnMonitors() {
