@@ -375,6 +375,7 @@ CREATE TABLE IF NOT EXISTS admin_mounts (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
   folder_name TEXT NOT NULL,
+  sort_order INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -387,8 +388,10 @@ CREATE TABLE IF NOT EXISTS admin_vpn_monitors (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
   url TEXT NOT NULL, -- gluetun's own control server base URL, e.g. http://gluetun:8888 - reached via SSH on the target server, since this is normally only resolvable on that server's internal docker network, not from wherever KyberBOX itself runs
+  sort_order INTEGER NOT NULL DEFAULT 0,
   last_status TEXT, -- connected | paused | disconnected | unknown - from the most recent background poll, shown as a badge in the main VPN Monitor list without needing to open the details view
   last_public_ip TEXT, -- from the most recent background poll
+  last_public_country TEXT, -- from the most recent background poll, shown alongside the IP in the main list
   last_checked_at TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -598,7 +601,18 @@ ensureColumn('admin_health_containers', 'first_seen_unhealthy_at', 'first_seen_u
 ensureColumn('admin_health_containers', 'unhealthy_alert_sent_at', 'unhealthy_alert_sent_at TEXT');
 ensureColumn('admin_vpn_monitors', 'last_status', 'last_status TEXT');
 ensureColumn('admin_vpn_monitors', 'last_public_ip', 'last_public_ip TEXT');
+ensureColumn('admin_vpn_monitors', 'last_public_country', 'last_public_country TEXT');
 ensureColumn('admin_vpn_monitors', 'last_checked_at', 'last_checked_at TEXT');
+if (ensureColumn('admin_vpn_monitors', 'sort_order', 'sort_order INTEGER NOT NULL DEFAULT 0')) {
+  const existingMonitors = db.prepare('SELECT id FROM admin_vpn_monitors ORDER BY name ASC').all();
+  const updateMonitorOrder = db.prepare('UPDATE admin_vpn_monitors SET sort_order = ? WHERE id = ?');
+  existingMonitors.forEach((row, index) => updateMonitorOrder.run(index, row.id));
+}
+if (ensureColumn('admin_mounts', 'sort_order', 'sort_order INTEGER NOT NULL DEFAULT 0')) {
+  const existingMounts = db.prepare('SELECT id FROM admin_mounts ORDER BY name ASC').all();
+  const updateMountOrder = db.prepare('UPDATE admin_mounts SET sort_order = ? WHERE id = ?');
+  existingMounts.forEach((row, index) => updateMountOrder.run(index, row.id));
+}
 ensureColumn('plan_actions', 'style', "style TEXT NOT NULL DEFAULT 'warning'"); // warning | danger
 
 db.exec(`

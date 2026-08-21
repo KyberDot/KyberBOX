@@ -1806,8 +1806,8 @@ function loadHealthPageData() {
   const vpnWatchByContainer = {};
   db.prepare('SELECT * FROM vpn_watch_containers').all().forEach((w) => { vpnWatchByContainer[w.container_name] = w; });
 
-  const mounts = db.prepare('SELECT * FROM admin_mounts ORDER BY name ASC').all();
-  const vpnMonitors = db.prepare('SELECT * FROM admin_vpn_monitors ORDER BY name ASC').all();
+  const mounts = db.prepare('SELECT * FROM admin_mounts ORDER BY sort_order ASC, id ASC').all();
+  const vpnMonitors = db.prepare('SELECT * FROM admin_vpn_monitors ORDER BY sort_order ASC, id ASC').all();
 
   return { sshConfigured, containers, recentLog, stuckWatchByContainer, vpnWatchByContainer, mounts, vpnMonitors };
 }
@@ -1939,8 +1939,37 @@ router.post('/admin/health/mounts', (req, res) => {
     return res.status(400).render('error', { message: "Missing required fields, or the folder name contains characters that aren't allowed (letters, numbers, dots, dashes, and underscores only) - please fill in everything marked required and try again." });
   }
 
-  db.prepare('INSERT INTO admin_mounts (name, folder_name) VALUES (?, ?)').run(name, folderName);
+  const maxOrder = db.prepare('SELECT MAX(sort_order) AS m FROM admin_mounts').get().m || 0;
+  db.prepare('INSERT INTO admin_mounts (name, folder_name, sort_order) VALUES (?, ?, ?)').run(name, folderName, maxOrder + 1);
   res.redirect('/admin/health');
+});
+
+router.post('/admin/health/mounts/:id/update', (req, res) => {
+  const mount = db.prepare('SELECT * FROM admin_mounts WHERE id = ?').get(req.params.id);
+  if (!mount) return renderHealthWithAjaxError(req, res, 'Mount not found.');
+
+  const name = String(req.body.name || '').trim();
+  const folderName = safeMountFolderName(req.body.folder_name);
+
+  if (!name || !folderName) {
+    return renderHealthWithAjaxError(req, res, "Missing required fields, or the folder name contains characters that aren't allowed (letters, numbers, dots, dashes, and underscores only) - please fill in everything marked required and try again.");
+  }
+
+  db.prepare('UPDATE admin_mounts SET name = ?, folder_name = ? WHERE id = ?').run(name, folderName, req.params.id);
+  res.redirect('/admin/health');
+});
+
+router.post('/admin/health/mounts/reorder', (req, res) => {
+  const ids = Array.isArray(req.body.ids) ? req.body.ids : [req.body.ids].filter(Boolean);
+  if (ids.length === 0) return res.status(400).json({ ok: false, message: 'No order given.' });
+
+  const update = db.prepare('UPDATE admin_mounts SET sort_order = ? WHERE id = ?');
+  const reorderTx = db.transaction((idList) => {
+    idList.forEach((id, index) => update.run(index, id));
+  });
+  reorderTx(ids);
+
+  res.json({ ok: true });
 });
 
 router.post('/admin/health/mounts/:id/delete', (req, res) => {
@@ -2068,15 +2097,15 @@ router.get('/admin/health/vpn-monitors/status', async (req, res) => {
 
   const statuses = {};
   for (const monitor of monitors) {
-    const { status, publicIp } = await getLiveVpnStatus(target, monitor);
-    statuses[monitor.id] = { status, publicIp };
+    const { status, publicIp, publicCountry } = await getLiveVpnStatus(target, monitor);
+    statuses[monitor.id] = { status, publicIp, publicCountry };
     // Keeps the main-list badge fresh without adding a history entry -
     // history stays reserved for the slower background poll so "last 30
     // polls" still spans a meaningful multi-hour window rather than just
     // the last several on-page refreshes.
     db.prepare(
-      `UPDATE admin_vpn_monitors SET last_status = ?, last_public_ip = ?, last_checked_at = datetime('now') WHERE id = ?`
-    ).run(status, publicIp, monitor.id);
+      `UPDATE admin_vpn_monitors SET last_status = ?, last_public_ip = ?, last_public_country = ?, last_checked_at = datetime('now') WHERE id = ?`
+    ).run(status, publicIp, publicCountry, monitor.id);
   }
 
   res.json({ ok: true, statuses });
@@ -2093,8 +2122,40 @@ router.post('/admin/health/vpn-monitors', (req, res) => {
     return renderHealthWithAjaxError(req, res, 'That URL doesn\'t look valid - make sure it includes http:// or https:// and the correct port.');
   }
 
-  db.prepare('INSERT INTO admin_vpn_monitors (name, url) VALUES (?, ?)').run(name, url);
+  const maxOrder = db.prepare('SELECT MAX(sort_order) AS m FROM admin_vpn_monitors').get().m || 0;
+  db.prepare('INSERT INTO admin_vpn_monitors (name, url, sort_order) VALUES (?, ?, ?)').run(name, url, maxOrder + 1);
   res.redirect('/admin/health');
+});
+
+router.post('/admin/health/vpn-monitors/:id/update', (req, res) => {
+  const monitor = db.prepare('SELECT * FROM admin_vpn_monitors WHERE id = ?').get(req.params.id);
+  if (!monitor) return renderHealthWithAjaxError(req, res, 'VPN monitor not found.');
+
+  const name = String(req.body.name || '').trim();
+  const url = String(req.body.url || '').trim();
+
+  if (!name || !url) {
+    return renderHealthWithAjaxError(req, res, 'Missing required fields - please fill in everything marked required and try again.');
+  }
+  if (!/^https?:\/\/[a-zA-Z0-9.-]+(:\d+)?(\/.*)?$/.test(url)) {
+    return renderHealthWithAjaxError(req, res, 'That URL doesn\'t look valid - make sure it includes http:// or https:// and the correct port.');
+  }
+
+  db.prepare('UPDATE admin_vpn_monitors SET name = ?, url = ? WHERE id = ?').run(name, url, req.params.id);
+  res.redirect('/admin/health');
+});
+
+router.post('/admin/health/vpn-monitors/reorder', (req, res) => {
+  const ids = Array.isArray(req.body.ids) ? req.body.ids : [req.body.ids].filter(Boolean);
+  if (ids.length === 0) return res.status(400).json({ ok: false, message: 'No order given.' });
+
+  const update = db.prepare('UPDATE admin_vpn_monitors SET sort_order = ? WHERE id = ?');
+  const reorderTx = db.transaction((idList) => {
+    idList.forEach((id, index) => update.run(index, id));
+  });
+  reorderTx(ids);
+
+  res.json({ ok: true });
 });
 
 router.post('/admin/health/vpn-monitors/:id/delete', (req, res) => {
@@ -2282,6 +2343,29 @@ router.post('/admin/health/vpn-monitors/:id/details', async (req, res) => {
     .prepare('SELECT status, checked_at FROM admin_vpn_monitor_history WHERE monitor_id = ? ORDER BY id ASC LIMIT 30')
     .all(monitor.id);
 
+  // Mirrors the same 4-state mapping used by the background watchdog -
+  // keeps the main list's cached badge/IP in sync with whatever this live
+  // fetch just found, since previously only the background poll and the
+  // 30s on-page refresh ever touched these columns, leaving the main list
+  // stale after a Start/Stop until one of those happened to fire next.
+  const statusSegment = results.status;
+  const listStatus = (() => {
+    if (!statusSegment || !statusSegment.httpCode || !/^2\d\d$/.test(statusSegment.httpCode)) return 'unknown';
+    const raw = statusSegment.parsed && typeof statusSegment.parsed.status === 'string' ? statusSegment.parsed.status.toLowerCase() : null;
+    if (raw === 'running') return 'connected';
+    if (raw === 'stopped') return 'paused';
+    return 'disconnected';
+  })();
+  const listPublicIp = (results.publicIp && results.publicIp.parsed && typeof results.publicIp.parsed.public_ip === 'string')
+    ? results.publicIp.parsed.public_ip
+    : null;
+  const listPublicCountry = (results.publicIp && results.publicIp.parsed && typeof results.publicIp.parsed.country === 'string')
+    ? results.publicIp.parsed.country
+    : null;
+  db.prepare(
+    `UPDATE admin_vpn_monitors SET last_status = ?, last_public_ip = ?, last_public_country = ?, last_checked_at = datetime('now') WHERE id = ?`
+  ).run(listStatus, listPublicIp, listPublicCountry, monitor.id);
+
   res.json({
     ok: true,
     name: monitor.name,
@@ -2291,6 +2375,9 @@ router.post('/admin/health/vpn-monitors/:id/details', async (req, res) => {
     dns: results.dns,
     settings: results.settings,
     history,
+    listStatus,
+    listPublicIp,
+    listPublicCountry,
   });
 });
 

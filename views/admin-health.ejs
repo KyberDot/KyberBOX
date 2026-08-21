@@ -299,7 +299,7 @@
                 <div class="flex items-center justify-between mb-2">
                     <h3 class="text-lg font-bold text-white"><i class="fas fa-hard-drive mr-2 text-sky-400"></i>Mounts</h3>
                     <div class="flex items-center gap-1">
-                        <button type="button" onclick="refreshMountStatuses()" title="Refresh all" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5"><i class="fas fa-rotate"></i></button>
+                        <button type="button" onclick="withSpin(this, refreshMountStatuses)" title="Refresh all" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5"><i class="fas fa-rotate"></i></button>
                         <button type="button" data-toggle-target="addMountForm" title="Add a mount" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5"><i class="fas fa-plus"></i></button>
                         <button type="button" onclick="closeMountsModalWithRefresh()" title="Close" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5"><i class="fas fa-xmark"></i></button>
                     </div>
@@ -308,32 +308,47 @@
 
                 <div id="mountsResult" class="hidden text-sm rounded-xl p-3 mb-4"></div>
 
-                <div class="space-y-2 mb-5 max-h-64 overflow-y-auto">
+                <div id="mountsList" class="space-y-2 mb-5 max-h-64 overflow-y-auto" ondragover="handleReorderContainerDragOver(event)">
                     <% if (mounts.length === 0) { %>
                         <p class="text-slate-500 text-xs">No mounts added yet.</p>
                     <% } %>
                     <% mounts.forEach(function(m) { %>
-                        <div class="flex items-center justify-between gap-2 bg-slate-900/40 rounded-xl px-3 py-2.5" data-mount-row="<%= m.id %>">
-                            <div class="min-w-0 flex items-center gap-2">
-                                <span id="mount-status-<%= m.id %>" class="w-2.5 h-2.5 rounded-full bg-slate-600 flex-shrink-0" title="Unknown"></span>
-                                <div class="min-w-0">
-                                    <p class="text-white text-sm font-semibold truncate"><%= m.name %></p>
-                                    <p class="text-slate-500 text-xs font-mono truncate">/mnt/<%= m.folder_name %></p>
+                        <div class="bg-slate-900/40 rounded-xl px-3 py-2.5" data-mount-row="<%= m.id %>" data-reorder-row draggable="true" ondragstart="handleReorderDragStart(event, 'mounts')" ondragover="handleReorderDragOver(event)" ondrop="handleReorderDrop(event, 'mounts')" ondragend="handleReorderDragEnd(event)">
+                            <div id="mount-view-<%= m.id %>" class="flex items-center justify-between gap-2">
+                                <div class="min-w-0 flex items-center gap-2">
+                                    <i class="fas fa-grip-vertical text-slate-600 flex-shrink-0" title="Drag to reorder" style="cursor: grab;"></i>
+                                    <span id="mount-status-<%= m.id %>" class="w-2.5 h-2.5 rounded-full bg-slate-600 flex-shrink-0" title="Unknown"></span>
+                                    <div class="min-w-0">
+                                        <p class="text-white text-sm font-semibold truncate"><%= m.name %></p>
+                                        <p class="text-slate-500 text-xs font-mono truncate">/mnt/<%= m.folder_name %></p>
+                                    </div>
+                                </div>
+                                <div class="flex items-center gap-1.5 flex-shrink-0">
+                                    <button type="button" onclick="openMountFolders('<%= m.id %>', '<%= m.name %>')" title="View folders" class="w-8 h-8 flex items-center justify-center rounded-lg btn-outline text-xs">
+                                        <i class="fas fa-folder-open"></i>
+                                    </button>
+                                    <button type="button" onclick="unmountMount('<%= m.id %>', '<%= m.name %>')" title="Unmount" class="w-8 h-8 flex items-center justify-center rounded-lg btn-outline text-xs text-amber-400 hover:text-amber-300">
+                                        <i class="fas fa-eject"></i>
+                                    </button>
+                                    <button type="button" onclick="toggleMountEditForm('<%= m.id %>')" title="Edit" class="w-8 h-8 flex items-center justify-center rounded-lg btn-outline text-xs">
+                                        <i class="fas fa-pen"></i>
+                                    </button>
+                                    <form method="POST" action="/admin/health/mounts/<%= m.id %>/delete" data-ajax-form data-confirm="Remove this mount entry? This only removes it from this list - it doesn't unmount anything." class="inline">
+                                        <button type="submit" title="Remove entry" class="w-8 h-8 flex items-center justify-center rounded-lg btn-outline text-xs text-red-400 hover:text-red-300">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </form>
                                 </div>
                             </div>
-                            <div class="flex items-center gap-1.5 flex-shrink-0">
-                                <button type="button" onclick="openMountFolders('<%= m.id %>', '<%= m.name %>')" title="View folders" class="w-8 h-8 flex items-center justify-center rounded-lg btn-outline text-xs">
-                                    <i class="fas fa-folder-open"></i>
-                                </button>
-                                <button type="button" onclick="unmountMount('<%= m.id %>', '<%= m.name %>')" title="Unmount" class="w-8 h-8 flex items-center justify-center rounded-lg btn-outline text-xs text-amber-400 hover:text-amber-300">
-                                    <i class="fas fa-eject"></i>
-                                </button>
-                                <form method="POST" action="/admin/health/mounts/<%= m.id %>/delete" data-ajax-form data-confirm="Remove this mount entry? This only removes it from this list - it doesn't unmount anything." class="inline">
-                                    <button type="submit" title="Remove entry" class="w-8 h-8 flex items-center justify-center rounded-lg btn-outline text-xs text-red-400 hover:text-red-300">
-                                        <i class="fas fa-trash"></i>
-                                    </button>
-                                </form>
-                            </div>
+                            <form id="mount-edit-<%= m.id %>" method="POST" action="/admin/health/mounts/<%= m.id %>/update" data-ajax-form data-no-preserve class="hidden grid grid-cols-2 gap-2 pt-2 mt-2 border-t border-white/5">
+                                <input type="text" name="name" required value="<%= m.name %>" class="input text-sm py-2">
+                                <div class="input flex items-center gap-0 py-2">
+                                    <span class="text-slate-500 text-xs font-mono flex-shrink-0">/mnt/</span>
+                                    <input type="text" name="folder_name" required pattern="[a-zA-Z0-9][a-zA-Z0-9_.\-]*" value="<%= m.folder_name %>" class="flex-1 min-w-0 bg-transparent border-0 outline-none text-white text-sm p-0">
+                                </div>
+                                <button type="submit" class="btn-primary py-2 rounded-lg text-xs">Save</button>
+                                <button type="button" onclick="toggleMountEditForm('<%= m.id %>')" class="btn-outline py-2 rounded-lg text-xs">Cancel</button>
+                            </form>
                         </div>
                     <% }); %>
                 </div>
@@ -355,7 +370,7 @@
                 <div class="flex items-center justify-between mb-2">
                     <h3 class="text-lg font-bold text-white"><i class="fas fa-folder-open mr-2 text-sky-400"></i><span id="mountFoldersTitle"></span></h3>
                     <div class="flex items-center gap-1">
-                        <button type="button" onclick="refreshMountFolders()" title="Refresh" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5"><i class="fas fa-rotate"></i></button>
+                        <button type="button" onclick="withSpin(this, refreshMountFolders)" title="Refresh" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5"><i class="fas fa-rotate"></i></button>
                         <button type="button" onclick="closeModal('mountFoldersModal')" title="Close" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5"><i class="fas fa-xmark"></i></button>
                     </div>
                 </div>
@@ -373,7 +388,7 @@
                 <div class="flex items-center justify-between mb-2">
                     <h3 class="text-lg font-bold text-white"><i class="fas fa-shield-halved mr-2 text-sky-400"></i>VPN Monitor</h3>
                     <div class="flex items-center gap-1">
-                        <button type="button" onclick="refreshVpnMonitorStatuses()" title="Refresh all" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5"><i class="fas fa-rotate"></i></button>
+                        <button type="button" onclick="withSpin(this, refreshVpnMonitorStatuses)" title="Refresh all" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5"><i class="fas fa-rotate"></i></button>
                         <button type="button" data-toggle-target="addVpnMonitorForm" title="Add a VPN to monitor" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5"><i class="fas fa-plus"></i></button>
                         <button type="button" onclick="closeVpnMonitorsModalWithRefresh()" title="Close" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5"><i class="fas fa-xmark"></i></button>
                     </div>
@@ -382,32 +397,46 @@
 
                 <div id="vpnMonitorsResult" class="hidden text-sm rounded-xl p-3 mb-4"></div>
 
-                <div class="space-y-2 mb-5 max-h-64 overflow-y-auto">
+                <div id="vpnMonitorsList" class="space-y-2 mb-5 max-h-64 overflow-y-auto" ondragover="handleReorderContainerDragOver(event)">
                     <% if (vpnMonitors.length === 0) { %>
                         <p class="text-slate-500 text-xs">No VPNs added yet.</p>
                     <% } %>
                     <% vpnMonitors.forEach(function(v) { %>
                         <% var vpnStatusStyles = { connected: ['badge-active', 'Connected'], paused: ['badge-suspended', 'Paused'], disconnected: ['badge-expired', 'Disconnected'] }; %>
                         <% var vpnStatusStyle = vpnStatusStyles[v.last_status] || ['badge-closed', 'Unknown']; %>
-                        <div class="flex items-center justify-between gap-2 bg-slate-900/40 rounded-xl px-3 py-2.5">
-                            <div class="min-w-0">
-                                <p class="text-white text-sm font-semibold truncate"><%= v.name %></p>
-                                <p class="text-slate-500 text-xs font-mono truncate"><%= v.url %></p>
-                                <div class="flex items-center gap-2 mt-1.5">
-                                    <span id="vpn-badge-<%= v.id %>" class="badge <%= vpnStatusStyle[0] %> text-[10px] px-2 py-0.5<%= v.last_status === 'connected' ? ' status-dot' : '' %>"><%= vpnStatusStyle[1] %></span>
-                                    <span id="vpn-ip-<%= v.id %>" class="text-slate-500 text-[11px] font-mono<%= v.last_public_ip ? '' : ' hidden' %>"><i class="fas fa-globe mr-1"></i><%= v.last_public_ip || '' %></span>
+                        <div class="bg-slate-900/40 rounded-xl px-3 py-2.5" data-vpn-monitor-row="<%= v.id %>" data-reorder-row draggable="true" ondragstart="handleReorderDragStart(event, 'vpnMonitors')" ondragover="handleReorderDragOver(event)" ondrop="handleReorderDrop(event, 'vpnMonitors')" ondragend="handleReorderDragEnd(event)">
+                            <div id="vpn-view-<%= v.id %>" class="flex items-center justify-between gap-2">
+                                <div class="min-w-0 flex items-center gap-2">
+                                    <i class="fas fa-grip-vertical text-slate-600 flex-shrink-0" title="Drag to reorder" style="cursor: grab;"></i>
+                                    <div class="min-w-0">
+                                        <p class="text-white text-sm font-semibold truncate"><%= v.name %></p>
+                                        <p class="text-slate-500 text-xs font-mono truncate"><%= v.url %></p>
+                                        <div class="flex items-center gap-2 mt-1.5">
+                                            <span id="vpn-badge-<%= v.id %>" class="badge <%= vpnStatusStyle[0] %> text-[10px] px-2 py-0.5<%= v.last_status === 'connected' ? ' status-dot' : '' %>"><%= vpnStatusStyle[1] %></span>
+                                            <span id="vpn-ip-<%= v.id %>" class="text-slate-500 text-[11px] font-mono<%= v.last_public_ip ? '' : ' hidden' %>"><i class="fas fa-globe mr-1"></i><%= v.last_public_ip || '' %><% if (v.last_public_country) { %> <span class="text-slate-600 mx-1">·</span> <%= v.last_public_country %><% } %></span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="flex items-center gap-1.5 flex-shrink-0">
+                                    <button type="button" onclick="openVpnDetails('<%= v.id %>', '<%= v.name %>')" title="View details" class="w-8 h-8 flex items-center justify-center rounded-lg btn-outline text-xs">
+                                        <i class="fas fa-magnifying-glass"></i>
+                                    </button>
+                                    <button type="button" onclick="toggleVpnMonitorEditForm('<%= v.id %>')" title="Edit" class="w-8 h-8 flex items-center justify-center rounded-lg btn-outline text-xs">
+                                        <i class="fas fa-pen"></i>
+                                    </button>
+                                    <form method="POST" action="/admin/health/vpn-monitors/<%= v.id %>/delete" data-ajax-form data-confirm="Remove this VPN entry? This only removes it from this list - it doesn't affect the VPN itself." class="inline">
+                                        <button type="submit" title="Remove entry" class="w-8 h-8 flex items-center justify-center rounded-lg btn-outline text-xs text-red-400 hover:text-red-300">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </form>
                                 </div>
                             </div>
-                            <div class="flex items-center gap-1.5 flex-shrink-0">
-                                <button type="button" onclick="openVpnDetails('<%= v.id %>', '<%= v.name %>')" title="View details" class="w-8 h-8 flex items-center justify-center rounded-lg btn-outline text-xs">
-                                    <i class="fas fa-magnifying-glass"></i>
-                                </button>
-                                <form method="POST" action="/admin/health/vpn-monitors/<%= v.id %>/delete" data-ajax-form data-confirm="Remove this VPN entry? This only removes it from this list - it doesn't affect the VPN itself." class="inline">
-                                    <button type="submit" title="Remove entry" class="w-8 h-8 flex items-center justify-center rounded-lg btn-outline text-xs text-red-400 hover:text-red-300">
-                                        <i class="fas fa-trash"></i>
-                                    </button>
-                                </form>
-                            </div>
+                            <form id="vpn-edit-<%= v.id %>" method="POST" action="/admin/health/vpn-monitors/<%= v.id %>/update" data-ajax-form data-no-preserve class="hidden grid grid-cols-2 gap-2 pt-2 mt-2 border-t border-white/5">
+                                <input type="text" name="name" required value="<%= v.name %>" class="input text-sm py-2">
+                                <input type="text" name="url" required value="<%= v.url %>" class="input text-sm py-2">
+                                <button type="submit" class="btn-primary py-2 rounded-lg text-xs">Save</button>
+                                <button type="button" onclick="toggleVpnMonitorEditForm('<%= v.id %>')" class="btn-outline py-2 rounded-lg text-xs">Cancel</button>
+                            </form>
                         </div>
                     <% }); %>
                 </div>
@@ -482,7 +511,7 @@
                 <p class="text-slate-500 text-xs mb-3">Showing the last 200 lines, refreshed automatically every few seconds. This is a snapshot, not a true live stream.</p>
                 <div id="logsOutput" class="console-output">Loading…</div>
                 <div class="flex justify-end mt-3">
-                    <button type="button" onclick="refreshLogs()" class="btn-outline px-4 py-2 rounded-lg text-xs">
+                    <button type="button" onclick="withSpin(this, refreshLogs)" class="btn-outline px-4 py-2 rounded-lg text-xs">
                         <i class="fas fa-rotate mr-2"></i>Refresh Now
                     </button>
                 </div>
@@ -596,6 +625,23 @@
 
     <script>
         // ---------- Mounts & VPN Monitor live status (30s auto-refresh while open) ----------
+        // Any refresh button's icon spins for the duration of its action,
+        // regardless of success/failure - matches the pattern already used
+        // by the main container refresh button. asyncFn receives no
+        // arguments; wrap in an inline function if the underlying refresh
+        // needs any.
+        async function withSpin(btn, asyncFn) {
+            const icon = btn ? btn.querySelector('i') : null;
+            if (icon) icon.classList.add('fa-spin');
+            if (btn) btn.disabled = true;
+            try {
+                await asyncFn();
+            } finally {
+                if (icon) icon.classList.remove('fa-spin');
+                if (btn) btn.disabled = false;
+            }
+        }
+
         let mountsRefreshInterval = null;
         let vpnMonitorsRefreshInterval = null;
 
@@ -660,7 +706,7 @@
         };
         const VPN_LIST_BADGE_UNKNOWN = ['badge-closed', 'Unknown'];
 
-        function setVpnListBadge(monitorId, status, publicIp) {
+        function setVpnListBadge(monitorId, status, publicIp, publicCountry) {
             const badge = document.getElementById('vpn-badge-' + monitorId);
             const ipEl = document.getElementById('vpn-ip-' + monitorId);
             if (badge) {
@@ -670,7 +716,8 @@
             }
             if (ipEl) {
                 if (publicIp) {
-                    ipEl.innerHTML = '<i class="fas fa-globe mr-1"></i>' + publicIp;
+                    const countryPart = publicCountry ? ' <span class="text-slate-600 mx-1">·</span> ' + publicCountry : '';
+                    ipEl.innerHTML = '<i class="fas fa-globe mr-1"></i>' + publicIp + countryPart;
                     ipEl.classList.remove('hidden');
                 } else {
                     ipEl.classList.add('hidden');
@@ -684,7 +731,7 @@
                 const data = await res.json();
                 if (!data.ok) return;
                 Object.keys(data.statuses).forEach(function (monitorId) {
-                    setVpnListBadge(monitorId, data.statuses[monitorId].status, data.statuses[monitorId].publicIp);
+                    setVpnListBadge(monitorId, data.statuses[monitorId].status, data.statuses[monitorId].publicIp, data.statuses[monitorId].publicCountry);
                 });
             } catch (e) {
                 // silent - same reasoning as refreshMountStatuses above
@@ -1487,6 +1534,97 @@
             fetchAndRenderMountFolders(currentMountFoldersId);
         }
 
+        function toggleMountEditForm(id) {
+            const view = document.getElementById('mount-view-' + id);
+            const edit = document.getElementById('mount-edit-' + id);
+            if (!view || !edit) return;
+            const editing = edit.classList.contains('hidden');
+            edit.classList.toggle('hidden', !editing);
+            view.classList.toggle('hidden', editing);
+        }
+
+        function toggleVpnMonitorEditForm(id) {
+            const view = document.getElementById('vpn-view-' + id);
+            const edit = document.getElementById('vpn-edit-' + id);
+            if (!view || !edit) return;
+            const editing = edit.classList.contains('hidden');
+            edit.classList.toggle('hidden', !editing);
+            view.classList.toggle('hidden', editing);
+        }
+
+        // ---------- Drag-and-drop reordering (Mounts & VPN Monitor) ----------
+        // Native HTML5 drag-and-drop - works with a mouse; most touchscreen
+        // browsers don't support the native drag events this relies on, so
+        // reordering by touch isn't available, only by mouse/trackpad.
+        let reorderDragState = null;
+
+        const REORDER_CONFIG = {
+            mounts: { containerId: 'mountsList', rowAttr: 'data-mount-row', endpoint: '/admin/health/mounts/reorder' },
+            vpnMonitors: { containerId: 'vpnMonitorsList', rowAttr: 'data-vpn-monitor-row', endpoint: '/admin/health/vpn-monitors/reorder' },
+        };
+
+        function handleReorderDragStart(event, listType) {
+            reorderDragState = { listType, draggedRow: event.currentTarget };
+            event.currentTarget.classList.add('opacity-40');
+            event.dataTransfer.effectAllowed = 'move';
+            event.dataTransfer.setData('text/plain', ''); // some browsers require this for drag to initiate at all
+        }
+
+        function handleReorderDragOver(event) {
+            event.preventDefault(); // required for this element to be a valid drop target
+            event.stopPropagation(); // prevents the container's own dragover (append-at-end) from also firing for every row
+            if (!reorderDragState) return;
+            const row = event.currentTarget;
+            if (row === reorderDragState.draggedRow) return;
+
+            const rect = row.getBoundingClientRect();
+            const draggingDown = event.clientY > rect.top + rect.height / 2;
+            row.parentElement.insertBefore(reorderDragState.draggedRow, draggingDown ? row.nextSibling : row);
+        }
+
+        function handleReorderContainerDragOver(event) {
+            event.preventDefault();
+            if (!reorderDragState) return;
+            // Only append-at-end when the drag is over genuinely empty space
+            // in the container itself, not bubbling up from a row (which
+            // already handles its own insertion point and stops this from
+            // firing via stopPropagation above).
+            if (event.target === event.currentTarget) {
+                event.currentTarget.appendChild(reorderDragState.draggedRow);
+            }
+        }
+
+        function handleReorderDrop(event) {
+            event.preventDefault();
+            event.stopPropagation();
+        }
+
+        async function handleReorderDragEnd(event) {
+            event.currentTarget.classList.remove('opacity-40');
+            const state = reorderDragState;
+            reorderDragState = null;
+            if (!state) return;
+
+            const config = REORDER_CONFIG[state.listType];
+            const container = document.getElementById(config.containerId);
+            if (!container) return;
+
+            const ids = Array.from(container.querySelectorAll('[' + config.rowAttr + ']'))
+                .map(function (el) { return el.getAttribute(config.rowAttr); });
+
+            try {
+                const res = await fetch(config.endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: ids.map(function (id) { return 'ids=' + encodeURIComponent(id); }).join('&'),
+                });
+                const data = await res.json();
+                if (!data.ok) showToast('Could not save the new order.', 'error');
+            } catch (e) {
+                showToast('Could not reach the server to save the new order.', 'error');
+            }
+        }
+
         async function unmountMount(id, name) {
             if (!confirm('Unmount "' + name + '"? This could corrupt any running containers still using it — make sure you\'ve stopped any containers relying on this mount first. Continue?')) return;
 
@@ -1664,6 +1802,14 @@
                 renderVpnDataBlock('Port Forwarding', 'fas fa-diagram-project', data.portForward) +
                 renderVpnDataBlock('DNS', 'fas fa-server', data.dns) +
                 renderVpnHistoryStrip(data.history);
+
+            // Keeps the main list's badge/IP behind this modal in sync with
+            // what was just observed, rather than only updating the
+            // modal's own view - previously this stayed stale until the
+            // next background poll or 30s refresh happened to fire.
+            if (currentVpnMonitorId) {
+                setVpnListBadge(currentVpnMonitorId, data.listStatus, data.listPublicIp, data.listPublicCountry);
+            }
         }
 
         function extractVpnRawStatus(data) {
