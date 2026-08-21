@@ -384,7 +384,7 @@
 
         <!-- VPN Monitors Modal -->
         <div id="vpnMonitorsModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden items-center justify-center z-50 px-4 py-8 overflow-y-auto">
-            <div class="glass rounded-3xl p-6 sm:p-8 max-w-lg w-full my-auto">
+            <div class="glass rounded-3xl p-6 sm:p-8 max-w-xl w-full my-auto">
                 <div class="flex items-center justify-between mb-2">
                     <h3 class="text-lg font-bold text-white"><i class="fas fa-shield-halved mr-2 text-sky-400"></i>VPN Monitor</h3>
                     <div class="flex items-center gap-1">
@@ -408,13 +408,11 @@
                             <div id="vpn-view-<%= v.id %>" class="flex items-center justify-between gap-2">
                                 <div class="min-w-0 flex items-center gap-2">
                                     <i class="fas fa-grip-vertical text-slate-600 flex-shrink-0" title="Drag to reorder" style="cursor: grab;"></i>
-                                    <div class="min-w-0">
+                                    <div class="min-w-0 flex-1">
                                         <p class="text-white text-sm font-semibold truncate"><%= v.name %></p>
                                         <p class="text-slate-500 text-xs font-mono truncate"><%= v.url %></p>
-                                        <div class="flex items-center gap-1.5 mt-1.5 min-w-0">
-                                            <span id="vpn-badge-<%= v.id %>" class="badge <%= vpnStatusStyle[0] %> text-[10px] px-2 py-0.5 flex-shrink-0<%= v.last_status === 'connected' ? ' status-dot' : '' %>"><%= vpnStatusStyle[1] %></span>
-                                            <span id="vpn-ip-<%= v.id %>" class="text-slate-500 text-[11px] font-mono truncate min-w-0<%= v.last_public_ip ? '' : ' hidden' %>"><i class="fas fa-globe mr-1"></i><%= v.last_public_ip || '' %><% if (v.last_public_country) { %><span class="text-slate-600"> · </span><%= v.last_public_country %><% } %></span>
-                                        </div>
+                                        <span id="vpn-badge-<%= v.id %>" class="badge <%= vpnStatusStyle[0] %> text-[10px] px-2 py-0.5 mt-1.5 inline-flex<%= v.last_status === 'connected' ? ' status-dot' : '' %>"><%= vpnStatusStyle[1] %></span>
+                                        <p id="vpn-ip-<%= v.id %>" class="text-slate-500 text-[11px] font-mono truncate mt-1<%= v.last_public_ip ? '' : ' hidden' %>"><i class="fas fa-globe mr-1"></i><%= v.last_public_ip || '' %><% if (v.last_public_country) { %><span class="text-slate-600"> · </span><%= v.last_public_country %><% } %></p>
                                     </div>
                                 </div>
                                 <div class="flex items-center gap-1.5 flex-shrink-0">
@@ -711,7 +709,7 @@
             const ipEl = document.getElementById('vpn-ip-' + monitorId);
             if (badge) {
                 const style = VPN_LIST_BADGE_STYLES[status] || VPN_LIST_BADGE_UNKNOWN;
-                badge.className = 'badge ' + style[0] + ' text-[10px] px-2 py-0.5 flex-shrink-0' + (status === 'connected' ? ' status-dot' : '');
+                badge.className = 'badge ' + style[0] + ' text-[10px] px-2 py-0.5 mt-1.5 inline-flex' + (status === 'connected' ? ' status-dot' : '');
                 badge.textContent = style[1];
             }
             if (ipEl) {
@@ -1722,35 +1720,6 @@
         const VPN_STATUS_ICON_UNKNOWN = ['text-slate-500', 'Unknown'];
 
         // Replaces the raw "running"/"stopped" text gluetun returns with a
-        // pulsing dot and label matching the same 4-state colour scheme
-        // used everywhere else on this page (list badge, history strip).
-        // Curated view of gluetun's public IP/geolocation response - just
-        // the IP, a readable City/Region/Country line, and the org name,
-        // rather than every raw field (postal code, timezone, raw lat/lng
-        // coordinates) which made this section long and hard to scan.
-        function renderVpnConnectionBlock(publicIpSegment) {
-            const header = '<p class="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-2"><i class="fas fa-globe mr-1"></i>VPN Connection</p>';
-            const data = publicIpSegment && publicIpSegment.parsed;
-            if (!data || typeof data !== 'object' || !data.public_ip) {
-                return renderVpnDataBlock('VPN Connection', 'fas fa-globe', publicIpSegment);
-            }
-
-            const locationParts = [data.city, data.region, data.country].filter(Boolean);
-            const locationLine = locationParts.length > 0
-                ? '<p class="text-slate-400 text-xs mt-1 truncate">' + locationParts.join(', ') + '</p>'
-                : '';
-            const orgLine = data.organization
-                ? '<p class="text-slate-500 text-[11px] mt-1.5 truncate" title="' + String(data.organization).replace(/"/g, '&quot;') + '">' + data.organization + '</p>'
-                : '';
-
-            return '<div class="mb-4">' + header
-                + '<div class="bg-slate-900/40 rounded-xl px-3 py-2.5">'
-                + '<p class="text-white text-sm font-mono font-semibold truncate">' + data.public_ip + '</p>'
-                + locationLine
-                + orgLine
-                + '</div></div>';
-        }
-
         function renderVpnStatusBlock(statusSegment) {
             const header = '<p class="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-2"><i class="fas fa-power-off mr-1"></i>VPN Status</p>';
             const raw = statusSegment && statusSegment.parsed && typeof statusSegment.parsed.status === 'string' ? statusSegment.parsed.status.toLowerCase() : null;
@@ -1825,7 +1794,7 @@
             body.innerHTML = pendingBanner +
                 renderVpnStatusBlock(data.status) +
                 renderVpnProtocolBlock(data.settings) +
-                renderVpnConnectionBlock(data.publicIp) +
+                renderVpnDataBlock('VPN Connection', 'fas fa-globe', data.publicIp) +
                 renderVpnDataBlock('Port Forwarding', 'fas fa-diagram-project', data.portForward) +
                 renderVpnDataBlock('DNS', 'fas fa-server', data.dns) +
                 renderVpnHistoryStrip(data.history);
