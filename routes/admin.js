@@ -5,7 +5,7 @@ const db = require('../db');
 const { encrypt, decrypt } = require('../utils/crypto');
 const { getAllSettings, setSetting, getSiteBaseUrl } = require('../utils/settings');
 const { sendMail, isConfigured, notifyResetStarted } = require('../utils/mailer');
-const { testConnection: testTautulliConnection, getWatchHistory, getNowWatching, getAllActivity, getGeoLookup, fetchPosterImage } = require('../utils/tautulli');
+const { testConnection: testTautulliConnection, getWatchHistory, getNowWatching, getAllActivity, getGeoLookup, fetchPosterImage, getLibraries } = require('../utils/tautulli');
 const { syncIncludedPlansForUser } = require('../utils/includedPlans');
 const { londonInputToUtcIso, formatUK, formatUKForEmail } = require('../utils/time');
 const { serviceLabel } = require('../utils/labels');
@@ -1399,6 +1399,39 @@ router.get('/admin/plex/now-watching-all', async (req, res) => {
   );
 
   res.json({ ok: true, items });
+});
+
+// Library Data dashboard widget - live library names/types/item counts from
+// Tautulli, in whatever order the admin has arranged them in Settings (any
+// library not yet in that saved order - e.g. one just added in Plex -
+// falls back to Tautulli's own order and is appended at the end, rather
+// than silently vanishing from the widget).
+router.get('/admin/overview/library-data', async (req, res) => {
+  const settings = getAllSettings();
+  const result = await getLibraries(settings.tautulli_url, settings.tautulli_api_key);
+  if (!result.ok) return res.json(result);
+
+  let savedOrder = [];
+  try {
+    savedOrder = JSON.parse(settings.library_data_order || '[]');
+  } catch (e) {
+    savedOrder = [];
+  }
+
+  const orderIndex = new Map(savedOrder.map((id, i) => [id, i]));
+  const sorted = [...result.libraries].sort((a, b) => {
+    const aIdx = orderIndex.has(a.sectionId) ? orderIndex.get(a.sectionId) : Infinity;
+    const bIdx = orderIndex.has(b.sectionId) ? orderIndex.get(b.sectionId) : Infinity;
+    return aIdx - bIdx;
+  });
+
+  res.json({ ok: true, libraries: sorted });
+});
+
+router.post('/admin/settings/library-order', (req, res) => {
+  const ids = Array.isArray(req.body.ids) ? req.body.ids : [req.body.ids].filter(Boolean);
+  setSetting('library_data_order', JSON.stringify(ids));
+  res.json({ ok: true });
 });
 
 // ---------- Tickets ----------

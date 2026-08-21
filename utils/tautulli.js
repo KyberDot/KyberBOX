@@ -193,6 +193,37 @@ async function fetchPosterImage(baseUrl, apiKey, imgPath) {
 }
 
 /** Quick connectivity/API-key check for the "Test Connection" button in Settings. */
+/** Fetches the list of Plex libraries Tautulli knows about, with their item counts - powers the Library Data dashboard widget. */
+async function getLibraries(baseUrl, apiKey) {
+  if (!baseUrl || !apiKey) {
+    return { ok: false, message: 'Tautulli is not configured yet.' };
+  }
+
+  const url = `${baseUrl.replace(/\/$/, '')}/api/v2?apikey=${encodeURIComponent(apiKey)}&cmd=get_libraries`;
+
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+    if (!res.ok) return { ok: false, message: `Tautulli returned an error (HTTP ${res.status}).` };
+
+    const json = await res.json();
+    if (!json || !json.response || json.response.result !== 'success') {
+      return { ok: false, message: (json && json.response && json.response.message) || 'Could not load libraries from Tautulli.' };
+    }
+
+    const libraries = (json.response.data || []).map((lib) => ({
+      sectionId: String(lib.section_id),
+      name: lib.section_name,
+      type: lib.section_type, // 'movie' | 'show' | 'artist' | etc - drives which icon is shown
+      count: parseInt(lib.count, 10) || 0,
+    }));
+
+    return { ok: true, libraries };
+  } catch (err) {
+    const reason = err.name === 'TimeoutError' ? 'Timed out reaching Tautulli.' : `Could not reach Tautulli: ${err.message}`;
+    return { ok: false, message: reason };
+  }
+}
+
 async function testConnection(baseUrl, apiKey) {
   if (!baseUrl || !apiKey) {
     return { ok: false, message: 'Enter a Tautulli URL and API key first.' };
@@ -240,4 +271,4 @@ async function getGeoLookup(baseUrl, apiKey, ipAddress) {
   }
 }
 
-module.exports = { getWatchHistory, getNowWatching, getAllActivity, getGeoLookup, fetchPosterImage, testConnection };
+module.exports = { getWatchHistory, getNowWatching, getAllActivity, getGeoLookup, fetchPosterImage, testConnection, getLibraries };

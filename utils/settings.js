@@ -48,6 +48,7 @@ function getAllSettings() {
     container_watchdog_enabled: getSetting('container_watchdog_enabled', '0'),
     container_watchdog_mode: getSetting('container_watchdog_mode', 'all'), // all | selected
     vpn_watchdog_enabled: getSetting('vpn_watchdog_enabled', '1'),
+    library_data_order: getSetting('library_data_order', '[]'),
   };
 }
 

@@ -374,6 +374,15 @@
             <p class="text-slate-500 text-xs mt-4">Each client's Plex username still needs linking individually from <a href="/admin/users" class="text-sky-400 hover:text-sky-300">Admin → Users</a> before they'll see anything.</p>
         </div>
 
+        <!-- Library Data Order -->
+        <div class="glass rounded-2xl sm:rounded-3xl p-5 sm:p-8 mb-8">
+            <h2 class="text-lg font-bold text-white mb-1"><i class="fas fa-arrows-up-down-left-right mr-2 text-sky-400"></i>Library Data Order</h2>
+            <p class="text-slate-400 text-sm mb-4">Drag to reorder how libraries appear in the Library Data section on the Overview dashboard.</p>
+            <div id="libraryOrderList" class="space-y-2">
+                <p class="text-slate-500 text-xs">Loading libraries…</p>
+            </div>
+        </div>
+
         <!-- Mail -->
         <div class="glass rounded-2xl sm:rounded-3xl p-5 sm:p-8 mb-8">
             <h2 class="text-lg font-bold text-white mb-1"><i class="fas fa-envelope mr-2 text-sky-400"></i>Mail (SMTP)</h2>
@@ -404,6 +413,79 @@
             const list = document.getElementById('containerWatchdogList');
             if (list) list.classList.toggle('hidden', !showList);
         }
+
+        // ---------- Library Data Order ----------
+        let libraryDragState = null;
+
+        async function loadLibraryOrderList() {
+            const list = document.getElementById('libraryOrderList');
+            if (!list) return;
+            try {
+                const res = await fetch('/admin/overview/library-data');
+                const data = await res.json();
+                if (!data.ok || !data.libraries || data.libraries.length === 0) {
+                    list.innerHTML = '<p class="text-slate-500 text-xs">No libraries found - make sure Tautulli is connected above.</p>';
+                    return;
+                }
+                const icons = { movie: 'fa-film', show: 'fa-tv' };
+                list.innerHTML = data.libraries.map(function (lib) {
+                    const icon = icons[lib.type] || 'fa-photo-film';
+                    const safeName = String(lib.name).replace(/</g, '&lt;');
+                    return '<div class="flex items-center gap-2 bg-slate-900/40 rounded-xl px-3 py-2.5" data-library-row="' + lib.sectionId + '" draggable="true" ondragstart="libraryDragStart(event)" ondragover="libraryDragOver(event)" ondrop="libraryDrop(event)" ondragend="libraryDragEnd(event)">'
+                        + '<i class="fas fa-grip-vertical text-slate-600 flex-shrink-0" title="Drag to reorder" style="cursor: grab;"></i>'
+                        + '<i class="fas ' + icon + ' text-sky-400 flex-shrink-0"></i>'
+                        + '<span class="text-white text-sm font-semibold truncate flex-1">' + safeName + '</span>'
+                        + '<span class="text-slate-500 text-xs font-mono flex-shrink-0">' + lib.count.toLocaleString() + '</span>'
+                        + '</div>';
+                }).join('');
+            } catch (e) {
+                list.innerHTML = '<p class="text-red-400 text-xs">Could not load libraries.</p>';
+            }
+        }
+
+        function libraryDragStart(event) {
+            libraryDragState = event.currentTarget;
+            event.currentTarget.classList.add('opacity-40');
+            event.dataTransfer.effectAllowed = 'move';
+            event.dataTransfer.setData('text/plain', ''); // some browsers require this for drag to initiate at all
+        }
+
+        function libraryDragOver(event) {
+            event.preventDefault(); // required for this row to be a valid drop target
+            if (!libraryDragState) return;
+            const row = event.currentTarget;
+            if (row === libraryDragState) return;
+            const rect = row.getBoundingClientRect();
+            const draggingDown = event.clientY > rect.top + rect.height / 2;
+            row.parentElement.insertBefore(libraryDragState, draggingDown ? row.nextSibling : row);
+        }
+
+        function libraryDrop(event) {
+            event.preventDefault();
+        }
+
+        async function libraryDragEnd(event) {
+            event.currentTarget.classList.remove('opacity-40');
+            if (!libraryDragState) return;
+            libraryDragState = null;
+
+            const list = document.getElementById('libraryOrderList');
+            const ids = Array.from(list.querySelectorAll('[data-library-row]')).map(function (el) { return el.getAttribute('data-library-row'); });
+
+            try {
+                const res = await fetch('/admin/settings/library-order', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: ids.map(function (id) { return 'ids=' + encodeURIComponent(id); }).join('&'),
+                });
+                const data = await res.json();
+                if (!data.ok) showToast('Could not save the new order.', 'error');
+            } catch (e) {
+                showToast('Could not reach the server to save the new order.', 'error');
+            }
+        }
+
+        loadLibraryOrderList();
     </script>
 </body>
 </html>

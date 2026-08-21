@@ -135,6 +135,14 @@
             </button>
         </div>
 
+        <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
+            <h2 class="text-sm uppercase tracking-widest text-slate-500 font-bold">Library Data</h2>
+            <a href="https://tautulli.kyberbox.app/libraries" target="_blank" rel="noopener noreferrer" class="text-sky-400 hover:text-sky-300 text-xs">View Library <i class="fas fa-arrow-right ml-1"></i></a>
+        </div>
+        <div id="libraryDataGrid" class="grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-5 mb-10 sm:mb-12">
+            <p class="text-slate-500 text-xs col-span-full">Loading library data…</p>
+        </div>
+
         <div class="flex flex-wrap gap-3 sm:gap-4 mb-10 sm:mb-12">
             <a href="/admin/users" class="btn-primary px-5 sm:px-6 py-3 rounded-2xl text-sm"><i class="fas fa-users mr-2"></i>Manage Users</a>
             <button type="button" onclick="openNowWatchingModal()" class="btn-outline px-5 sm:px-6 py-3 rounded-2xl text-sm relative">
@@ -463,6 +471,41 @@
 
         refreshNowWatching();
         setInterval(refreshNowWatching, 15000);
+
+        const LIBRARY_TYPE_ICONS = { movie: 'fa-film', show: 'fa-tv' };
+
+        function renderLibraryData(libraries) {
+            const grid = document.getElementById('libraryDataGrid');
+            if (!grid) return;
+
+            if (!libraries || libraries.length === 0) {
+                grid.innerHTML = '<p class="text-slate-500 text-xs col-span-full">No libraries found - check Tautulli is connected in Settings.</p>';
+                return;
+            }
+
+            grid.innerHTML = libraries.map(function (lib) {
+                const icon = LIBRARY_TYPE_ICONS[lib.type] || 'fa-photo-film';
+                const safeName = String(lib.name).replace(/</g, '&lt;');
+                return '<div class="glass rounded-2xl p-5 sm:p-6">'
+                    + '<p class="text-slate-500 text-xs uppercase tracking-widest font-semibold mb-2 truncate"><i class="fas ' + icon + ' mr-1.5 text-sky-400"></i>' + safeName + '</p>'
+                    + '<p class="text-2xl sm:text-3xl font-extrabold text-white">' + lib.count.toLocaleString() + '</p>'
+                    + '</div>';
+            }).join('');
+        }
+
+        async function refreshLibraryData() {
+            try {
+                const res = await fetch('/admin/overview/library-data');
+                const data = await res.json();
+                if (!data.ok) return; // leave whatever was last shown, same reasoning as Stream Data above
+                renderLibraryData(data.libraries);
+            } catch (e) {
+                // transient network hiccup - leave whatever was last rendered as-is
+            }
+        }
+
+        refreshLibraryData();
+        setInterval(refreshLibraryData, 15000);
     </script>
 </body>
 </html>
