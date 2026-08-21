@@ -8,6 +8,9 @@
     <%- include('partials/nav') %>
 
     <main class="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-10 pb-24">
+        <% if (typeof ajaxErrorMessage !== 'undefined' && ajaxErrorMessage) { %>
+            <div id="ajaxErrorFlag" data-message="<%= ajaxErrorMessage %>" class="hidden"></div>
+        <% } %>
         <h1 class="text-2xl sm:text-3xl font-extrabold mb-2">Server Health</h1>
         <p class="text-slate-400 text-sm mb-8">A live view of any container in your compose stack, independent of any single plan.</p>
 
@@ -43,10 +46,10 @@
                 <button type="button" onclick="openLiveStats()" title="Live server & container stats" class="w-10 h-10 flex items-center justify-center rounded-xl btn-outline">
                     <i class="fas fa-gauge-high"></i>
                 </button>
-                <button type="button" onclick="openModal('mountsModal')" title="Mounts" class="w-10 h-10 flex items-center justify-center rounded-xl btn-outline">
+                <button type="button" onclick="openMountsModalWithRefresh()" title="Mounts" class="w-10 h-10 flex items-center justify-center rounded-xl btn-outline">
                     <i class="fas fa-hard-drive"></i>
                 </button>
-                <button type="button" onclick="openModal('vpnMonitorsModal')" title="VPN Monitor" class="w-10 h-10 flex items-center justify-center rounded-xl btn-outline">
+                <button type="button" onclick="openVpnMonitorsModalWithRefresh()" title="VPN Monitor" class="w-10 h-10 flex items-center justify-center rounded-xl btn-outline">
                     <i class="fas fa-shield-halved"></i>
                 </button>
                 <button type="button" id="bulkModeToggle" onclick="toggleBulkMode()" class="btn-outline px-4 py-2.5 rounded-xl text-sm">
@@ -296,8 +299,9 @@
                 <div class="flex items-center justify-between mb-2">
                     <h3 class="text-lg font-bold text-white"><i class="fas fa-hard-drive mr-2 text-sky-400"></i>Mounts</h3>
                     <div class="flex items-center gap-1">
+                        <button type="button" onclick="refreshMountStatuses()" title="Refresh all" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5"><i class="fas fa-rotate"></i></button>
                         <button type="button" data-toggle-target="addMountForm" title="Add a mount" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5"><i class="fas fa-plus"></i></button>
-                        <button type="button" onclick="closeModal('mountsModal')" title="Close" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5"><i class="fas fa-xmark"></i></button>
+                        <button type="button" onclick="closeMountsModalWithRefresh()" title="Close" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5"><i class="fas fa-xmark"></i></button>
                     </div>
                 </div>
                 <p class="text-slate-400 text-sm mb-5">Check whether a filesystem mount is active, or unmount it.</p>
@@ -309,14 +313,17 @@
                         <p class="text-slate-500 text-xs">No mounts added yet.</p>
                     <% } %>
                     <% mounts.forEach(function(m) { %>
-                        <div class="flex items-center justify-between gap-2 bg-slate-900/40 rounded-xl px-3 py-2.5">
-                            <div class="min-w-0">
-                                <p class="text-white text-sm font-semibold truncate"><%= m.name %></p>
-                                <p class="text-slate-500 text-xs font-mono truncate">/mnt/<%= m.folder_name %></p>
+                        <div class="flex items-center justify-between gap-2 bg-slate-900/40 rounded-xl px-3 py-2.5" data-mount-row="<%= m.id %>">
+                            <div class="min-w-0 flex items-center gap-2">
+                                <span id="mount-status-<%= m.id %>" class="w-2.5 h-2.5 rounded-full bg-slate-600 flex-shrink-0" title="Unknown"></span>
+                                <div class="min-w-0">
+                                    <p class="text-white text-sm font-semibold truncate"><%= m.name %></p>
+                                    <p class="text-slate-500 text-xs font-mono truncate">/mnt/<%= m.folder_name %></p>
+                                </div>
                             </div>
                             <div class="flex items-center gap-1.5 flex-shrink-0">
-                                <button type="button" onclick="checkMount('<%= m.id %>', '<%= m.name %>')" title="Check if mounted" class="w-8 h-8 flex items-center justify-center rounded-lg btn-outline text-xs">
-                                    <i class="fas fa-magnifying-glass"></i>
+                                <button type="button" onclick="openMountFolders('<%= m.id %>', '<%= m.name %>')" title="View folders" class="w-8 h-8 flex items-center justify-center rounded-lg btn-outline text-xs">
+                                    <i class="fas fa-folder-open"></i>
                                 </button>
                                 <button type="button" onclick="unmountMount('<%= m.id %>', '<%= m.name %>')" title="Unmount" class="w-8 h-8 flex items-center justify-center rounded-lg btn-outline text-xs text-amber-400 hover:text-amber-300">
                                     <i class="fas fa-eject"></i>
@@ -342,14 +349,33 @@
             </div>
         </div>
 
+        <!-- Mount Folders Modal (read-only) -->
+        <div id="mountFoldersModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden items-center justify-center z-50 px-4 py-8 overflow-y-auto">
+            <div class="glass rounded-3xl p-6 sm:p-8 max-w-lg w-full my-auto">
+                <div class="flex items-center justify-between mb-2">
+                    <h3 class="text-lg font-bold text-white"><i class="fas fa-folder-open mr-2 text-sky-400"></i><span id="mountFoldersTitle"></span></h3>
+                    <div class="flex items-center gap-1">
+                        <button type="button" onclick="refreshMountFolders()" title="Refresh" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5"><i class="fas fa-rotate"></i></button>
+                        <button type="button" onclick="closeModal('mountFoldersModal')" title="Close" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5"><i class="fas fa-xmark"></i></button>
+                    </div>
+                </div>
+                <p class="text-slate-400 text-sm mb-5">A quick, read-only look at what's at the top level of this mount - no changes can be made here.</p>
+
+                <div id="mountFoldersBody" class="custom-scroll max-h-96 overflow-y-auto pr-2 -mr-2">
+                    <p class="text-slate-500 text-sm"><i class="fas fa-circle-notch fa-spin mr-2"></i>Loading…</p>
+                </div>
+            </div>
+        </div>
+
         <!-- VPN Monitors Modal -->
         <div id="vpnMonitorsModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden items-center justify-center z-50 px-4 py-8 overflow-y-auto">
             <div class="glass rounded-3xl p-6 sm:p-8 max-w-lg w-full my-auto">
                 <div class="flex items-center justify-between mb-2">
                     <h3 class="text-lg font-bold text-white"><i class="fas fa-shield-halved mr-2 text-sky-400"></i>VPN Monitor</h3>
                     <div class="flex items-center gap-1">
+                        <button type="button" onclick="refreshVpnMonitorStatuses()" title="Refresh all" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5"><i class="fas fa-rotate"></i></button>
                         <button type="button" data-toggle-target="addVpnMonitorForm" title="Add a VPN to monitor" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5"><i class="fas fa-plus"></i></button>
-                        <button type="button" onclick="closeModal('vpnMonitorsModal')" title="Close" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5"><i class="fas fa-xmark"></i></button>
+                        <button type="button" onclick="closeVpnMonitorsModalWithRefresh()" title="Close" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5"><i class="fas fa-xmark"></i></button>
                     </div>
                 </div>
                 <p class="text-slate-400 text-sm mb-5">Check whether a Gluetun VPN instance is currently connected.</p>
@@ -361,10 +387,16 @@
                         <p class="text-slate-500 text-xs">No VPNs added yet.</p>
                     <% } %>
                     <% vpnMonitors.forEach(function(v) { %>
+                        <% var vpnStatusStyles = { connected: ['badge-active', 'Connected'], paused: ['badge-suspended', 'Paused'], disconnected: ['badge-expired', 'Disconnected'] }; %>
+                        <% var vpnStatusStyle = vpnStatusStyles[v.last_status] || ['badge-closed', 'Unknown']; %>
                         <div class="flex items-center justify-between gap-2 bg-slate-900/40 rounded-xl px-3 py-2.5">
                             <div class="min-w-0">
                                 <p class="text-white text-sm font-semibold truncate"><%= v.name %></p>
                                 <p class="text-slate-500 text-xs font-mono truncate"><%= v.url %></p>
+                                <div class="flex items-center gap-2 mt-1.5">
+                                    <span id="vpn-badge-<%= v.id %>" class="badge <%= vpnStatusStyle[0] %> text-[10px] px-2 py-0.5<%= v.last_status === 'connected' ? ' status-dot' : '' %>"><%= vpnStatusStyle[1] %></span>
+                                    <span id="vpn-ip-<%= v.id %>" class="text-slate-500 text-[11px] font-mono<%= v.last_public_ip ? '' : ' hidden' %>"><i class="fas fa-globe mr-1"></i><%= v.last_public_ip || '' %></span>
+                                </div>
                             </div>
                             <div class="flex items-center gap-1.5 flex-shrink-0">
                                 <button type="button" onclick="openVpnDetails('<%= v.id %>', '<%= v.name %>')" title="View details" class="w-8 h-8 flex items-center justify-center rounded-lg btn-outline text-xs">
@@ -390,7 +422,7 @@
 
         <!-- VPN Details Modal -->
         <div id="vpnDetailsModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden items-center justify-center z-50 px-4 py-8 overflow-y-auto">
-            <div class="glass rounded-3xl p-6 sm:p-8 max-w-lg w-full my-auto">
+            <div class="glass rounded-3xl p-6 sm:p-8 max-w-xl w-full my-auto">
                 <div class="flex items-center justify-between mb-2">
                     <h3 class="text-lg font-bold text-white"><i class="fas fa-shield-halved mr-2 text-sky-400"></i><span id="vpnDetailsTitle"></span></h3>
                     <button type="button" onclick="closeModal('vpnDetailsModal')" title="Close" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5"><i class="fas fa-xmark"></i></button>
@@ -401,7 +433,7 @@
                     <button type="button" id="vpnDetailsStopBtn" onclick="controlVpnMonitor('stop')" class="btn-danger flex-1 py-2.5 rounded-xl text-sm"><i class="fas fa-stop mr-2"></i>Stop</button>
                 </div>
 
-                <div id="vpnDetailsBody" class="max-h-96 overflow-y-auto">
+                <div id="vpnDetailsBody" class="custom-scroll max-h-[28rem] overflow-y-auto pr-2 -mr-2">
                     <p class="text-slate-500 text-sm"><i class="fas fa-circle-notch fa-spin mr-2"></i>Loading…</p>
                 </div>
             </div>
@@ -563,6 +595,102 @@
     </main>
 
     <script>
+        // ---------- Mounts & VPN Monitor live status (30s auto-refresh while open) ----------
+        let mountsRefreshInterval = null;
+        let vpnMonitorsRefreshInterval = null;
+
+        function openMountsModalWithRefresh() {
+            openModal('mountsModal');
+            refreshMountStatuses();
+            if (mountsRefreshInterval) clearInterval(mountsRefreshInterval);
+            mountsRefreshInterval = setInterval(refreshMountStatuses, 30000);
+        }
+        function closeMountsModalWithRefresh() {
+            closeModal('mountsModal');
+            if (mountsRefreshInterval) { clearInterval(mountsRefreshInterval); mountsRefreshInterval = null; }
+        }
+
+        function openVpnMonitorsModalWithRefresh() {
+            openModal('vpnMonitorsModal');
+            refreshVpnMonitorStatuses();
+            if (vpnMonitorsRefreshInterval) clearInterval(vpnMonitorsRefreshInterval);
+            vpnMonitorsRefreshInterval = setInterval(refreshVpnMonitorStatuses, 30000);
+        }
+        function closeVpnMonitorsModalWithRefresh() {
+            closeModal('vpnMonitorsModal');
+            if (vpnMonitorsRefreshInterval) { clearInterval(vpnMonitorsRefreshInterval); vpnMonitorsRefreshInterval = null; }
+        }
+
+        // active=true -> solid green pulse (reuses the existing .status-dot
+        // animation already used elsewhere in this app); active=false or
+        // unknown -> a plain, non-pulsing dot, since pulsing implies an
+        // active/live state rather than "off" or "no data yet".
+        function setMountStatusDot(mountId, active) {
+            const dot = document.getElementById('mount-status-' + mountId);
+            if (!dot) return;
+            if (active === true) {
+                dot.className = 'status-dot w-2.5 h-2.5 rounded-full bg-emerald-400 flex-shrink-0';
+                dot.title = 'Mounted';
+            } else if (active === false) {
+                dot.className = 'w-2.5 h-2.5 rounded-full bg-red-400 flex-shrink-0';
+                dot.title = 'Not mounted';
+            } else {
+                dot.className = 'w-2.5 h-2.5 rounded-full bg-slate-600 flex-shrink-0';
+                dot.title = 'Unknown';
+            }
+        }
+
+        async function refreshMountStatuses() {
+            try {
+                const res = await fetch('/admin/health/mounts/status');
+                const data = await res.json();
+                if (!data.ok) return; // stays on whatever was last shown - a failed refresh isn't a reason to blank everything out
+                Object.keys(data.statuses).forEach(function (mountId) {
+                    setMountStatusDot(mountId, data.statuses[mountId]);
+                });
+            } catch (e) {
+                // silent - this runs unattended every 30s, a single failed refresh isn't worth interrupting the admin with
+            }
+        }
+
+        const VPN_LIST_BADGE_STYLES = {
+            connected: ['badge-active', 'Connected'],
+            paused: ['badge-suspended', 'Paused'],
+            disconnected: ['badge-expired', 'Disconnected'],
+        };
+        const VPN_LIST_BADGE_UNKNOWN = ['badge-closed', 'Unknown'];
+
+        function setVpnListBadge(monitorId, status, publicIp) {
+            const badge = document.getElementById('vpn-badge-' + monitorId);
+            const ipEl = document.getElementById('vpn-ip-' + monitorId);
+            if (badge) {
+                const style = VPN_LIST_BADGE_STYLES[status] || VPN_LIST_BADGE_UNKNOWN;
+                badge.className = 'badge ' + style[0] + ' text-[10px] px-2 py-0.5' + (status === 'connected' ? ' status-dot' : '');
+                badge.textContent = style[1];
+            }
+            if (ipEl) {
+                if (publicIp) {
+                    ipEl.innerHTML = '<i class="fas fa-globe mr-1"></i>' + publicIp;
+                    ipEl.classList.remove('hidden');
+                } else {
+                    ipEl.classList.add('hidden');
+                }
+            }
+        }
+
+        async function refreshVpnMonitorStatuses() {
+            try {
+                const res = await fetch('/admin/health/vpn-monitors/status');
+                const data = await res.json();
+                if (!data.ok) return;
+                Object.keys(data.statuses).forEach(function (monitorId) {
+                    setVpnListBadge(monitorId, data.statuses[monitorId].status, data.statuses[monitorId].publicIp);
+                });
+            } catch (e) {
+                // silent - same reasoning as refreshMountStatuses above
+            }
+        }
+
         // ---------- Search ----------
         const CONTAINER_STATUS_FILTER_STORAGE_KEY = 'kyberbox_container_status_filter';
 
@@ -1276,11 +1404,11 @@
         document.addEventListener('main:updated', function () {
             if (window.__mountsModalWasOpen) {
                 window.__mountsModalWasOpen = false;
-                openModal('mountsModal');
+                openMountsModalWithRefresh();
             }
             if (window.__vpnMonitorsModalWasOpen) {
                 window.__vpnMonitorsModalWasOpen = false;
-                openModal('vpnMonitorsModal');
+                openVpnMonitorsModalWithRefresh();
             }
             if (document.getElementById('containerSearch')) {
                 document.querySelectorAll('[data-filter-pill]').forEach(function (pill) {
@@ -1314,6 +1442,51 @@
             }
         }
 
+        let currentMountFoldersId = null;
+
+        async function fetchAndRenderMountFolders(id) {
+            const body = document.getElementById('mountFoldersBody');
+            try {
+                const res = await fetch('/admin/health/mounts/' + id + '/folders', { method: 'POST' });
+                const data = await res.json();
+
+                if (!data.ok) {
+                    body.innerHTML = '<p class="text-red-400 text-sm">' + (data.message || 'Could not load this folder.') + '</p>';
+                    return;
+                }
+
+                document.getElementById('mountFoldersTitle').textContent = data.name;
+
+                if (data.entries.length === 0) {
+                    body.innerHTML = '<p class="text-slate-500 text-sm">This mount is empty, or nothing could be listed.</p>';
+                    return;
+                }
+
+                const rows = data.entries.map(function (entry) {
+                    return '<div class="flex items-center gap-2 py-1.5 text-sm border-b border-white/5 last:border-0">'
+                        + '<i class="fas fa-folder text-amber-400 text-xs"></i>'
+                        + '<span class="text-white font-mono truncate">' + entry.replace(/</g, '&lt;') + '</span>'
+                        + '</div>';
+                }).join('');
+                body.innerHTML = '<p class="text-slate-500 text-xs font-mono mb-2">/mnt/' + data.folderName + '</p><div class="bg-slate-900/40 rounded-xl px-3">' + rows + '</div>';
+            } catch (e) {
+                body.innerHTML = '<p class="text-red-400 text-sm">Could not reach the server to list this folder.</p>';
+            }
+        }
+
+        function openMountFolders(id, name) {
+            currentMountFoldersId = id;
+            document.getElementById('mountFoldersTitle').textContent = name;
+            document.getElementById('mountFoldersBody').innerHTML = '<p class="text-slate-500 text-sm"><i class="fas fa-circle-notch fa-spin mr-2"></i>Loading…</p>';
+            openModal('mountFoldersModal');
+            fetchAndRenderMountFolders(id);
+        }
+
+        function refreshMountFolders() {
+            if (!currentMountFoldersId) return;
+            fetchAndRenderMountFolders(currentMountFoldersId);
+        }
+
         async function unmountMount(id, name) {
             if (!confirm('Unmount "' + name + '"? This could corrupt any running containers still using it — make sure you\'ve stopped any containers relying on this mount first. Continue?')) return;
 
@@ -1323,7 +1496,7 @@
                 const data = await res.json();
                 setMountsResult(data.message, data.ok ? MOUNT_TONE_OK : MOUNT_TONE_ERROR);
                 showToast(data.message, data.ok ? 'success' : 'error');
-                closeModal('mountsModal');
+                closeMountsModalWithRefresh();
             } catch (e) {
                 setMountsResult('Could not reach the server to unmount this.', MOUNT_TONE_ERROR);
                 showToast('Could not reach the server to unmount this.', 'error');
@@ -1396,44 +1569,164 @@
             return '<div class="mb-4">' + header + '<div class="bg-slate-900/40 rounded-xl px-3 py-1">' + rows + '</div></div>';
         }
 
+        // Pulls just the protocol/VPN-type value out of gluetun's settings
+        // response - shown as its own focused line rather than the full
+        // settings dump, since that's the one field from that response
+        // worth surfacing on its own. Tries a few likely field paths since
+        // the exact shape can vary; falls back to the full generic block
+        // if none of them match, so the raw data is still visible rather
+        // than silently dropped.
+        const VPN_STATUS_ICON_STYLES = {
+            connected: ['text-emerald-400', 'Connected'],
+            paused: ['text-amber-400', 'Paused'],
+            disconnected: ['text-red-400', 'Disconnected'],
+        };
+        const VPN_STATUS_ICON_UNKNOWN = ['text-slate-500', 'Unknown'];
+
+        // Replaces the raw "running"/"stopped" text gluetun returns with a
+        // pulsing dot and label matching the same 4-state colour scheme
+        // used everywhere else on this page (list badge, history strip).
+        function renderVpnStatusBlock(statusSegment) {
+            const header = '<p class="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-2"><i class="fas fa-power-off mr-1"></i>VPN Status</p>';
+            const raw = statusSegment && statusSegment.parsed && typeof statusSegment.parsed.status === 'string' ? statusSegment.parsed.status.toLowerCase() : null;
+            const mappedKey = raw === 'running' ? 'connected' : (raw === 'stopped' ? 'paused' : null);
+            const style = (mappedKey && VPN_STATUS_ICON_STYLES[mappedKey]) || VPN_STATUS_ICON_UNKNOWN;
+            const dotClass = mappedKey === 'connected' ? 'status-dot' : (mappedKey === 'disconnected' ? 'status-dot red' : (mappedKey === 'paused' ? 'status-dot amber' : ''));
+            return '<div class="mb-4">' + header
+                + '<div class="bg-slate-900/40 rounded-xl px-3 py-2.5 flex items-center gap-2.5">'
+                + '<span class="w-3 h-3 rounded-full bg-current ' + style[0] + ' ' + dotClass + '"></span>'
+                + '<span class="text-white text-sm font-semibold">' + style[1] + '</span>'
+                + '</div></div>';
+        }
+
+        function renderVpnProtocolBlock(settingsSegment) {
+            const header = '<p class="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-2"><i class="fas fa-network-wired mr-1"></i>Protocol</p>';
+            const parsed = settingsSegment && settingsSegment.parsed;
+            if (!parsed || typeof parsed !== 'object') {
+                return renderVpnDataBlock('Protocol', 'fas fa-network-wired', settingsSegment);
+            }
+            const protocol = (parsed.vpn && parsed.vpn.type) || parsed.type || parsed.protocol || null;
+            if (!protocol) {
+                return renderVpnDataBlock('Protocol', 'fas fa-network-wired', settingsSegment);
+            }
+            return '<div class="mb-4">' + header
+                + '<div class="bg-slate-900/40 rounded-xl px-3 py-2.5"><span class="text-white text-sm font-semibold">' + String(protocol).toUpperCase() + '</span></div></div>';
+        }
+
+        const VPN_HISTORY_STYLES = {
+            connected: ['bg-emerald-400', 'Connected'],
+            paused: ['bg-amber-400', 'Paused'],
+            disconnected: ['bg-red-400', 'Disconnected'],
+        };
+        const VPN_HISTORY_UNKNOWN = ['bg-slate-600', 'Unknown'];
+
+        function renderVpnHistoryStrip(history) {
+            const header = '<p class="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-2"><i class="fas fa-clock-rotate-left mr-1"></i>Status History (last 30 polls)</p>';
+            if (!history || history.length === 0) {
+                return '<div class="mb-1">' + header + '<p class="text-slate-600 text-xs bg-slate-900/40 rounded-xl p-3">No polls recorded yet - check back after the next background check.</p></div>';
+            }
+            const bars = history.map(function (entry) {
+                const style = VPN_HISTORY_STYLES[entry.status] || VPN_HISTORY_UNKNOWN;
+                const label = style[1] + ' at ' + entry.checked_at;
+                return '<span class="flex-1 h-6 rounded-sm ' + style[0] + '" title="' + label + '"></span>';
+            }).join('');
+            const legend = ['connected', 'paused', 'disconnected'].map(function (key) {
+                const style = VPN_HISTORY_STYLES[key];
+                return '<span class="flex items-center gap-1.5 text-[11px] text-slate-500"><span class="w-2.5 h-2.5 rounded-sm ' + style[0] + '"></span>' + style[1] + '</span>';
+            }).join('') + '<span class="flex items-center gap-1.5 text-[11px] text-slate-500"><span class="w-2.5 h-2.5 rounded-sm ' + VPN_HISTORY_UNKNOWN[0] + '"></span>' + VPN_HISTORY_UNKNOWN[1] + '</span>';
+            return '<div class="mb-1">' + header
+                + '<div class="flex items-center gap-0.5 mb-2">' + bars + '</div>'
+                + '<div class="flex items-center gap-4 flex-wrap">' + legend + '</div></div>';
+        }
+
+        async function fetchVpnDetailsData(id) {
+            try {
+                const res = await fetch('/admin/health/vpn-monitors/' + id + '/details', { method: 'POST' });
+                return await res.json();
+            } catch (e) {
+                return { ok: false, message: 'Could not reach the server to load details.' };
+            }
+        }
+
+        function renderVpnDetailsBody(data, pending) {
+            const body = document.getElementById('vpnDetailsBody');
+            if (!data.ok) {
+                body.innerHTML = '<p class="text-red-400 text-sm">' + (data.message || 'Could not load details.') + '</p>';
+                return;
+            }
+            const pendingBanner = pending
+                ? '<p class="text-sky-400 text-xs mb-3"><i class="fas fa-circle-notch fa-spin mr-2"></i>' + pending + '</p>'
+                : '';
+            body.innerHTML = pendingBanner +
+                renderVpnStatusBlock(data.status) +
+                renderVpnProtocolBlock(data.settings) +
+                renderVpnDataBlock('VPN Connection', 'fas fa-globe', data.publicIp) +
+                renderVpnDataBlock('Port Forwarding', 'fas fa-diagram-project', data.portForward) +
+                renderVpnDataBlock('DNS', 'fas fa-server', data.dns) +
+                renderVpnHistoryStrip(data.history);
+        }
+
+        function extractVpnRawStatus(data) {
+            return data && data.status && data.status.parsed && typeof data.status.parsed.status === 'string'
+                ? data.status.parsed.status.toLowerCase()
+                : null;
+        }
+
+        // After Start/Stop, gluetun takes a moment to actually establish
+        // (or tear down) the tunnel and, for Start, to pick up a new public
+        // IP - a single immediate refresh would likely just show stale,
+        // mid-transition data. This keeps refreshing every 2.5s (~30s
+        // total) until the VPN actually reaches the expected state, or
+        // gives up gracefully if it doesn't get there in time. Each
+        // refresh is rendered as it comes in, so the view stays live
+        // rather than sitting frozen on the pre-action snapshot.
+        async function pollVpnDetailsUntilSettled(id, action) {
+            const targetStatus = action === 'start' ? 'running' : 'stopped';
+            const maxAttempts = 12;
+            const intervalMs = 2500;
+
+            for (let attempt = 0; attempt < maxAttempts; attempt++) {
+                const data = await fetchVpnDetailsData(id);
+                if (id !== currentVpnMonitorId) return; // admin closed this or switched to a different VPN mid-poll - stop touching a view that's no longer showing
+
+                const settled = data.ok && extractVpnRawStatus(data) === targetStatus;
+                const attemptsLeft = maxAttempts - 1 - attempt;
+                const pendingMessage = settled
+                    ? null
+                    : (action === 'start' ? 'Waiting for the VPN to connect…' : 'Waiting for the VPN to stop…') + (attemptsLeft === 0 ? '' : '');
+                renderVpnDetailsBody(data, pendingMessage);
+
+                if (!data.ok || settled) return;
+                if (attempt < maxAttempts - 1) {
+                    await new Promise(function (resolve) { setTimeout(resolve, intervalMs); });
+                }
+            }
+        }
+
         async function openVpnDetails(id, name) {
             currentVpnMonitorId = id;
             document.getElementById('vpnDetailsTitle').textContent = name;
             document.getElementById('vpnDetailsBody').innerHTML = '<p class="text-slate-500 text-sm"><i class="fas fa-circle-notch fa-spin mr-2"></i>Loading…</p>';
             openModal('vpnDetailsModal');
 
-            try {
-                const res = await fetch('/admin/health/vpn-monitors/' + id + '/details', { method: 'POST' });
-                const data = await res.json();
-
-                if (!data.ok) {
-                    document.getElementById('vpnDetailsBody').innerHTML = '<p class="text-red-400 text-sm">' + (data.message || 'Could not load details.') + '</p>';
-                    return;
-                }
-
-                document.getElementById('vpnDetailsBody').innerHTML =
-                    renderVpnDataBlock('VPN Status', 'fas fa-power-off', data.status) +
-                    renderVpnDataBlock('Public IP', 'fas fa-globe', data.publicIp) +
-                    renderVpnDataBlock('Port Forwarding', 'fas fa-diagram-project', data.portForward) +
-                    renderVpnDataBlock('DNS', 'fas fa-server', data.dns) +
-                    renderVpnDataBlock('Settings', 'fas fa-gear', data.settings);
-            } catch (e) {
-                document.getElementById('vpnDetailsBody').innerHTML = '<p class="text-red-400 text-sm">Could not reach the server to load details.</p>';
-            }
+            const data = await fetchVpnDetailsData(id);
+            if (id !== currentVpnMonitorId) return; // switched away before this finished loading
+            renderVpnDetailsBody(data);
         }
 
         async function controlVpnMonitor(action) {
             if (!currentVpnMonitorId) return;
+            const id = currentVpnMonitorId;
             const startBtn = document.getElementById('vpnDetailsStartBtn');
             const stopBtn = document.getElementById('vpnDetailsStopBtn');
             startBtn.disabled = true;
             stopBtn.disabled = true;
 
             try {
-                const res = await fetch('/admin/health/vpn-monitors/' + currentVpnMonitorId + '/' + action, { method: 'POST' });
+                const res = await fetch('/admin/health/vpn-monitors/' + id + '/' + action, { method: 'POST' });
                 const data = await res.json();
                 showToast(data.message, data.ok ? 'success' : 'error');
-                if (data.ok) openVpnDetails(currentVpnMonitorId, document.getElementById('vpnDetailsTitle').textContent);
+                if (data.ok) await pollVpnDetailsUntilSettled(id, action);
             } catch (e) {
                 showToast('Could not reach the server to ' + action + ' this VPN.', 'error');
             } finally {

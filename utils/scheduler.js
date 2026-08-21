@@ -8,6 +8,7 @@ const { applyAutoRenewals, applyManualExpirations, applyExpiryWarnings, applyPro
 const { checkStuckWatch } = require('./stuckWatch');
 const { checkVpnWatch } = require('./vpnWatch');
 const { checkContainerWatchdog } = require('./containerWatchdog');
+const { checkVpnMonitors } = require('./vpnMonitorWatch');
 
 const INTERVAL_MS = 5 * 60 * 1000; // every 5 minutes
 const CONTAINER_WATCHDOG_INTERVAL_MS = 60 * 1000; // every 1 minute - needs to be much finer-grained than the main cycle for a 2-minute threshold to mean anything
@@ -43,6 +44,12 @@ async function runMaintenanceCycle() {
   } catch (err) {
     console.error('[scheduler] vpn-watch check failed:', err.message);
   }
+
+  try {
+    await checkVpnMonitors();
+  } catch (err) {
+    console.error('[scheduler] vpn-monitor watch failed:', err.message);
+  }
 }
 
 function startScheduler() {
@@ -56,6 +63,8 @@ function startScheduler() {
   setInterval(() => {
     checkContainerWatchdog().catch((err) => console.error('[scheduler] container watchdog failed:', err.message));
   }, CONTAINER_WATCHDOG_INTERVAL_MS);
+
+  setTimeout(() => { checkVpnMonitors().catch((err) => console.error('[scheduler] vpn-monitor watch failed:', err.message)); }, 15000);
 }
 
 module.exports = { startScheduler };

@@ -10,6 +10,8 @@ const { syncIncludedPlansForUser } = require('../utils/includedPlans');
 const { londonInputToUtcIso, formatUK, formatUKForEmail } = require('../utils/time');
 const { serviceLabel } = require('../utils/labels');
 const { runCommand, getContainerStatuses } = require('../utils/ssh');
+const { resolveGluetunHost } = require('../utils/gluetunClient');
+const { getLiveVpnStatus } = require('../utils/vpnMonitorWatch');
 const { checkVpnWatch } = require('../utils/vpnWatch');
 const { checkStuckWatch } = require('../utils/stuckWatch');
 const { upload } = require('../utils/uploads');
@@ -1781,7 +1783,7 @@ router.post('/admin/settings/tautulli/test', async (req, res) => {
 
 // ---------- Health (admin-wide container monitor) ----------
 
-router.get('/admin/health', (req, res) => {
+function loadHealthPageData() {
   const sshConfigured = !!db.prepare('SELECT id FROM admin_ssh LIMIT 1').get();
   const containers = db.prepare('SELECT * FROM admin_health_containers ORDER BY sort_order ASC, id ASC').all();
   const recentLog = db
@@ -1807,7 +1809,23 @@ router.get('/admin/health', (req, res) => {
   const mounts = db.prepare('SELECT * FROM admin_mounts ORDER BY name ASC').all();
   const vpnMonitors = db.prepare('SELECT * FROM admin_vpn_monitors ORDER BY name ASC').all();
 
-  res.render('admin-health', { sshConfigured, containers, recentLog, stuckWatchByContainer, vpnWatchByContainer, mounts, vpnMonitors });
+  return { sshConfigured, containers, recentLog, stuckWatchByContainer, vpnWatchByContainer, mounts, vpnMonitors };
+}
+
+// For validation failures on forms inside this page that are submitted via
+// ajax (data-ajax-form) - re-renders the page itself (status 200, so the
+// ajax handler treats it as a normal successful swap rather than falling
+// back to a full page navigation) with an error message embedded for the
+// client-side handler to show as a toast. Using res.status(400).render
+// ('error', ...) here instead would trip the ajax handler's "something
+// unexpected happened" fallback path, which does a real page navigation
+// straight to that error page - the toast never gets a chance to show.
+function renderHealthWithAjaxError(req, res, message) {
+  res.render('admin-health', { ...loadHealthPageData(), ajaxErrorMessage: message });
+}
+
+router.get('/admin/health', (req, res) => {
+  res.render('admin-health', loadHealthPageData());
 });
 
 router.post('/admin/health/containers', (req, res) => {
@@ -1971,6 +1989,59 @@ router.post('/admin/health/mounts/:id/unmount', async (req, res) => {
   });
 });
 
+router.get('/admin/health/mounts/status', async (req, res) => {
+  const mounts = db.prepare('SELECT * FROM admin_mounts').all();
+  if (mounts.length === 0) return res.json({ ok: true, statuses: {} });
+
+  const target = db.prepare('SELECT * FROM admin_ssh LIMIT 1').get();
+  if (!target) return res.json({ ok: false, message: 'No admin SSH access configured yet.' });
+
+  // One combined SSH round trip for every configured mount, rather than
+  // one call per mount - mountpoint -q's exit code is the only signal
+  // needed, echoed out explicitly since exit codes themselves don't
+  // survive being chained together in one command string.
+  const marker = '::KBMOUNTSTATUS::';
+  const command = mounts
+    .map((m) => `mountpoint -q '/mnt/${m.folder_name}' && echo MOUNTED || echo NOTMOUNTED`)
+    .join(` ; echo '${marker}' ; `);
+
+  const result = await runCommand(target, command, 20000);
+  if (result.connectionFailed) {
+    return res.json({ ok: false, message: 'Could not reach the server.' });
+  }
+
+  const segments = result.output.split(marker).map((s) => s.trim());
+  const statuses = {};
+  mounts.forEach((m, i) => {
+    // Exact match, not a substring check - "NOTMOUNTED" itself contains
+    // "MOUNTED", so a naive .includes() would misreport every unmounted
+    // entry as mounted.
+    statuses[m.id] = segments[i] === 'MOUNTED';
+  });
+
+  res.json({ ok: true, statuses });
+});
+
+router.post('/admin/health/mounts/:id/folders', async (req, res) => {
+  const mount = db.prepare('SELECT * FROM admin_mounts WHERE id = ?').get(req.params.id);
+  if (!mount) return res.status(404).json({ ok: false, message: 'Mount not found.' });
+
+  const target = db.prepare('SELECT * FROM admin_ssh LIMIT 1').get();
+  if (!target) return res.status(400).json({ ok: false, message: 'No admin SSH access configured yet. Set it up in Settings first.' });
+
+  // Read-only listing of just the top-level entries - one per line,
+  // includes dotfiles but not . and .., capped to a quick sanity check
+  // rather than a full file browser. No write/delete capability at all.
+  const safeFolderName = mount.folder_name.replace(/'/g, `'"'"'`);
+  const result = await runCommand(target, `ls -1A '/mnt/${safeFolderName}' 2>&1 | head -20`, 15000);
+  if (result.connectionFailed) {
+    return res.json({ ok: false, message: 'Could not reach the server to list this folder.' });
+  }
+
+  const entries = result.output.split('\n').map((s) => s.trim()).filter(Boolean);
+  res.json({ ok: true, name: mount.name, folderName: mount.folder_name, entries });
+});
+
 // Gluetun instances an admin wants a quick VPN-status check for from this
 // page. Deliberately just a name/URL pair, same minimal approach as Mounts
 // above - this isn't trying to be a full gluetun dashboard, just a quick
@@ -1987,49 +2058,39 @@ router.post('/admin/health/mounts/:id/unmount', async (req, res) => {
 // involved) and rebuilds the URL with that IP substituted in. Returns the
 // URL unchanged if the hostname is already a plain IP address (nothing to
 // resolve), or null if the container can't be found/inspected at all.
-async function resolveGluetunHost(target, rawUrl) {
-  let parsed;
-  try {
-    parsed = new URL(rawUrl);
-  } catch (e) {
-    return null;
+
+router.get('/admin/health/vpn-monitors/status', async (req, res) => {
+  const monitors = db.prepare('SELECT * FROM admin_vpn_monitors').all();
+  if (monitors.length === 0) return res.json({ ok: true, statuses: {} });
+
+  const target = db.prepare('SELECT * FROM admin_ssh LIMIT 1').get();
+  if (!target) return res.json({ ok: false, message: 'No admin SSH access configured yet.' });
+
+  const statuses = {};
+  for (const monitor of monitors) {
+    const { status, publicIp } = await getLiveVpnStatus(target, monitor);
+    statuses[monitor.id] = { status, publicIp };
+    // Keeps the main-list badge fresh without adding a history entry -
+    // history stays reserved for the slower background poll so "last 30
+    // polls" still spans a meaningful multi-hour window rather than just
+    // the last several on-page refreshes.
+    db.prepare(
+      `UPDATE admin_vpn_monitors SET last_status = ?, last_public_ip = ?, last_checked_at = datetime('now') WHERE id = ?`
+    ).run(status, publicIp, monitor.id);
   }
 
-  const hostname = parsed.hostname;
-  const port = parsed.port || (parsed.protocol === 'https:' ? '443' : '80');
-
-  if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname)) {
-    return { resolveFlag: '' }; // already a plain IP - no DNS involved at all, nothing to resolve
-  }
-
-  const safeHostname = hostname.replace(/'/g, `'"'"'`);
-  const result = await runCommand(
-    target,
-    `docker inspect --format='{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}' '${safeHostname}' 2>&1`,
-    10000
-  );
-  if (!result.success) return null;
-
-  const ip = result.output.trim().split(/\s+/)[0];
-  if (!ip || !/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(ip)) return null;
-
-  const safeIp = ip.replace(/'/g, `'"'"'`);
-  const safePort = port.replace(/'/g, `'"'"'`);
-  // --resolve maps hostname:port to this IP for connection purposes only -
-  // the request itself (including the Host header curl sends) still uses
-  // the original hostname, exactly as gluetun-webui's own request would.
-  return { resolveFlag: `--resolve '${hostname}:${safePort}:${safeIp}' ` };
-}
+  res.json({ ok: true, statuses });
+});
 
 router.post('/admin/health/vpn-monitors', (req, res) => {
   const name = String(req.body.name || '').trim();
   const url = String(req.body.url || '').trim();
 
   if (!name || !url) {
-    return res.status(400).render('error', { message: 'Missing required fields - please fill in everything marked required and try again.' });
+    return renderHealthWithAjaxError(req, res, 'Missing required fields - please fill in everything marked required and try again.');
   }
   if (!/^https?:\/\/[a-zA-Z0-9.-]+(:\d+)?(\/.*)?$/.test(url)) {
-    return res.status(400).render('error', { message: 'That URL doesn\'t look valid - it should look like http://gluetun:8888 or http://gluetun-decypharr:8789.' });
+    return renderHealthWithAjaxError(req, res, 'That URL doesn\'t look valid - make sure it includes http:// or https:// and the correct port.');
   }
 
   db.prepare('INSERT INTO admin_vpn_monitors (name, url) VALUES (?, ?)').run(name, url);
@@ -2217,6 +2278,10 @@ router.post('/admin/health/vpn-monitors/:id/details', async (req, res) => {
     }
   }
 
+  const history = db
+    .prepare('SELECT status, checked_at FROM admin_vpn_monitor_history WHERE monitor_id = ? ORDER BY id ASC LIMIT 30')
+    .all(monitor.id);
+
   res.json({
     ok: true,
     name: monitor.name,
@@ -2225,6 +2290,7 @@ router.post('/admin/health/vpn-monitors/:id/details', async (req, res) => {
     portForward: results.portForward,
     dns: results.dns,
     settings: results.settings,
+    history,
   });
 });
 

@@ -144,7 +144,14 @@
       restoreOpenState(state);
       window.scrollTo(0, scrollY);
       document.dispatchEvent(new CustomEvent('main:updated'));
-      showToast('Changes saved', 'success');
+
+      const errorFlag = currentMain.querySelector('#ajaxErrorFlag');
+      if (errorFlag) {
+        showToast(errorFlag.getAttribute('data-message') || 'Something went wrong - please check and try again.', 'error');
+        errorFlag.remove();
+      } else {
+        showToast('Changes saved', 'success');
+      }
     } catch (err) {
       console.error('Ajax form submit failed, falling back to normal navigation', err);
       sessionStorage.setItem('kb_toast', JSON.stringify({ message: 'Something went wrong - please check and try again.', type: 'error' }));

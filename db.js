@@ -387,7 +387,21 @@ CREATE TABLE IF NOT EXISTS admin_vpn_monitors (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
   url TEXT NOT NULL, -- gluetun's own control server base URL, e.g. http://gluetun:8888 - reached via SSH on the target server, since this is normally only resolvable on that server's internal docker network, not from wherever KyberBOX itself runs
+  last_status TEXT, -- connected | paused | disconnected | unknown - from the most recent background poll, shown as a badge in the main VPN Monitor list without needing to open the details view
+  last_public_ip TEXT, -- from the most recent background poll
+  last_checked_at TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- One row per background poll of a VPN monitor, kept to the most recent 30
+-- per monitor_id (older rows pruned as new ones are added) - powers the
+-- "Status History (last 30 polls)" strip at the bottom of each VPN's
+-- details view.
+CREATE TABLE IF NOT EXISTS admin_vpn_monitor_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  monitor_id INTEGER NOT NULL REFERENCES admin_vpn_monitors(id) ON DELETE CASCADE,
+  status TEXT NOT NULL, -- connected | paused | disconnected | unknown
+  checked_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 -- The list of containers shown on the Admin Health page (independent of
@@ -582,6 +596,9 @@ ensureColumn('admin_health_containers', 'logo_bg', "logo_bg TEXT NOT NULL DEFAUL
 ensureColumn('admin_health_containers', 'is_active', 'is_active INTEGER NOT NULL DEFAULT 1');
 ensureColumn('admin_health_containers', 'first_seen_unhealthy_at', 'first_seen_unhealthy_at TEXT');
 ensureColumn('admin_health_containers', 'unhealthy_alert_sent_at', 'unhealthy_alert_sent_at TEXT');
+ensureColumn('admin_vpn_monitors', 'last_status', 'last_status TEXT');
+ensureColumn('admin_vpn_monitors', 'last_public_ip', 'last_public_ip TEXT');
+ensureColumn('admin_vpn_monitors', 'last_checked_at', 'last_checked_at TEXT');
 ensureColumn('plan_actions', 'style', "style TEXT NOT NULL DEFAULT 'warning'"); // warning | danger
 
 db.exec(`
