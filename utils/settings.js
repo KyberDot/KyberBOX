@@ -49,6 +49,13 @@ function getAllSettings() {
     container_watchdog_mode: getSetting('container_watchdog_mode', 'all'), // all | selected
     vpn_watchdog_enabled: getSetting('vpn_watchdog_enabled', '1'),
     library_data_order: getSetting('library_data_order', '[]'),
+    dashboard_sections_config: getSetting('dashboard_sections_config', JSON.stringify([
+      { key: 'server_data', enabled: true },
+      { key: 'container_health', enabled: true },
+      { key: 'account_overview', enabled: true },
+      { key: 'stream_data', enabled: true },
+      { key: 'library_data', enabled: true },
+    ])),
   };
 }
 

@@ -224,6 +224,56 @@ async function getLibraries(baseUrl, apiKey) {
   }
 }
 
+/** Fetches a page of media items within one library section - powers the click-through Library Data browser (search + pagination, both handled natively by Tautulli's own API). */
+async function getLibraryMediaInfo(baseUrl, apiKey, sectionId, start, length, search) {
+  if (!baseUrl || !apiKey) {
+    return { ok: false, message: 'Tautulli is not configured yet.' };
+  }
+  if (!sectionId) {
+    return { ok: false, message: 'No library specified.' };
+  }
+
+  const params = new URLSearchParams({
+    apikey: apiKey,
+    cmd: 'get_library_media_info',
+    section_id: sectionId,
+    start: String(start || 0),
+    length: String(length || 10),
+    order_column: 'title',
+    order_dir: 'asc',
+  });
+  if (search) params.set('search', search);
+
+  const url = `${baseUrl.replace(/\/$/, '')}/api/v2?${params.toString()}`;
+
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+    if (!res.ok) return { ok: false, message: `Tautulli returned an error (HTTP ${res.status}).` };
+
+    const json = await res.json();
+    if (!json || !json.response || json.response.result !== 'success') {
+      return { ok: false, message: (json && json.response && json.response.message) || 'Could not load this library from Tautulli.' };
+    }
+
+    const payload = json.response.data || {};
+    const items = (payload.data || []).map((item) => ({
+      title: item.title,
+      year: item.year || null,
+      mediaType: item.media_type,
+    }));
+
+    return {
+      ok: true,
+      items,
+      recordsTotal: parseInt(payload.recordsTotal, 10) || 0,
+      recordsFiltered: parseInt(payload.recordsFiltered, 10) || 0,
+    };
+  } catch (err) {
+    const reason = err.name === 'TimeoutError' ? 'Timed out reaching Tautulli.' : `Could not reach Tautulli: ${err.message}`;
+    return { ok: false, message: reason };
+  }
+}
+
 async function testConnection(baseUrl, apiKey) {
   if (!baseUrl || !apiKey) {
     return { ok: false, message: 'Enter a Tautulli URL and API key first.' };
@@ -271,4 +321,4 @@ async function getGeoLookup(baseUrl, apiKey, ipAddress) {
   }
 }
 
-module.exports = { getWatchHistory, getNowWatching, getAllActivity, getGeoLookup, fetchPosterImage, testConnection, getLibraries };
+module.exports = { getWatchHistory, getNowWatching, getAllActivity, getGeoLookup, fetchPosterImage, testConnection, getLibraries, getLibraryMediaInfo };

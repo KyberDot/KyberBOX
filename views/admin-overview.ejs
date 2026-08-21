@@ -23,7 +23,9 @@
             </div>
         <% } %>
 
+        <div class="flex flex-col">
         <!-- Server data (live, from the admin SSH access configured in Settings) -->
+        <div data-dashboard-section="server_data" style="order: <%= sectionOrder.server_data %>;" class="<%= sectionEnabled.server_data ? '' : 'hidden' %>">
         <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
             <h2 class="text-sm uppercase tracking-widest text-slate-500 font-bold">Server Data</h2>
             <a href="/admin/ssh-console" class="text-sky-400 hover:text-sky-300 text-xs">SSH Console <i class="fas fa-arrow-right ml-1"></i></a>
@@ -58,8 +60,10 @@
             </div>
         </div>
         <p id="serverDataMessage" class="hidden text-slate-500 text-sm -mt-8 mb-10 sm:mb-12"></p>
+        </div>
 
         <!-- Container health summary (live, from the Health page's containers) -->
+        <div data-dashboard-section="container_health" style="order: <%= sectionOrder.container_health %>;" class="<%= sectionEnabled.container_health ? '' : 'hidden' %>">
         <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
             <h2 class="text-sm uppercase tracking-widest text-slate-500 font-bold">Container Health</h2>
             <a href="/admin/health" class="text-sky-400 hover:text-sky-300 text-xs">View Health Page <i class="fas fa-arrow-right ml-1"></i></a>
@@ -88,7 +92,9 @@
                 </div>
             </div>
         <% } %>
+        </div>
 
+        <div data-dashboard-section="account_overview" style="order: <%= sectionOrder.account_overview %>;" class="<%= sectionEnabled.account_overview ? '' : 'hidden' %>">
         <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
             <h2 class="text-sm uppercase tracking-widest text-slate-500 font-bold">Account Overview</h2>
             <a href="/admin/users" class="text-sky-400 hover:text-sky-300 text-xs">View Users Page <i class="fas fa-arrow-right ml-1"></i></a>
@@ -111,7 +117,9 @@
                 <p class="text-2xl sm:text-3xl font-extrabold text-amber-400"><%= openTickets %></p>
             </a>
         </div>
+        </div>
 
+        <div data-dashboard-section="stream_data" style="order: <%= sectionOrder.stream_data %>;" class="<%= sectionEnabled.stream_data ? '' : 'hidden' %>">
         <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
             <h2 class="text-sm uppercase tracking-widest text-slate-500 font-bold">Stream Data</h2>
             <a href="https://plex.kyberbox.app" target="_blank" rel="noopener noreferrer" class="text-sky-400 hover:text-sky-300 text-xs">View Plex <i class="fas fa-arrow-right ml-1"></i></a>
@@ -134,13 +142,17 @@
                 <p class="text-2xl sm:text-3xl font-extrabold text-sky-400" id="streamCountDevices">0</p>
             </button>
         </div>
+        </div>
 
+        <div data-dashboard-section="library_data" style="order: <%= sectionOrder.library_data %>;" class="<%= sectionEnabled.library_data ? '' : 'hidden' %>">
         <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
             <h2 class="text-sm uppercase tracking-widest text-slate-500 font-bold">Library Data</h2>
             <a href="https://tautulli.kyberbox.app/libraries" target="_blank" rel="noopener noreferrer" class="text-sky-400 hover:text-sky-300 text-xs">View Library <i class="fas fa-arrow-right ml-1"></i></a>
         </div>
         <div id="libraryDataGrid" class="grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-5 mb-10 sm:mb-12">
             <p class="text-slate-500 text-xs col-span-full">Loading library data…</p>
+        </div>
+        </div>
         </div>
 
         <div class="flex flex-wrap gap-3 sm:gap-4 mb-10 sm:mb-12">
@@ -217,6 +229,25 @@
             <div id="nowWatchingModalContent" class="space-y-3">
                 <p class="text-slate-500 text-sm"><i class="fas fa-circle-notch fa-spin mr-2"></i>Loading…</p>
             </div>
+        </div>
+    </div>
+
+    <div id="libraryMediaModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden items-center justify-center z-50 px-4 py-8 overflow-y-auto">
+        <div class="glass rounded-3xl p-6 sm:p-8 max-w-2xl w-full my-auto">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-bold text-white"><i class="fas fa-film mr-2 text-sky-400"></i><span id="libraryMediaModalTitle">Library</span></h3>
+                <button type="button" onclick="closeLibraryMediaModal()" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5">
+                    <i class="fas fa-xmark"></i>
+                </button>
+            </div>
+            <div class="relative mb-4">
+                <i class="fas fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 text-sm"></i>
+                <input type="text" id="libraryMediaSearch" class="input pl-10" placeholder="Search this library…" oninput="handleLibraryMediaSearch()">
+            </div>
+            <div id="libraryMediaContent" class="space-y-1.5 min-h-[200px]">
+                <p class="text-slate-500 text-sm"><i class="fas fa-circle-notch fa-spin mr-2"></i>Loading…</p>
+            </div>
+            <div id="libraryMediaPagination" class="flex items-center justify-center gap-1.5 mt-5 flex-wrap"></div>
         </div>
     </div>
 
@@ -474,6 +505,97 @@
 
         const LIBRARY_TYPE_ICONS = { movie: 'fa-film', show: 'fa-tv' };
 
+        let currentLibrarySectionId = null;
+        let currentLibraryPage = 0;
+        let libraryMediaSearchTimeout = null;
+        const LIBRARY_ITEM_ICONS = { movie: 'fa-film', show: 'fa-tv' };
+
+        function openLibraryMediaModal(sectionId, name) {
+            currentLibrarySectionId = sectionId;
+            currentLibraryPage = 0;
+            document.getElementById('libraryMediaModalTitle').textContent = name;
+            document.getElementById('libraryMediaSearch').value = '';
+            openModal('libraryMediaModal');
+            loadLibraryMediaPage(0);
+        }
+
+        function closeLibraryMediaModal() {
+            closeModal('libraryMediaModal');
+            currentLibrarySectionId = null;
+        }
+
+        function handleLibraryMediaSearch() {
+            if (libraryMediaSearchTimeout) clearTimeout(libraryMediaSearchTimeout);
+            libraryMediaSearchTimeout = setTimeout(function () {
+                loadLibraryMediaPage(0); // any new search starts back at page 1
+            }, 350);
+        }
+
+        async function loadLibraryMediaPage(page) {
+            if (!currentLibrarySectionId) return;
+            currentLibraryPage = page;
+            const search = document.getElementById('libraryMediaSearch').value.trim();
+            const content = document.getElementById('libraryMediaContent');
+            content.innerHTML = '<p class="text-slate-500 text-sm"><i class="fas fa-circle-notch fa-spin mr-2"></i>Loading…</p>';
+
+            try {
+                const url = '/admin/overview/library-data/' + encodeURIComponent(currentLibrarySectionId) + '/media?page=' + page + '&search=' + encodeURIComponent(search);
+                const res = await fetch(url);
+                const data = await res.json();
+
+                if (!data.ok) {
+                    content.innerHTML = '<p class="text-red-400 text-sm">' + (data.message || 'Could not load this library.') + '</p>';
+                    document.getElementById('libraryMediaPagination').innerHTML = '';
+                    return;
+                }
+
+                renderLibraryMediaItems(data.items);
+                renderLibraryMediaPagination(data.recordsFiltered, page);
+            } catch (e) {
+                content.innerHTML = '<p class="text-red-400 text-sm">Could not reach the server.</p>';
+                document.getElementById('libraryMediaPagination').innerHTML = '';
+            }
+        }
+
+        function renderLibraryMediaItems(items) {
+            const content = document.getElementById('libraryMediaContent');
+            if (!items || items.length === 0) {
+                content.innerHTML = '<p class="text-slate-500 text-sm">No matching items found.</p>';
+                return;
+            }
+            content.innerHTML = items.map(function (item) {
+                const icon = LIBRARY_ITEM_ICONS[item.mediaType] || 'fa-file';
+                const safeTitle = String(item.title).replace(/</g, '&lt;');
+                const yearPart = item.year ? ' <span class="text-slate-500">(' + item.year + ')</span>' : '';
+                return '<div class="flex items-center gap-2.5 bg-slate-900/40 rounded-xl px-3 py-2.5">'
+                    + '<i class="fas ' + icon + ' text-sky-400 text-xs flex-shrink-0"></i>'
+                    + '<span class="text-white text-sm truncate">' + safeTitle + '</span>' + yearPart
+                    + '</div>';
+            }).join('');
+        }
+
+        function renderLibraryMediaPagination(recordsFiltered, currentPage) {
+            const container = document.getElementById('libraryMediaPagination');
+            const totalPages = Math.max(1, Math.ceil(recordsFiltered / 10));
+            if (totalPages <= 1) { container.innerHTML = ''; return; }
+
+            const pages = [];
+            const windowSize = 2;
+            for (let i = 0; i < totalPages; i++) {
+                if (i === 0 || i === totalPages - 1 || Math.abs(i - currentPage) <= windowSize) {
+                    pages.push(i);
+                } else if (pages[pages.length - 1] !== '…') {
+                    pages.push('…');
+                }
+            }
+
+            container.innerHTML = pages.map(function (p) {
+                if (p === '…') return '<span class="text-slate-600 px-1 text-xs">…</span>';
+                const active = p === currentPage;
+                return '<button type="button" onclick="loadLibraryMediaPage(' + p + ')" class="w-8 h-8 rounded-lg text-xs font-semibold transition ' + (active ? 'bg-sky-500/20 text-sky-400' : 'text-slate-400 hover:text-white hover:bg-white/5') + '">' + (p + 1) + '</button>';
+            }).join('');
+        }
+
         function renderLibraryData(libraries) {
             const grid = document.getElementById('libraryDataGrid');
             if (!grid) return;
@@ -486,10 +608,10 @@
             grid.innerHTML = libraries.map(function (lib) {
                 const icon = LIBRARY_TYPE_ICONS[lib.type] || 'fa-photo-film';
                 const safeName = String(lib.name).replace(/</g, '&lt;');
-                return '<div class="glass rounded-2xl p-5 sm:p-6">'
+                return '<button type="button" onclick="openLibraryMediaModal(\'' + lib.sectionId + '\', \'' + safeName.replace(/'/g, "\\'") + '\')" class="glass rounded-2xl p-5 sm:p-6 text-left hover:bg-white/5 transition">'
                     + '<p class="text-slate-500 text-xs uppercase tracking-widest font-semibold mb-2 truncate"><i class="fas ' + icon + ' mr-1.5 text-sky-400"></i>' + safeName + '</p>'
                     + '<p class="text-2xl sm:text-3xl font-extrabold text-white">' + lib.count.toLocaleString() + '</p>'
-                    + '</div>';
+                    + '</button>';
             }).join('');
         }
 

@@ -5,7 +5,7 @@ const db = require('../db');
 const { encrypt, decrypt } = require('../utils/crypto');
 const { getAllSettings, setSetting, getSiteBaseUrl } = require('../utils/settings');
 const { sendMail, isConfigured, notifyResetStarted } = require('../utils/mailer');
-const { testConnection: testTautulliConnection, getWatchHistory, getNowWatching, getAllActivity, getGeoLookup, fetchPosterImage, getLibraries } = require('../utils/tautulli');
+const { testConnection: testTautulliConnection, getWatchHistory, getNowWatching, getAllActivity, getGeoLookup, fetchPosterImage, getLibraries, getLibraryMediaInfo } = require('../utils/tautulli');
 const { syncIncludedPlansForUser } = require('../utils/includedPlans');
 const { londonInputToUtcIso, formatUK, formatUKForEmail } = require('../utils/time');
 const { serviceLabel } = require('../utils/labels');
@@ -179,7 +179,30 @@ router.get('/admin', (req, res) => {
     .all();
   const mailConfigured = isConfigured(getAllSettings());
 
-  res.render('admin-overview', { userCount, openTickets, activeSubs, planCount, healthContainerCount, recentActions, mailConfigured });
+  const DEFAULT_DASHBOARD_SECTIONS = ['server_data', 'container_health', 'account_overview', 'stream_data', 'library_data'];
+  let dashboardSectionsConfig;
+  try {
+    dashboardSectionsConfig = JSON.parse(getAllSettings().dashboard_sections_config);
+    if (!Array.isArray(dashboardSectionsConfig)) throw new Error('not an array');
+  } catch (e) {
+    dashboardSectionsConfig = DEFAULT_DASHBOARD_SECTIONS.map((key) => ({ key, enabled: true }));
+  }
+  // Any section missing from a saved config (e.g. one added in a later
+  // update than when the admin last saved their layout) is appended at
+  // the end, enabled by default, rather than silently never appearing.
+  const configuredKeys = new Set(dashboardSectionsConfig.map((s) => s.key));
+  DEFAULT_DASHBOARD_SECTIONS.forEach((key) => {
+    if (!configuredKeys.has(key)) dashboardSectionsConfig.push({ key, enabled: true });
+  });
+
+  const sectionOrder = {};
+  const sectionEnabled = {};
+  dashboardSectionsConfig.forEach((s, i) => {
+    sectionOrder[s.key] = i;
+    sectionEnabled[s.key] = s.enabled !== false;
+  });
+
+  res.render('admin-overview', { userCount, openTickets, activeSubs, planCount, healthContainerCount, recentActions, mailConfigured, sectionOrder, sectionEnabled });
 });
 
 // ---------- Plans ----------
@@ -1432,6 +1455,36 @@ router.post('/admin/settings/library-order', (req, res) => {
   const ids = Array.isArray(req.body.ids) ? req.body.ids : [req.body.ids].filter(Boolean);
   setSetting('library_data_order', JSON.stringify(ids));
   res.json({ ok: true });
+});
+
+router.post('/admin/settings/dashboard-sections', (req, res) => {
+  let config;
+  try {
+    config = JSON.parse(req.body.config || '[]');
+    if (!Array.isArray(config)) throw new Error('not an array');
+  } catch (e) {
+    return res.status(400).json({ ok: false, message: 'Invalid configuration.' });
+  }
+  setSetting('dashboard_sections_config', JSON.stringify(config));
+  res.json({ ok: true });
+});
+
+router.get('/admin/overview/library-data/:sectionId/media', async (req, res) => {
+  const settings = getAllSettings();
+  const page = Math.max(0, parseInt(req.query.page, 10) || 0);
+  const pageSize = 10;
+  const search = String(req.query.search || '').trim();
+
+  const result = await getLibraryMediaInfo(
+    settings.tautulli_url,
+    settings.tautulli_api_key,
+    req.params.sectionId,
+    page * pageSize,
+    pageSize,
+    search
+  );
+
+  res.json(result);
 });
 
 // ---------- Tickets ----------

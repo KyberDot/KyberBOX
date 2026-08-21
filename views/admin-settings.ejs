@@ -383,6 +383,31 @@
             </div>
         </div>
 
+        <!-- Dashboard Sections -->
+        <div class="glass rounded-2xl sm:rounded-3xl p-5 sm:p-8 mb-8">
+            <h2 class="text-lg font-bold text-white mb-1"><i class="fas fa-table-cells-large mr-2 text-sky-400"></i>Dashboard Sections</h2>
+            <p class="text-slate-400 text-sm mb-4">Drag to reorder, or click a badge to toggle it off, the sections shown on the Admin Overview dashboard.</p>
+            <div id="dashboardSectionsList" class="space-y-2">
+                <%
+                var dashboardSectionLabels = { server_data: 'Server Data', container_health: 'Container Health', account_overview: 'Account Overview', stream_data: 'Stream Data', library_data: 'Library Data' };
+                var dashboardSectionsConfig;
+                try {
+                    dashboardSectionsConfig = JSON.parse(settings.dashboard_sections_config);
+                    if (!Array.isArray(dashboardSectionsConfig)) throw new Error('not an array');
+                } catch (e) {
+                    dashboardSectionsConfig = Object.keys(dashboardSectionLabels).map(function (key) { return { key: key, enabled: true }; });
+                }
+                %>
+                <% dashboardSectionsConfig.forEach(function (section) { %>
+                    <div class="flex items-center gap-2 bg-slate-900/40 rounded-xl px-3 py-2.5" data-dashboard-section-row="<%= section.key %>" draggable="true" ondragstart="dashboardSectionDragStart(event)" ondragover="dashboardSectionDragOver(event)" ondrop="dashboardSectionDrop(event)" ondragend="dashboardSectionDragEnd(event)">
+                        <i class="fas fa-grip-vertical text-slate-600 flex-shrink-0" title="Drag to reorder" style="cursor: grab;"></i>
+                        <span class="text-white text-sm font-semibold flex-1"><%= dashboardSectionLabels[section.key] || section.key %></span>
+                        <button type="button" onclick="toggleDashboardSectionEnabled(this)" data-enabled="<%= section.enabled !== false ? '1' : '0' %>" class="badge <%= section.enabled !== false ? 'badge-active' : 'badge-closed' %> text-[10px] px-3 py-1 cursor-pointer flex-shrink-0"><%= section.enabled !== false ? 'Enabled' : 'Disabled' %></button>
+                    </div>
+                <% }); %>
+            </div>
+        </div>
+
         <!-- Mail -->
         <div class="glass rounded-2xl sm:rounded-3xl p-5 sm:p-8 mb-8">
             <h2 class="text-lg font-bold text-white mb-1"><i class="fas fa-envelope mr-2 text-sky-400"></i>Mail (SMTP)</h2>
@@ -486,6 +511,64 @@
         }
 
         loadLibraryOrderList();
+
+        // ---------- Dashboard Sections ----------
+        let dashboardSectionDragState = null;
+
+        function persistDashboardSectionsConfig() {
+            const list = document.getElementById('dashboardSectionsList');
+            const config = Array.from(list.querySelectorAll('[data-dashboard-section-row]')).map(function (row) {
+                const btn = row.querySelector('[data-enabled]');
+                return { key: row.getAttribute('data-dashboard-section-row'), enabled: btn.getAttribute('data-enabled') === '1' };
+            });
+
+            fetch('/admin/settings/dashboard-sections', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'config=' + encodeURIComponent(JSON.stringify(config)),
+            }).then(function (res) { return res.json(); }).then(function (data) {
+                if (!data.ok) showToast('Could not save the new layout.', 'error');
+            }).catch(function () {
+                showToast('Could not reach the server to save the new layout.', 'error');
+            });
+        }
+
+        function toggleDashboardSectionEnabled(btn) {
+            const enabled = btn.getAttribute('data-enabled') === '1';
+            const newEnabled = !enabled;
+            btn.setAttribute('data-enabled', newEnabled ? '1' : '0');
+            btn.className = 'badge ' + (newEnabled ? 'badge-active' : 'badge-closed') + ' text-[10px] px-3 py-1 cursor-pointer flex-shrink-0';
+            btn.textContent = newEnabled ? 'Enabled' : 'Disabled';
+            persistDashboardSectionsConfig();
+        }
+
+        function dashboardSectionDragStart(event) {
+            dashboardSectionDragState = event.currentTarget;
+            event.currentTarget.classList.add('opacity-40');
+            event.dataTransfer.effectAllowed = 'move';
+            event.dataTransfer.setData('text/plain', ''); // some browsers require this for drag to initiate at all
+        }
+
+        function dashboardSectionDragOver(event) {
+            event.preventDefault(); // required for this row to be a valid drop target
+            if (!dashboardSectionDragState) return;
+            const row = event.currentTarget;
+            if (row === dashboardSectionDragState) return;
+            const rect = row.getBoundingClientRect();
+            const draggingDown = event.clientY > rect.top + rect.height / 2;
+            row.parentElement.insertBefore(dashboardSectionDragState, draggingDown ? row.nextSibling : row);
+        }
+
+        function dashboardSectionDrop(event) {
+            event.preventDefault();
+        }
+
+        function dashboardSectionDragEnd(event) {
+            event.currentTarget.classList.remove('opacity-40');
+            if (!dashboardSectionDragState) return;
+            dashboardSectionDragState = null;
+            persistDashboardSectionsConfig();
+        }
     </script>
 </body>
 </html>

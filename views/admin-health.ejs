@@ -216,6 +216,48 @@
         </div>
         <p id="containerSearchEmpty" class="hidden text-slate-500 text-sm mb-6">No containers match your search.</p>
 
+        <script>
+            // Restores the saved container status filter (All/Active/Inactive)
+            // right here, immediately after the pills and container rows are
+            // parsed - before the rest of the page (and any paint) continues.
+            // The full filter logic normally lives in the main <script>
+            // block at the bottom of the page, but running it there means
+            // the browser has already painted the server-rendered "All"
+            // default by the time it executes, causing a visible flash
+            // before switching to the real saved filter. This tiny,
+            // self-contained duplicate runs early enough to avoid that
+            // flash entirely; the later, full script re-applies the same
+            // state harmlessly once it initializes (idempotent, since both
+            // read from the same localStorage key).
+            (function () {
+                try {
+                    var saved = localStorage.getItem('kyberbox_container_status_filter');
+                    var filter = ['all', 'active', 'inactive'].includes(saved) ? saved : 'all';
+                    if (filter === 'all') return; // already correctly showing "All" by default - nothing to fix
+
+                    document.querySelectorAll('[data-filter-pill]').forEach(function (pill) {
+                        var active = pill.getAttribute('data-filter-pill') === filter;
+                        pill.className = 'px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer transition ' + (active ? 'bg-sky-500/20 text-sky-400' : 'text-slate-400 hover:text-white');
+                    });
+
+                    var visible = 0;
+                    document.querySelectorAll('[data-container-row]').forEach(function (row) {
+                        var isActive = row.getAttribute('data-container-active') === '1';
+                        var match = (filter === 'active' && isActive) || (filter === 'inactive' && !isActive);
+                        row.classList.toggle('hidden', !match);
+                        if (match) visible++;
+                    });
+
+                    var countEl = document.getElementById('containerVisibleCount');
+                    if (countEl) countEl.textContent = visible;
+                    var emptyEl = document.getElementById('containerSearchEmpty');
+                    if (emptyEl) emptyEl.classList.toggle('hidden', visible !== 0);
+                } catch (e) {
+                    // localStorage unavailable or malformed - leave the default "All" view, same fallback used elsewhere
+                }
+            })();
+        </script>
+
         <!-- Recent actions -->
         <h2 class="text-sm uppercase tracking-widest text-slate-500 font-bold mb-4">Recent Action Requests</h2>
         <div class="glass rounded-2xl overflow-x-auto">
