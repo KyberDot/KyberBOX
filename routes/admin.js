@@ -2183,15 +2183,15 @@ router.get('/admin/health/vpn-monitors/status', async (req, res) => {
 
   const statuses = {};
   for (const monitor of monitors) {
-    const { status, publicIp, publicCountry } = await getLiveVpnStatus(target, monitor);
-    statuses[monitor.id] = { status, publicIp, publicCountry };
+    const { status, publicIp, publicCountry, publicCity } = await getLiveVpnStatus(target, monitor);
+    statuses[monitor.id] = { status, publicIp, publicCountry, publicCity };
     // Keeps the main-list badge fresh without adding a history entry -
     // history stays reserved for the slower background poll so "last 30
     // polls" still spans a meaningful multi-hour window rather than just
     // the last several on-page refreshes.
     db.prepare(
-      `UPDATE admin_vpn_monitors SET last_status = ?, last_public_ip = COALESCE(?, last_public_ip), last_public_country = COALESCE(?, last_public_country), last_checked_at = datetime('now') WHERE id = ?`
-    ).run(status, publicIp, publicCountry, monitor.id);
+      `UPDATE admin_vpn_monitors SET last_status = ?, last_public_ip = COALESCE(?, last_public_ip), last_public_country = COALESCE(?, last_public_country), last_public_city = COALESCE(?, last_public_city), last_checked_at = datetime('now') WHERE id = ?`
+    ).run(status, publicIp, publicCountry, publicCity, monitor.id);
   }
 
   res.json({ ok: true, statuses });
@@ -2448,9 +2448,12 @@ router.post('/admin/health/vpn-monitors/:id/details', async (req, res) => {
   const listPublicCountry = (results.publicIp && results.publicIp.parsed && typeof results.publicIp.parsed.country === 'string')
     ? results.publicIp.parsed.country
     : null;
+  const listPublicCity = (results.publicIp && results.publicIp.parsed && typeof results.publicIp.parsed.city === 'string')
+    ? results.publicIp.parsed.city
+    : null;
   db.prepare(
-    `UPDATE admin_vpn_monitors SET last_status = ?, last_public_ip = COALESCE(?, last_public_ip), last_public_country = COALESCE(?, last_public_country), last_checked_at = datetime('now') WHERE id = ?`
-  ).run(listStatus, listPublicIp, listPublicCountry, monitor.id);
+    `UPDATE admin_vpn_monitors SET last_status = ?, last_public_ip = COALESCE(?, last_public_ip), last_public_country = COALESCE(?, last_public_country), last_public_city = COALESCE(?, last_public_city), last_checked_at = datetime('now') WHERE id = ?`
+  ).run(listStatus, listPublicIp, listPublicCountry, listPublicCity, monitor.id);
 
   res.json({
     ok: true,
@@ -2464,6 +2467,7 @@ router.post('/admin/health/vpn-monitors/:id/details', async (req, res) => {
     listStatus,
     listPublicIp,
     listPublicCountry,
+    listPublicCity,
   });
 });
 

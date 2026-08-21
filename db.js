@@ -392,6 +392,7 @@ CREATE TABLE IF NOT EXISTS admin_vpn_monitors (
   last_status TEXT, -- connected | paused | disconnected | unknown - from the most recent background poll, shown as a badge in the main VPN Monitor list without needing to open the details view
   last_public_ip TEXT, -- from the most recent background poll
   last_public_country TEXT, -- from the most recent background poll, shown alongside the IP in the main list
+  last_public_city TEXT, -- from the most recent background poll, shown alongside the country in the main list
   last_checked_at TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -602,6 +603,7 @@ ensureColumn('admin_health_containers', 'unhealthy_alert_sent_at', 'unhealthy_al
 ensureColumn('admin_vpn_monitors', 'last_status', 'last_status TEXT');
 ensureColumn('admin_vpn_monitors', 'last_public_ip', 'last_public_ip TEXT');
 ensureColumn('admin_vpn_monitors', 'last_public_country', 'last_public_country TEXT');
+ensureColumn('admin_vpn_monitors', 'last_public_city', 'last_public_city TEXT');
 ensureColumn('admin_vpn_monitors', 'last_checked_at', 'last_checked_at TEXT');
 if (ensureColumn('admin_vpn_monitors', 'sort_order', 'sort_order INTEGER NOT NULL DEFAULT 0')) {
   const existingMonitors = db.prepare('SELECT id FROM admin_vpn_monitors ORDER BY name ASC').all();

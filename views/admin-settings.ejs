@@ -233,12 +233,12 @@
                         <span class="min-w-0">
                             <span class="text-white font-semibold"><%= w.service_label %></span>
                             <span class="text-slate-500 ml-2 font-mono"><%= w.container_name %></span>
-                            <% if (w.last_status === 'connected') { %>
-                                <span class="badge badge-active ml-2">connected</span>
-                            <% } else if (w.last_status === 'failed') { %>
-                                <span class="badge badge-expired ml-2">failed</span>
+                            <% if (w.last_status === 'active') { %>
+                                <span class="badge badge-active ml-2">VPN Active</span>
+                            <% } else if (w.last_status === 'inactive') { %>
+                                <span class="badge badge-expired ml-2">VPN Inactive</span>
                             <% } else { %>
-                                <span class="badge badge-closed ml-2">unknown</span>
+                                <span class="badge badge-closed ml-2">VPN Unknown</span>
                             <% } %>
                         </span>
                         <form method="POST" action="/admin/settings/vpn-watch/<%= w.id %>/delete" data-ajax-form>

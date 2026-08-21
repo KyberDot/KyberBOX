@@ -451,10 +451,12 @@
                                 <div class="min-w-0 flex items-center gap-2">
                                     <i class="fas fa-grip-vertical text-slate-600 flex-shrink-0" title="Drag to reorder" style="cursor: grab;"></i>
                                     <div class="min-w-0 flex-1">
-                                        <p class="text-white text-sm font-semibold truncate"><%= v.name %></p>
-                                        <p class="text-slate-500 text-xs font-mono truncate"><%= v.url %></p>
-                                        <span id="vpn-badge-<%= v.id %>" class="badge <%= vpnStatusStyle[0] %> text-[10px] px-2 py-0.5 mt-1.5 inline-flex<%= v.last_status === 'connected' ? ' status-dot' : '' %>"><%= vpnStatusStyle[1] %></span>
-                                        <p id="vpn-ip-<%= v.id %>" class="text-slate-500 text-[11px] font-mono truncate mt-1<%= v.last_public_ip ? '' : ' hidden' %>"><i class="fas fa-globe mr-1"></i><%= v.last_public_ip || '' %><% if (v.last_public_country) { %><span class="text-slate-600"> · </span><%= v.last_public_country %><% } %></p>
+                                        <div class="flex items-center gap-2 min-w-0">
+                                            <p class="text-white text-sm font-semibold truncate min-w-0"><%= v.name %></p>
+                                            <span id="vpn-badge-<%= v.id %>" class="badge <%= vpnStatusStyle[0] %> text-[10px] px-2 py-0.5 flex-shrink-0<%= v.last_status === 'connected' ? ' status-dot' : '' %>"><%= vpnStatusStyle[1] %></span>
+                                        </div>
+                                        <p class="text-slate-500 text-xs font-mono truncate mt-0.5"><%= v.url %></p>
+                                        <p id="vpn-ip-<%= v.id %>" class="text-slate-500 text-[11px] font-mono truncate mt-1<%= v.last_public_ip ? '' : ' hidden' %>"><i class="fas fa-globe mr-1"></i><%= v.last_public_ip || '' %><% var vpnLocationParts = [v.last_public_city, v.last_public_country].filter(Boolean); %><% if (vpnLocationParts.length > 0) { %><span class="text-slate-600"> · </span><%= vpnLocationParts.join(', ') %><% } %></p>
                                     </div>
                                 </div>
                                 <div class="flex items-center gap-1.5 flex-shrink-0">
@@ -746,18 +748,19 @@
         };
         const VPN_LIST_BADGE_UNKNOWN = ['badge-closed', 'Unknown'];
 
-        function setVpnListBadge(monitorId, status, publicIp, publicCountry) {
+        function setVpnListBadge(monitorId, status, publicIp, publicCountry, publicCity) {
             const badge = document.getElementById('vpn-badge-' + monitorId);
             const ipEl = document.getElementById('vpn-ip-' + monitorId);
             if (badge) {
                 const style = VPN_LIST_BADGE_STYLES[status] || VPN_LIST_BADGE_UNKNOWN;
-                badge.className = 'badge ' + style[0] + ' text-[10px] px-2 py-0.5 mt-1.5 inline-flex' + (status === 'connected' ? ' status-dot' : '');
+                badge.className = 'badge ' + style[0] + ' text-[10px] px-2 py-0.5 flex-shrink-0' + (status === 'connected' ? ' status-dot' : '');
                 badge.textContent = style[1];
             }
             if (ipEl) {
                 if (publicIp) {
-                    const countryPart = publicCountry ? '<span class="text-slate-600"> · </span>' + publicCountry : '';
-                    ipEl.innerHTML = '<i class="fas fa-globe mr-1"></i>' + publicIp + countryPart;
+                    const location = [publicCity, publicCountry].filter(Boolean).join(', ');
+                    const locationPart = location ? '<span class="text-slate-600"> · </span>' + location : '';
+                    ipEl.innerHTML = '<i class="fas fa-globe mr-1"></i>' + publicIp + locationPart;
                     ipEl.classList.remove('hidden');
                 } else {
                     ipEl.classList.add('hidden');
@@ -771,7 +774,7 @@
                 const data = await res.json();
                 if (!data.ok) return;
                 Object.keys(data.statuses).forEach(function (monitorId) {
-                    setVpnListBadge(monitorId, data.statuses[monitorId].status, data.statuses[monitorId].publicIp, data.statuses[monitorId].publicCountry);
+                    setVpnListBadge(monitorId, data.statuses[monitorId].status, data.statuses[monitorId].publicIp, data.statuses[monitorId].publicCountry, data.statuses[monitorId].publicCity);
                 });
             } catch (e) {
                 // silent - same reasoning as refreshMountStatuses above
@@ -1846,7 +1849,7 @@
             // modal's own view - previously this stayed stale until the
             // next background poll or 30s refresh happened to fire.
             if (currentVpnMonitorId) {
-                setVpnListBadge(currentVpnMonitorId, data.listStatus, data.listPublicIp, data.listPublicCountry);
+                setVpnListBadge(currentVpnMonitorId, data.listStatus, data.listPublicIp, data.listPublicCountry, data.listPublicCity);
             }
         }
 

@@ -73,24 +73,26 @@ async function getLiveVpnStatus(target, monitor) {
 
   let publicIp = null;
   let publicCountry = null;
+  let publicCity = null;
   if (ipSegment.httpCode && /^2\d\d$/.test(ipSegment.httpCode)) {
     try {
       const parsed = JSON.parse(ipSegment.body);
       if (parsed && typeof parsed.public_ip === 'string') publicIp = parsed.public_ip;
       if (parsed && typeof parsed.country === 'string') publicCountry = parsed.country;
+      if (parsed && typeof parsed.city === 'string') publicCity = parsed.city;
     } catch (e) {
-      // couldn't parse - publicIp/publicCountry stay null, not a reason to fail the whole poll
+      // couldn't parse - publicIp/publicCountry/publicCity stay null, not a reason to fail the whole poll
     }
   }
 
-  return { status, publicIp, publicCountry };
+  return { status, publicIp, publicCountry, publicCity };
 }
 
-function recordHistory(monitorId, status, publicIp, publicCountry) {
+function recordHistory(monitorId, status, publicIp, publicCountry, publicCity) {
   db.prepare('INSERT INTO admin_vpn_monitor_history (monitor_id, status) VALUES (?, ?)').run(monitorId, status);
   db.prepare(
-    `UPDATE admin_vpn_monitors SET last_status = ?, last_public_ip = COALESCE(?, last_public_ip), last_public_country = COALESCE(?, last_public_country), last_checked_at = datetime('now') WHERE id = ?`
-  ).run(status, publicIp, publicCountry, monitorId);
+    `UPDATE admin_vpn_monitors SET last_status = ?, last_public_ip = COALESCE(?, last_public_ip), last_public_country = COALESCE(?, last_public_country), last_public_city = COALESCE(?, last_public_city), last_checked_at = datetime('now') WHERE id = ?`
+  ).run(status, publicIp, publicCountry, publicCity, monitorId);
 
   // Prune to the most recent HISTORY_LIMIT rows for this monitor - keeps
   // the table from growing unbounded, since this runs on every poll cycle
@@ -103,8 +105,8 @@ function recordHistory(monitorId, status, publicIp, publicCountry) {
 }
 
 async function pollOneMonitor(target, monitor) {
-  const { status, publicIp, publicCountry } = await getLiveVpnStatus(target, monitor);
-  recordHistory(monitor.id, status, publicIp, publicCountry);
+  const { status, publicIp, publicCountry, publicCity } = await getLiveVpnStatus(target, monitor);
+  recordHistory(monitor.id, status, publicIp, publicCountry, publicCity);
 }
 
 async function checkVpnMonitors() {
