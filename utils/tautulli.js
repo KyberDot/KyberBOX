@@ -178,7 +178,7 @@ async function getAllActivity(baseUrl, apiKey) {
 async function fetchPosterImage(baseUrl, apiKey, imgPath) {
   if (!baseUrl || !apiKey || !imgPath) return null;
 
-  const url = `${baseUrl.replace(/\/$/, '')}/pms_image_proxy?apikey=${encodeURIComponent(apiKey)}&img=${encodeURIComponent(imgPath)}&width=300&height=450&fallback=poster`;
+  const url = `${baseUrl.replace(/\/$/, '')}/api/v2?apikey=${encodeURIComponent(apiKey)}&cmd=pms_image_proxy&img=${encodeURIComponent(imgPath)}&width=300&height=450&fallback=poster`;
 
   try {
     const res = await fetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });

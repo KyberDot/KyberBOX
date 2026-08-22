@@ -540,7 +540,8 @@
                         up: ['badge-active', 'fa-circle-check', 'Online'],
                         starting: ['badge-suspended', 'fa-circle-notch fa-spin', 'Starting'],
                         unhealthy: ['badge-expired', 'fa-triangle-exclamation', 'Unhealthy'],
-                        down: ['badge-expired', 'fa-circle-xmark', 'Offline'],
+                        stopped: ['badge-stopped', 'fa-circle-stop', 'Stopped'],
+                        down: ['badge-expired', 'fa-ghost', 'Offline'],
                         unknown: ['badge-closed', 'fa-question', 'Unknown'],
                     };
                     const chosen = map[c.status] || map.unknown;
