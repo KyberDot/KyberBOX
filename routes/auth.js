@@ -201,6 +201,7 @@ router.post('/forgot-password', forgotPasswordLimiter, async (req, res) => {
   await sendMail({
     to: user.email,
     subject: 'Reset your password',
+    audience: 'user',
     bodyHtml: `
       <p>Hi ${user.name},</p>
       <p>We received a request to reset your password. This link expires in 30 minutes and can only be used once.</p>

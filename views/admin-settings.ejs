@@ -412,6 +412,17 @@
         <div class="glass rounded-2xl sm:rounded-3xl p-5 sm:p-8 mb-8">
             <h2 class="text-lg font-bold text-white mb-1"><i class="fas fa-envelope mr-2 text-sky-400"></i>Mail (SMTP)</h2>
             <p class="text-slate-400 text-sm mb-4">Used for client invites, password resets, ticket notifications, and maintenance-mode alerts.</p>
+
+            <div class="flex flex-wrap items-center gap-3 mb-2">
+                <button type="button" onclick="toggleEmailCategory(this, 'user')" data-enabled="<%= settings.user_emails_enabled === '1' ? '1' : '0' %>" class="badge <%= settings.user_emails_enabled === '1' ? 'badge-active' : 'badge-closed' %> text-[10px] px-3 py-1.5 cursor-pointer">
+                    <i class="fas fa-users mr-1"></i>User Emails: <%= settings.user_emails_enabled === '1' ? 'Enabled' : 'Disabled' %>
+                </button>
+                <button type="button" onclick="toggleEmailCategory(this, 'admin')" data-enabled="<%= settings.admin_emails_enabled === '1' ? '1' : '0' %>" class="badge <%= settings.admin_emails_enabled === '1' ? 'badge-active' : 'badge-closed' %> text-[10px] px-3 py-1.5 cursor-pointer">
+                    <i class="fas fa-user-shield mr-1"></i>Admin Emails: <%= settings.admin_emails_enabled === '1' ? 'Enabled' : 'Disabled' %>
+                </button>
+            </div>
+            <p class="text-slate-500 text-xs mb-5">Turning one off only stops emails in that category from sending - every background process (watchdogs, monitoring, expiry checks, etc) keeps running exactly as before. Turn it back on any time to resume.</p>
+
             <form method="POST" action="/admin/settings/mail" data-ajax-form class="grid md:grid-cols-2 gap-4">
                 <input type="text" name="smtp_host" class="input" placeholder="SMTP host (e.g. smtp.gmail.com)" value="<%= settings.smtp_host %>">
                 <input type="number" name="smtp_port" class="input" placeholder="Port (587)" value="<%= settings.smtp_port %>">
@@ -531,6 +542,26 @@
             }).catch(function () {
                 showToast('Could not reach the server to save the new layout.', 'error');
             });
+        }
+
+        async function toggleEmailCategory(btn, category) {
+            const enabled = btn.getAttribute('data-enabled') === '1';
+            const newEnabled = !enabled;
+            const label = category === 'user' ? 'User Emails' : 'Admin Emails';
+            const icon = category === 'user' ? 'fa-users' : 'fa-user-shield';
+            btn.setAttribute('data-enabled', newEnabled ? '1' : '0');
+            btn.className = 'badge ' + (newEnabled ? 'badge-active' : 'badge-closed') + ' text-[10px] px-3 py-1.5 cursor-pointer';
+            btn.innerHTML = '<i class="fas ' + icon + ' mr-1"></i>' + label + ': ' + (newEnabled ? 'Enabled' : 'Disabled');
+
+            try {
+                await fetch('/admin/settings/email-toggles', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: 'category=' + encodeURIComponent(category) + '&enabled=' + (newEnabled ? '1' : '0'),
+                });
+            } catch (e) {
+                showToast('Could not reach the server to save this setting.', 'error');
+            }
         }
 
         function toggleDashboardSectionEnabled(btn) {

@@ -41,6 +41,8 @@ function getAllSettings() {
     smtp_pass: getSetting('smtp_pass', ''), // decrypted value, for internal use only
     smtp_from_name: getSetting('smtp_from_name', 'KyberBOX'),
     smtp_from_email: getSetting('smtp_from_email', ''),
+    user_emails_enabled: getSetting('user_emails_enabled', '1'),
+    admin_emails_enabled: getSetting('admin_emails_enabled', '1'),
     compose_path: getSetting('compose_path', ''),
     tautulli_url: getSetting('tautulli_url', ''),
     tautulli_api_key: getSetting('tautulli_api_key', ''), // decrypted value, for internal use only

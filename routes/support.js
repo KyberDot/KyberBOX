@@ -18,6 +18,7 @@ async function notifyAdminsOfTicket(req, { id, subject }, message, isNew) {
   await sendMail({
     to: recipients.join(','),
     subject: `${isNew ? 'New ticket' : 'Ticket reply'}: ${subject}`,
+    audience: 'admin',
     bodyHtml: `
       <p>${req.user.name} (${req.user.email}) ${isNew ? 'opened a new ticket' : 'replied to a ticket'} on ${siteName}:</p>
       <p style="background:#0b1220;border-radius:10px;padding:16px;white-space:pre-wrap;">${message}</p>

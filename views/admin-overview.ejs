@@ -83,12 +83,12 @@
                     <p class="text-2xl sm:text-3xl font-extrabold text-amber-400" data-health-count="unhealthy">—</p>
                 </div>
                 <div class="glass rounded-2xl p-5 sm:p-6">
-                    <p class="text-slate-500 text-xs uppercase tracking-widest font-semibold mb-2"><i class="fas fa-circle-xmark text-red-400 mr-1"></i>Offline</p>
-                    <p class="text-2xl sm:text-3xl font-extrabold text-red-400" data-health-count="down">—</p>
+                    <p class="text-slate-500 text-xs uppercase tracking-widest font-semibold mb-2"><i class="fas fa-circle-stop text-slate-400 mr-1"></i>Stopped</p>
+                    <p class="text-2xl sm:text-3xl font-extrabold text-slate-400" data-health-count="stopped">—</p>
                 </div>
                 <div class="glass rounded-2xl p-5 sm:p-6">
-                    <p class="text-slate-500 text-xs uppercase tracking-widest font-semibold mb-2"><i class="fas fa-question text-slate-500 mr-1"></i>Unknown</p>
-                    <p class="text-2xl sm:text-3xl font-extrabold text-slate-400" data-health-count="unknown">—</p>
+                    <p class="text-slate-500 text-xs uppercase tracking-widest font-semibold mb-2"><i class="fas fa-ghost text-red-400 mr-1"></i>Offline</p>
+                    <p class="text-2xl sm:text-3xl font-extrabold text-red-400" data-health-count="offline">—</p>
                 </div>
             </div>
         <% } %>
@@ -315,11 +315,11 @@
                 const data = await res.json();
                 if (!data.ok) return;
 
-                const tally = { up: 0, unhealthy: 0, down: 0, unknown: 0 };
+                const tally = { up: 0, unhealthy: 0, stopped: 0, offline: 0 };
                 data.containers.forEach(function (c) {
-                    if (c.status === 'starting') { tally.unknown++; return; } // rare transient state, folded in
+                    if (c.status === 'starting') { tally.offline++; return; } // rare transient state, folded in
                     if (tally.hasOwnProperty(c.status)) tally[c.status]++;
-                    else tally.unknown++;
+                    else tally.offline++; // covers 'down' and genuinely unknown (e.g. no SSH configured)
                 });
 
                 Object.keys(tally).forEach(function (key) {

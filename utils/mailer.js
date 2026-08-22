@@ -37,8 +37,21 @@ function wrapHtml(siteName, bodyHtml) {
  * (ticket creation, invites, etc.) can proceed even if mail isn't configured
  * or delivery fails.
  */
-async function sendMail({ to, subject, bodyHtml }) {
+async function sendMail({ to, subject, bodyHtml, audience = 'user', bypassToggle = false }) {
   const settings = getAllSettings();
+
+  // Lets an admin temporarily silence one category of email (or both)
+  // without touching anything else - all the background watchdogs,
+  // renewal checks, etc keep running exactly as before; this only ever
+  // affects whether the resulting email actually goes out.
+  if (!bypassToggle) {
+    if (audience === 'user' && settings.user_emails_enabled === '0') {
+      return { sent: false, reason: 'User emails are currently disabled (Admin -> Settings -> Mail).', skippedByToggle: true };
+    }
+    if (audience === 'admin' && settings.admin_emails_enabled === '0') {
+      return { sent: false, reason: 'Admin emails are currently disabled (Admin -> Settings -> Mail).', skippedByToggle: true };
+    }
+  }
 
   if (!isConfigured(settings)) {
     return { sent: false, reason: 'SMTP is not configured yet (Admin -> Settings -> Mail).' };
@@ -83,6 +96,7 @@ async function notifyResetStarted(recipients, withUpdate = true) {
       sendMail({
         to: person.email,
         subject,
+        audience: 'user',
         bodyHtml: `
           <p>Hi ${person.name},</p>
           <p>${introLine} Services may be briefly interrupted while this completes.</p>
@@ -104,6 +118,7 @@ async function notifyAutoResetStarted(recipients, serviceLabel, withUpdate = tru
       sendMail({
         to: person.email,
         subject: 'Automatic Server Reset In Progress',
+        audience: 'user',
         bodyHtml: `
           <p>Hi ${person.name},</p>
           <p>Our monitoring detected an issue ${serviceMention} and is automatically restarting the affected systems to fix it. Services may be briefly interrupted while this completes.</p>
@@ -125,6 +140,7 @@ async function notifyAdminStuckMountAutoReset(admins, serviceLabel, withUpdate =
       sendMail({
         to: admin.email,
         subject: 'Stuck-Mount Watchdog: Automatic Reset In Progress',
+        audience: 'admin',
         bodyHtml: `
           <p>Hi ${admin.name},</p>
           <p>Stuck-Mount detected an issue with ${serviceMention} and is automatically restarting the affected systems to fix it. Services may be briefly interrupted while this completes.</p>
@@ -143,6 +159,7 @@ async function notifyAdminVpnInactive(admins, serviceLabel, containerName) {
       sendMail({
         to: admin.email,
         subject: `VPN Guard: ${serviceLabel} is inactive`,
+        audience: 'admin',
         bodyHtml: `
           <p>Hi ${admin.name},</p>
           <p><strong>${serviceLabel}</strong> (container: <code>${containerName}</code>) has been running for more than 2 minutes without a confirmed VPN connection - either it reported a failure, or no confirmation could be found at all.</p>
@@ -170,6 +187,7 @@ async function notifyAdminContainersUnhealthy(admins, items) {
       sendMail({
         to: admin.email,
         subject,
+        audience: 'admin',
         bodyHtml: `
           <p>Hi ${admin.name},</p>
           ${intro}
@@ -190,6 +208,7 @@ async function notifyAdminProviderExpiring(admins, provider, daysLeft) {
       sendMail({
         to: admin.email,
         subject: `${provider.name} ${dueText}`,
+        audience: 'admin',
         bodyHtml: `
           <p>Hi ${admin.name},</p>
           <p><strong>${provider.name}</strong> (${provider.group_label}) ${dueText}${provider.tracking_value ? ` on <strong>${provider.tracking_value}</strong>` : ''}.</p>

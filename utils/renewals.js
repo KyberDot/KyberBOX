@@ -112,6 +112,7 @@ async function applyExpiryWarnings() {
       await sendMail({
         to: sub.email,
         subject: `Your ${siteName} subscription expires in ${daysLeft} ${dayWord}`,
+        audience: 'user',
         bodyHtml: `
           <p>Hi ${sub.name},</p>
           <p>Your <strong>${sub.plan_name}</strong> subscription is due to expire in <strong>${daysLeft} ${dayWord}</strong>.</p>

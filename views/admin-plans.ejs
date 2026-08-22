@@ -333,6 +333,21 @@
                         </details>
                     <% } %>
 
+                    <% if (plan.service === 'plex' || plan.service === 'multiple') { %>
+                        <details data-ajax-key="plan-<%= plan.id %>-libraries" ontoggle="if (this.open) loadPlanLibraries(<%= plan.id %>)">
+                            <summary class="cursor-pointer text-sky-400 text-xs font-semibold uppercase tracking-wide">Plex Libraries (shown to subscribers)</summary>
+                            <p class="text-slate-500 text-xs mt-2 mb-3">Choose which libraries show an item count on this plan's dashboard card, and drag to reorder them.</p>
+
+                            <p class="text-[10px] uppercase tracking-wide text-slate-600 font-semibold mb-1.5">Assigned</p>
+                            <div id="plan-<%= plan.id %>-libraries-assigned" class="space-y-1.5 mb-4">
+                                <p class="text-slate-500 text-xs"><i class="fas fa-circle-notch fa-spin mr-2"></i>Loading…</p>
+                            </div>
+
+                            <p class="text-[10px] uppercase tracking-wide text-slate-600 font-semibold mb-1.5">Available</p>
+                            <div id="plan-<%= plan.id %>-libraries-available" class="space-y-1.5"></div>
+                        </details>
+                    <% } %>
+
                     <details data-ajax-key="plan-<%= plan.id %>-containers">
                         <summary class="cursor-pointer text-sky-400 text-xs font-semibold uppercase tracking-wide">Container Health (shown to subscribers)</summary>
                         <div class="mt-3 space-y-2 mb-3">
@@ -484,6 +499,124 @@
 
         tickRunTimers();
         setInterval(tickRunTimers, 1000);
+
+        // ---------- Plan Libraries ----------
+        const PLAN_LIBRARY_ICONS = { movie: 'fa-film', show: 'fa-tv' };
+        let planLibraryDragState = null;
+
+        async function loadPlanLibraries(planId) {
+            const assignedEl = document.getElementById('plan-' + planId + '-libraries-assigned');
+            const availableEl = document.getElementById('plan-' + planId + '-libraries-available');
+            if (!assignedEl || !availableEl) return;
+
+            try {
+                const res = await fetch('/admin/plans/' + planId + '/libraries');
+                const data = await res.json();
+
+                if (!data.ok) {
+                    assignedEl.innerHTML = '<p class="text-red-400 text-xs">' + (data.message || 'Could not load libraries - check Tautulli is connected in Settings.') + '</p>';
+                    availableEl.innerHTML = '';
+                    return;
+                }
+
+                if (data.assigned.length === 0) {
+                    assignedEl.innerHTML = '<p class="text-slate-600 text-xs">None assigned yet.</p>';
+                } else {
+                    assignedEl.innerHTML = data.assigned.map(function (a) {
+                        const icon = a.library ? (PLAN_LIBRARY_ICONS[a.library.type] || 'fa-photo-film') : 'fa-triangle-exclamation';
+                        const name = a.library ? String(a.library.name).replace(/</g, '&lt;') : 'Library no longer found in Tautulli';
+                        const count = a.library ? a.library.count.toLocaleString() : '';
+                        return '<div class="flex items-center gap-2 bg-slate-900/40 rounded-lg px-2.5 py-2" data-plan-library-row="' + a.id + '" draggable="true" ondragstart="planLibraryDragStart(event, ' + planId + ')" ondragover="planLibraryDragOver(event)" ondrop="planLibraryDrop(event)" ondragend="planLibraryDragEnd(event, ' + planId + ')">'
+                            + '<i class="fas fa-grip-vertical text-slate-600 text-xs flex-shrink-0" style="cursor: grab;"></i>'
+                            + '<i class="fas ' + icon + ' text-sky-400 text-xs flex-shrink-0"></i>'
+                            + '<span class="text-white text-xs truncate flex-1">' + name + '</span>'
+                            + (count ? '<span class="text-slate-500 text-[11px] font-mono flex-shrink-0">' + count + '</span>' : '')
+                            + '<button type="button" onclick="removePlanLibrary(' + planId + ', ' + a.id + ')" class="text-red-400 hover:text-red-300 text-xs flex-shrink-0 px-1"><i class="fas fa-xmark"></i></button>'
+                            + '</div>';
+                    }).join('');
+                }
+
+                if (data.available.length === 0) {
+                    availableEl.innerHTML = '<p class="text-slate-600 text-xs">All libraries are already assigned.</p>';
+                } else {
+                    availableEl.innerHTML = data.available.map(function (lib) {
+                        const icon = PLAN_LIBRARY_ICONS[lib.type] || 'fa-photo-film';
+                        const name = String(lib.name).replace(/</g, '&lt;');
+                        return '<button type="button" onclick="addPlanLibrary(' + planId + ', \'' + lib.sectionId + '\')" class="flex items-center gap-2 bg-slate-900/20 hover:bg-slate-900/40 rounded-lg px-2.5 py-2 w-full text-left transition">'
+                            + '<i class="fas ' + icon + ' text-slate-500 text-xs flex-shrink-0"></i>'
+                            + '<span class="text-slate-300 text-xs truncate flex-1">' + name + '</span>'
+                            + '<span class="text-slate-600 text-[11px] font-mono flex-shrink-0">' + lib.count.toLocaleString() + '</span>'
+                            + '<i class="fas fa-plus text-sky-400 text-xs flex-shrink-0"></i>'
+                            + '</button>';
+                    }).join('');
+                }
+            } catch (e) {
+                assignedEl.innerHTML = '<p class="text-red-400 text-xs">Could not reach the server.</p>';
+                availableEl.innerHTML = '';
+            }
+        }
+
+        async function addPlanLibrary(planId, sectionId) {
+            try {
+                await fetch('/admin/plans/' + planId + '/libraries', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: 'section_id=' + encodeURIComponent(sectionId),
+                });
+                loadPlanLibraries(planId);
+            } catch (e) {
+                showToast('Could not reach the server to add this library.', 'error');
+            }
+        }
+
+        async function removePlanLibrary(planId, libraryId) {
+            try {
+                await fetch('/admin/plans/' + planId + '/libraries/' + libraryId + '/delete', { method: 'POST' });
+                loadPlanLibraries(planId);
+            } catch (e) {
+                showToast('Could not reach the server to remove this library.', 'error');
+            }
+        }
+
+        function planLibraryDragStart(event, planId) {
+            planLibraryDragState = { row: event.currentTarget, planId };
+            event.currentTarget.classList.add('opacity-40');
+            event.dataTransfer.effectAllowed = 'move';
+            event.dataTransfer.setData('text/plain', '');
+        }
+
+        function planLibraryDragOver(event) {
+            event.preventDefault();
+            if (!planLibraryDragState) return;
+            const row = event.currentTarget;
+            if (row === planLibraryDragState.row) return;
+            const rect = row.getBoundingClientRect();
+            const draggingDown = event.clientY > rect.top + rect.height / 2;
+            row.parentElement.insertBefore(planLibraryDragState.row, draggingDown ? row.nextSibling : row);
+        }
+
+        function planLibraryDrop(event) {
+            event.preventDefault();
+        }
+
+        async function planLibraryDragEnd(event, planId) {
+            event.currentTarget.classList.remove('opacity-40');
+            if (!planLibraryDragState) return;
+            planLibraryDragState = null;
+
+            const container = document.getElementById('plan-' + planId + '-libraries-assigned');
+            const ids = Array.from(container.querySelectorAll('[data-plan-library-row]')).map(function (el) { return el.getAttribute('data-plan-library-row'); });
+
+            try {
+                await fetch('/admin/plans/' + planId + '/libraries/reorder', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: ids.map(function (id) { return 'ids=' + encodeURIComponent(id); }).join('&'),
+                });
+            } catch (e) {
+                showToast('Could not reach the server to save the new order.', 'error');
+            }
+        }
     </script>
 </body>
 </html>

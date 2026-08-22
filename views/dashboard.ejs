@@ -137,6 +137,15 @@
                         </div>
                     <% } %>
 
+                    <% if (pv.hasLibraries) { %>
+                        <div class="mb-6" data-plan-id="<%= pv.plan.id %>" data-library-counts>
+                            <p class="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-3">Library Data</p>
+                            <div class="flex flex-wrap gap-2" data-library-counts-list>
+                                <p class="text-slate-500 text-xs"><i class="fas fa-circle-notch fa-spin mr-2"></i>Loading…</p>
+                            </div>
+                        </div>
+                    <% } %>
+
                     <% if (pv.plan.service === 'minecraft') { %>
                         <div class="mb-6 flex">
                             <button type="button" onclick="requestSeedReset(<%= pv.plan.id %>, <%= pv.hasPendingSeedReset %>)" class="px-6 py-3 rounded-2xl text-sm font-bold w-full sm:w-auto flex items-center justify-center bg-gradient-to-r from-violet-500/20 to-fuchsia-500/20 border border-violet-500/40 text-violet-300 hover:from-violet-500/30 hover:to-fuchsia-500/30 hover:border-violet-400/60 hover:text-violet-200 transition-colors">
@@ -246,6 +255,15 @@
                                                     <span class="badge badge-suspended" data-status-pill><i class="fas fa-circle-notch fa-spin"></i> checking</span>
                                                 </div>
                                             <% }); %>
+                                        </div>
+                                    </div>
+                                <% } %>
+
+                                <% if (extra.hasLibraries) { %>
+                                    <div class="mb-6" data-plan-id="<%= extra.plan.id %>" data-library-counts>
+                                        <p class="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-3">Library Data</p>
+                                        <div class="flex flex-wrap gap-2" data-library-counts-list>
+                                            <p class="text-slate-500 text-xs"><i class="fas fa-circle-notch fa-spin mr-2"></i>Loading…</p>
                                         </div>
                                     </div>
                                 <% } %>
@@ -536,6 +554,40 @@
 
         document.querySelectorAll('[data-health-container]').forEach(function(el) {
             refreshPlanHealth(el);
+        });
+
+        const LIBRARY_COUNT_ICONS = { movie: 'fa-film', show: 'fa-tv' };
+
+        async function refreshPlanLibraries(container) {
+            const planId = container.getAttribute('data-plan-id');
+            const list = container.querySelector('[data-library-counts-list]');
+            if (!planId || !list) return;
+
+            try {
+                const res = await fetch('/dashboard/plans/' + planId + '/libraries');
+                const data = await res.json();
+
+                if (!data.ok || data.libraries.length === 0) {
+                    container.remove(); // nothing to show - don't leave an empty "Library Data" heading with no content under it
+                    return;
+                }
+
+                list.innerHTML = data.libraries.map(function (lib) {
+                    const icon = LIBRARY_COUNT_ICONS[lib.type] || 'fa-photo-film';
+                    const name = String(lib.name).replace(/</g, '&lt;');
+                    return '<span class="inline-flex items-center gap-1.5 bg-slate-900/40 rounded-lg px-3 py-1.5 text-xs">'
+                        + '<i class="fas ' + icon + ' text-sky-400"></i>'
+                        + '<span class="text-slate-300">' + name + '</span>'
+                        + '<span class="text-slate-500 font-mono">' + lib.count.toLocaleString() + '</span>'
+                        + '</span>';
+                }).join('');
+            } catch (e) {
+                container.remove(); // same reasoning - a broken/empty section looks worse than no section at all
+            }
+        }
+
+        document.querySelectorAll('[data-library-counts]').forEach(function(el) {
+            refreshPlanLibraries(el);
         });
 
         document.addEventListener('click', async function (e) {

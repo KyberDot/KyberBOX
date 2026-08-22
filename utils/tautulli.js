@@ -182,12 +182,23 @@ async function fetchPosterImage(baseUrl, apiKey, imgPath) {
 
   try {
     const res = await fetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      // Surfaced so a real failure (bad auth, Tautulli rejecting the image
+      // path, etc) is actually visible somewhere instead of just showing
+      // up as "no poster" with zero diagnostic trail.
+      const body = await res.text().catch(() => '');
+      console.error(`[tautulli] poster fetch failed for "${imgPath}": HTTP ${res.status}${body ? ' - ' + body.slice(0, 300) : ''}`);
+      return null;
+    }
     const contentType = res.headers.get('content-type') || 'image/jpeg';
     const buffer = Buffer.from(await res.arrayBuffer());
-    if (!contentType.startsWith('image/')) return null;
+    if (!contentType.startsWith('image/')) {
+      console.error(`[tautulli] poster fetch for "${imgPath}" returned non-image content-type: ${contentType}`);
+      return null;
+    }
     return { buffer, contentType };
-  } catch (_) {
+  } catch (err) {
+    console.error(`[tautulli] poster fetch error for "${imgPath}": ${err.message}`);
     return null;
   }
 }

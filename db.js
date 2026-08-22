@@ -294,6 +294,20 @@ CREATE TABLE IF NOT EXISTS plan_containers (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Which Tautulli libraries are assigned to a Plex-service plan, and in
+-- what order to show them on the subscriber's dashboard card. Only the
+-- section_id is stored (Tautulli's own stable identifier) - name, type,
+-- and item count are always fetched live when displaying, the same
+-- approach the admin Library Data widget already uses, so counts stay
+-- accurate as libraries grow or shrink rather than going stale.
+CREATE TABLE IF NOT EXISTS plan_libraries (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  plan_id INTEGER NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+  section_id TEXT NOT NULL,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS subscriptions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,

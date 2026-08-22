@@ -319,6 +319,7 @@ router.post('/admin/plans/:id/maintenance', async (req, res) => {
         sendMail({
           to: sub.email,
           subject: `${label} - Scheduled Maintenance`,
+          audience: 'user',
           bodyHtml: `
             <p>Hi ${sub.name},</p>
             <p><strong>${label}</strong> is currently undergoing scheduled maintenance on ${siteName}.</p>
@@ -534,6 +535,64 @@ router.post('/admin/plans/:id/containers/:containerId/move', (req, res) => {
   update.run(current.sort_order, swap.id);
 
   res.redirect('/admin/plans');
+});
+
+// ---------- Plan Libraries (Plex-service plans) ----------
+
+router.get('/admin/plans/:id/libraries', async (req, res) => {
+  const settings = getAllSettings();
+  const result = await getLibraries(settings.tautulli_url, settings.tautulli_api_key);
+
+  const assigned = db.prepare('SELECT * FROM plan_libraries WHERE plan_id = ? ORDER BY sort_order ASC, id ASC').all(req.params.id);
+  const assignedSectionIds = new Set(assigned.map((a) => a.section_id));
+
+  if (!result.ok) {
+    return res.json({ ok: false, message: result.message, assigned: [] });
+  }
+
+  const libraryById = new Map(result.libraries.map((lib) => [lib.sectionId, lib]));
+  const assignedWithDetails = assigned.map((a) => ({
+    id: a.id,
+    sectionId: a.section_id,
+    library: libraryById.get(a.section_id) || null, // null if the library was since removed from Plex/Tautulli
+  }));
+
+  res.json({
+    ok: true,
+    available: result.libraries.filter((lib) => !assignedSectionIds.has(lib.sectionId)),
+    assigned: assignedWithDetails,
+  });
+});
+
+router.post('/admin/plans/:id/libraries', (req, res) => {
+  const sectionId = String(req.body.section_id || '').trim();
+  if (!sectionId) return res.status(400).json({ ok: false, message: 'No library specified.' });
+
+  const existing = db.prepare('SELECT id FROM plan_libraries WHERE plan_id = ? AND section_id = ?').get(req.params.id, sectionId);
+  if (existing) return res.json({ ok: true }); // already assigned - not an error, just a no-op
+
+  const maxOrder = db.prepare('SELECT MAX(sort_order) AS m FROM plan_libraries WHERE plan_id = ?').get(req.params.id).m || 0;
+  db.prepare('INSERT INTO plan_libraries (plan_id, section_id, sort_order) VALUES (?, ?, ?)').run(req.params.id, sectionId, maxOrder + 1);
+
+  res.json({ ok: true });
+});
+
+router.post('/admin/plans/:id/libraries/:libraryId/delete', (req, res) => {
+  db.prepare('DELETE FROM plan_libraries WHERE id = ? AND plan_id = ?').run(req.params.libraryId, req.params.id);
+  res.json({ ok: true });
+});
+
+router.post('/admin/plans/:id/libraries/reorder', (req, res) => {
+  const ids = Array.isArray(req.body.ids) ? req.body.ids : [req.body.ids].filter(Boolean);
+  if (ids.length === 0) return res.status(400).json({ ok: false, message: 'No order given.' });
+
+  const update = db.prepare('UPDATE plan_libraries SET sort_order = ? WHERE id = ? AND plan_id = ?');
+  const reorderTx = db.transaction((idList) => {
+    idList.forEach((id, index) => update.run(index, id, req.params.id));
+  });
+  reorderTx(ids);
+
+  res.json({ ok: true });
 });
 
 // ---------- Minecraft Death Counter ----------
@@ -1185,6 +1244,7 @@ router.post('/admin/users/invite', async (req, res) => {
     const emailResult = await sendMail({
       to: email,
       subject: `Your ${siteName} account is ready`,
+      audience: 'user',
       bodyHtml: `
         <p>Hi ${name},</p>
         <p>An account has been created for you on ${siteName}. Here are your sign-in details:</p>
@@ -1264,6 +1324,7 @@ router.post('/admin/users/:id/reset-password', async (req, res) => {
   const emailResult = await sendMail({
     to: user.email,
     subject: `Your ${siteName} password has been reset`,
+    audience: 'user',
     bodyHtml: `
       <p>Hi ${user.name},</p>
       <p>An admin has reset your password. Here's your new temporary password:</p>
@@ -1469,6 +1530,15 @@ router.post('/admin/settings/dashboard-sections', (req, res) => {
   res.json({ ok: true });
 });
 
+router.post('/admin/settings/email-toggles', (req, res) => {
+  const category = req.body.category === 'admin' ? 'admin' : (req.body.category === 'user' ? 'user' : null);
+  if (!category) return res.status(400).json({ ok: false, message: 'Invalid category.' });
+
+  const enabled = req.body.enabled === '1' ? '1' : '0';
+  setSetting(category === 'user' ? 'user_emails_enabled' : 'admin_emails_enabled', enabled);
+  res.json({ ok: true });
+});
+
 router.get('/admin/overview/library-data/:sectionId/media', async (req, res) => {
   const settings = getAllSettings();
   const page = Math.max(0, parseInt(req.query.page, 10) || 0);
@@ -1545,6 +1615,7 @@ router.post('/admin/tickets/:id/reply', async (req, res) => {
     await sendMail({
       to: ticket.user_email,
       subject: `Re: ${ticket.subject}`,
+      audience: 'user',
       bodyHtml: `
         <p>Hi ${ticket.user_name},</p>
         <p>Support replied to your ticket "<strong>${ticket.subject}</strong>":</p>
@@ -1598,6 +1669,7 @@ router.post('/admin/admins/invite', requireFullAdmin, async (req, res) => {
     const emailResult = await sendMail({
       to: email,
       subject: `You've been added as an admin on ${siteName}`,
+      audience: 'admin',
       bodyHtml: `
         <p>Hi ${name},</p>
         <p>You've been given admin access on ${siteName}${accessMode === 'limited' ? ` (limited to: ${pages.map((p) => p.charAt(0).toUpperCase() + p.slice(1)).join(', ') || 'nothing yet - ask for access to be granted'})` : ''}. Here are your sign-in details:</p>
@@ -1702,6 +1774,7 @@ router.post('/admin/settings/test-email', async (req, res) => {
   const result = await sendMail({
     to: req.user.email,
     subject: 'Test email from your portal',
+    bypassToggle: true,
     bodyHtml: `<p>If you're reading this, your SMTP settings are working correctly.</p>`,
   });
   res.render('admin-settings', { ...loadSettingsPageData(), saved: null, testResult: result, brandingError: null });
@@ -2679,11 +2752,11 @@ router.post('/admin/health/containers/:id/docker-update', async (req, res) => {
   // also starts (or even recreates) anything this container lists under
   // depends_on in the compose file - a shared VPN container, a database,
   // another *arr app, whatever it happens to be linked to - even though
-  // only this one container was actually selected. stop/pull don't have
+  // only this one container was actually selected. down/pull don't have
   // this cascading behavior, only up does.
   const command = withUpdate
-    ? `cd '${safePath}' && docker compose stop '${name}' && docker compose pull '${name}' && docker compose up -d --no-deps '${name}'`
-    : `cd '${safePath}' && docker compose stop '${name}' && docker compose up -d --no-deps '${name}'`;
+    ? `cd '${safePath}' && docker compose down '${name}' && docker compose pull '${name}' && docker compose up -d --no-deps '${name}'`
+    : `cd '${safePath}' && docker compose down '${name}' && docker compose up -d --no-deps '${name}'`;
   markContainerActionStart(container.id);
   let result;
   try {

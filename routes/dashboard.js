@@ -3,7 +3,7 @@ const db = require('../db');
 const { runCommand, getContainerStatuses } = require('../utils/ssh');
 const { startReset, endReset, getResetState } = require('../utils/resetLock');
 const { notifyResetStarted, sendMail } = require('../utils/mailer');
-const { getWatchHistory, getNowWatching, getGeoLookup, fetchPosterImage } = require('../utils/tautulli');
+const { getWatchHistory, getNowWatching, getGeoLookup, fetchPosterImage, getLibraries } = require('../utils/tautulli');
 const { getAllSettings, getSiteBaseUrl } = require('../utils/settings');
 const { formatUK } = require('../utils/time');
 const { resetIfLinkedAction, computeElapsedSeconds } = require('../utils/runTimer');
@@ -67,6 +67,10 @@ function buildPlanView(subscription, userId) {
     return { ...action, nextAllowedAt, disabledForUser: !effectivelyEnabled };
   });
 
+  const libraryCount = (plan.service === 'plex' || plan.service === 'multiple')
+    ? db.prepare('SELECT COUNT(*) c FROM plan_libraries WHERE plan_id = ?').get(plan.id).c
+    : 0;
+
   return {
     subscription,
     plan,
@@ -76,6 +80,7 @@ function buildPlanView(subscription, userId) {
     hasPendingSeedReset,
     deathCounterPlayers,
     runTimerElapsedSeconds,
+    hasLibraries: libraryCount > 0,
   };
 }
 
@@ -164,6 +169,27 @@ router.get('/dashboard/plans/:planId/health', async (req, res) => {
       status: statuses[c.container_name] || 'unknown',
     })),
   });
+});
+
+router.get('/dashboard/plans/:planId/libraries', async (req, res) => {
+  const subscription = db
+    .prepare("SELECT * FROM subscriptions WHERE user_id = ? AND plan_id = ? AND status = 'active'")
+    .get(req.user.id, req.params.planId);
+  if (!subscription) return res.status(403).json({ ok: false, message: 'No active subscription to this plan.' });
+
+  const assigned = db.prepare('SELECT * FROM plan_libraries WHERE plan_id = ? ORDER BY sort_order ASC, id ASC').all(req.params.planId);
+  if (assigned.length === 0) return res.json({ ok: true, libraries: [] });
+
+  const settings = getAllSettings();
+  const result = await getLibraries(settings.tautulli_url, settings.tautulli_api_key);
+  if (!result.ok) return res.json({ ok: false, message: result.message, libraries: [] });
+
+  const libraryById = new Map(result.libraries.map((lib) => [lib.sectionId, lib]));
+  const libraries = assigned
+    .map((a) => libraryById.get(a.section_id))
+    .filter(Boolean); // skips any assigned library that's since been removed from Plex/Tautulli entirely, rather than showing a broken entry
+
+  res.json({ ok: true, libraries });
 });
 
 router.post('/dashboard/actions/:actionId/run', async (req, res) => {
@@ -467,6 +493,7 @@ router.post('/dashboard/plans/:planId/request-seed-reset', async (req, res) => {
     await sendMail({
       to: recipients.join(','),
       subject: `New ticket: ${subject}`,
+      audience: 'admin',
       bodyHtml: `
         <p>${req.user.name} (${req.user.email}) requested a world seed reset on ${siteName}:</p>
         <p style="background:#0b1220;border-radius:10px;padding:16px;white-space:pre-wrap;">${message}</p>
