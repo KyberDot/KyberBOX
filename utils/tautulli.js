@@ -2,6 +2,8 @@
 // Uses Node's built-in fetch (Node 18+) - no extra dependency needed.
 
 const REQUEST_TIMEOUT_MS = 10000;
+const LIBRARIES_CACHE_TTL_MS = 60000; // library counts don't change second-to-second, so a short cache here makes every load after the first one instant
+let librariesCache = null; // { key, expiresAt, result }
 
 /**
  * Fetches one page of watch history for one Plex user (filtered
@@ -94,10 +96,14 @@ function mapSession(s) {
     ipAddress: s.ip_address_public || s.ip_address || null,
     // The raw internal Plex image path - never send this (or the API
     // key) to the browser directly; the caller should route it through
-    // our own server-side poster proxy instead. Episode-level "thumb"
-    // is frequently empty in Tautulli's activity data, so fall back to
-    // the season/show artwork rather than showing nothing.
-    posterPath: s.thumb || s.parent_thumb || s.grandparent_thumb || null,
+    // our own server-side poster proxy instead. For TV episodes, the
+    // show's own poster (grandparent_thumb) is shown rather than the
+    // episode-specific thumbnail, falling back through season/episode
+    // art if the show poster is somehow missing. Movies and other media
+    // types have no show/season concept, so their own thumb is used as-is.
+    posterPath: (s.media_type === 'episode'
+      ? (s.grandparent_thumb || s.parent_thumb || s.thumb)
+      : s.thumb) || null,
     // Raw Plex identifiers, kept only for matching against our own users
     // table server-side - never sent to the browser as-is.
     plexUser: s.user || null,
@@ -215,6 +221,11 @@ async function getLibraries(baseUrl, apiKey) {
     return { ok: false, message: 'Tautulli is not configured yet.' };
   }
 
+  const cacheKey = `${baseUrl}::${apiKey}`;
+  if (librariesCache && librariesCache.key === cacheKey && librariesCache.expiresAt > Date.now()) {
+    return librariesCache.result;
+  }
+
   const url = `${baseUrl.replace(/\/$/, '')}/api/v2?apikey=${encodeURIComponent(apiKey)}&cmd=get_libraries`;
 
   try {
@@ -233,7 +244,9 @@ async function getLibraries(baseUrl, apiKey) {
       count: parseInt(lib.count, 10) || 0,
     }));
 
-    return { ok: true, libraries };
+    const result = { ok: true, libraries };
+    librariesCache = { key: cacheKey, expiresAt: Date.now() + LIBRARIES_CACHE_TTL_MS, result };
+    return result;
   } catch (err) {
     const reason = err.name === 'TimeoutError' ? 'Timed out reaching Tautulli.' : `Could not reach Tautulli: ${err.message}`;
     return { ok: false, message: reason };
