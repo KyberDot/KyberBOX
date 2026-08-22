@@ -179,7 +179,7 @@ router.get('/admin', (req, res) => {
     .all();
   const mailConfigured = isConfigured(getAllSettings());
 
-  const DEFAULT_DASHBOARD_SECTIONS = ['server_data', 'container_health', 'account_overview', 'stream_data', 'library_data'];
+  const DEFAULT_DASHBOARD_SECTIONS = ['server_data', 'container_health', 'account_overview', 'stream_data', 'library_data', 'supplier_data'];
   let dashboardSectionsConfig;
   try {
     dashboardSectionsConfig = JSON.parse(getAllSettings().dashboard_sections_config);
@@ -727,7 +727,12 @@ router.get('/admin/storage', (req, res) => {
 });
 
 router.get('/admin/storage/status', async (req, res) => {
-  const { buckets, sftpBoxes } = loadStorageLists();
+  // loadStorageLists() deliberately excludes the encrypted credential
+  // fields (it's meant for the display page), but testConnection() needs
+  // them to actually authenticate - querying the full rows directly here
+  // instead, since passing the stripped objects would always fail.
+  const buckets = db.prepare('SELECT * FROM storage_buckets ORDER BY created_at ASC').all();
+  const sftpBoxes = db.prepare('SELECT * FROM sftp_storage_boxes ORDER BY created_at ASC').all();
   const results = {};
 
   await Promise.all([

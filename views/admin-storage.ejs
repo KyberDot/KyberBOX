@@ -27,9 +27,14 @@
     <main class="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-10 pb-24">
         <div class="flex items-start justify-between gap-4 mb-2">
             <h1 class="text-2xl sm:text-3xl font-extrabold">Storage</h1>
-            <button type="button" onclick="openModal('addStorageModal')" title="Connect Storage" class="w-10 h-10 flex items-center justify-center rounded-xl btn-outline flex-shrink-0">
-                <i class="fas fa-plus"></i>
-            </button>
+            <div class="flex items-center gap-2 flex-shrink-0">
+                <button type="button" onclick="refreshStorageStatus(true)" title="Refresh status" class="w-10 h-10 flex items-center justify-center rounded-xl btn-outline">
+                    <i class="fas fa-arrows-rotate" id="storageStatusRefreshIcon"></i>
+                </button>
+                <button type="button" onclick="openModal('addStorageModal')" title="Connect Storage" class="w-10 h-10 flex items-center justify-center rounded-xl btn-outline">
+                    <i class="fas fa-plus"></i>
+                </button>
+            </div>
         </div>
         <p class="text-slate-400 text-sm mb-8">Connect S3-compatible object storage (Hetzner Object Storage, AWS S3, Backblaze B2, DigitalOcean Spaces, Cloudflare R2, MinIO) or plain SFTP storage (Hetzner Storage Box and similar). Browse files, check storage usage, and manage contents directly.</p>
 
@@ -351,7 +356,9 @@
             }
         }
 
-        async function refreshStorageStatus() {
+        async function refreshStorageStatus(spin) {
+            const icon = document.getElementById('storageStatusRefreshIcon');
+            if (spin && icon) icon.classList.add('fa-spin');
             try {
                 const res = await fetch('/admin/storage/status');
                 const data = await res.json();
@@ -366,6 +373,8 @@
                 });
             } catch (e) {
                 // leave "Checking" state as-is on failure
+            } finally {
+                if (spin && icon) icon.classList.remove('fa-spin');
             }
         }
 

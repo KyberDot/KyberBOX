@@ -34,8 +34,8 @@
             <div class="flex items-center justify-between mb-4 flex-wrap gap-3">
                 <div id="breadcrumb" class="text-sm text-slate-400 min-w-0 flex-1"></div>
                 <div class="flex items-center gap-2 flex-shrink-0">
-                    <button type="button" onclick="loadFiles(false)" class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-white/5" title="Refresh this folder">
-                        <i class="fas fa-arrows-rotate"></i>
+                    <button type="button" onclick="refreshCurrentFolder()" class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-white/5" title="Refresh this folder">
+                        <i class="fas fa-arrows-rotate" id="folderRefreshIcon"></i>
                     </button>
                     <button type="button" id="selectModeBtn" onclick="toggleSelectMode()" class="btn-outline py-2 px-4 rounded-lg text-xs">
                         <i class="fas fa-list-check mr-1"></i>Select
@@ -340,6 +340,16 @@
                 '<button type="button" onclick="openRename(' + jsStr(pathOrItem.key) + ')" title="Rename / Move" class="text-slate-500 hover:text-white w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/5 flex-shrink-0"><i class="fas fa-pen text-xs"></i></button>' +
                 '<button type="button" onclick="deleteFile(' + jsStr(pathOrItem.key) + ')" title="Delete" class="text-slate-500 hover:text-red-400 w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/5 flex-shrink-0"><i class="fas fa-trash text-xs"></i></button>' +
                 '</div>';
+        }
+
+        async function refreshCurrentFolder() {
+            const icon = document.getElementById('folderRefreshIcon');
+            if (icon) icon.classList.add('fa-spin');
+            try {
+                await loadFiles(false);
+            } finally {
+                if (icon) icon.classList.remove('fa-spin');
+            }
         }
 
         async function loadFiles(append) {
