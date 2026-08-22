@@ -3,7 +3,7 @@ const db = require('../db');
 const { runCommand, getContainerStatuses } = require('../utils/ssh');
 const { startReset, endReset, getResetState } = require('../utils/resetLock');
 const { notifyResetStarted, sendMail } = require('../utils/mailer');
-const { getWatchHistory, getNowWatching, getGeoLookup, fetchPosterImage, getLibraries } = require('../utils/tautulli');
+const { getWatchHistory, getNowWatching, getGeoLookup, fetchPosterImage, getLibraries, getLibraryMediaInfo } = require('../utils/tautulli');
 const { getAllSettings, getSiteBaseUrl } = require('../utils/settings');
 const { formatUK } = require('../utils/time');
 const { resetIfLinkedAction, computeElapsedSeconds } = require('../utils/runTimer');
@@ -190,6 +190,39 @@ router.get('/dashboard/plans/:planId/libraries', async (req, res) => {
     .filter(Boolean); // skips any assigned library that's since been removed from Plex/Tautulli entirely, rather than showing a broken entry
 
   res.json({ ok: true, libraries });
+});
+
+router.get('/dashboard/plans/:planId/libraries/:sectionId/media', async (req, res) => {
+  const subscription = db
+    .prepare("SELECT * FROM subscriptions WHERE user_id = ? AND plan_id = ? AND status = 'active'")
+    .get(req.user.id, req.params.planId);
+  if (!subscription) return res.status(403).json({ ok: false, message: 'No active subscription to this plan.' });
+
+  const plan = db.prepare('SELECT * FROM plans WHERE id = ?').get(req.params.planId);
+  if (!plan || !plan.library_browse_enabled) {
+    return res.status(403).json({ ok: false, message: 'Library browsing is not enabled for this plan.' });
+  }
+
+  const assignedLibrary = db
+    .prepare('SELECT * FROM plan_libraries WHERE plan_id = ? AND section_id = ?')
+    .get(req.params.planId, req.params.sectionId);
+  if (!assignedLibrary) return res.status(403).json({ ok: false, message: 'This library is not part of your plan.' });
+
+  const settings = getAllSettings();
+  const page = Math.max(0, parseInt(req.query.page, 10) || 0);
+  const pageSize = 10;
+  const search = String(req.query.search || '').trim();
+
+  const result = await getLibraryMediaInfo(
+    settings.tautulli_url,
+    settings.tautulli_api_key,
+    req.params.sectionId,
+    page * pageSize,
+    pageSize,
+    search
+  );
+
+  res.json(result);
 });
 
 router.post('/dashboard/actions/:actionId/run', async (req, res) => {

@@ -338,6 +338,13 @@
                             <summary class="cursor-pointer text-sky-400 text-xs font-semibold uppercase tracking-wide">Plex Libraries (shown to subscribers)</summary>
                             <p class="text-slate-500 text-xs mt-2 mb-3">Choose which libraries show an item count on this plan's dashboard card, and drag to reorder them.</p>
 
+                            <div class="flex items-center gap-2 mb-4">
+                                <button type="button" onclick="toggleLibraryBrowse(this, <%= plan.id %>)" data-enabled="<%= plan.library_browse_enabled ? '1' : '0' %>" class="badge <%= plan.library_browse_enabled ? 'badge-active' : 'badge-closed' %> text-[10px] px-3 py-1.5 cursor-pointer">
+                                    <i class="fas fa-magnifying-glass mr-1"></i>Subscriber Browsing: <%= plan.library_browse_enabled ? 'Enabled' : 'Disabled' %>
+                                </button>
+                            </div>
+                            <p class="text-slate-500 text-xs -mt-2 mb-4">When enabled, subscribers can click a library on their dashboard to search and browse its contents, same as the admin Library Data view.</p>
+
                             <p class="text-[10px] uppercase tracking-wide text-slate-600 font-semibold mb-1.5">Assigned</p>
                             <div id="plan-<%= plan.id %>-libraries-assigned" class="space-y-1.5 mb-4">
                                 <p class="text-slate-500 text-xs"><i class="fas fa-circle-notch fa-spin mr-2"></i>Loading…</p>
@@ -503,6 +510,24 @@
         // ---------- Plan Libraries ----------
         const PLAN_LIBRARY_ICONS = { movie: 'fa-film', show: 'fa-tv' };
         let planLibraryDragState = null;
+
+        async function toggleLibraryBrowse(btn, planId) {
+            const enabled = btn.getAttribute('data-enabled') === '1';
+            const newEnabled = !enabled;
+            btn.setAttribute('data-enabled', newEnabled ? '1' : '0');
+            btn.className = 'badge ' + (newEnabled ? 'badge-active' : 'badge-closed') + ' text-[10px] px-3 py-1.5 cursor-pointer';
+            btn.innerHTML = '<i class="fas fa-magnifying-glass mr-1"></i>Subscriber Browsing: ' + (newEnabled ? 'Enabled' : 'Disabled');
+
+            try {
+                await fetch('/admin/plans/' + planId + '/library-browse-toggle', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: 'enabled=' + (newEnabled ? '1' : '0'),
+                });
+            } catch (e) {
+                showToast('Could not reach the server to save this setting.', 'error');
+            }
+        }
 
         async function loadPlanLibraries(planId) {
             const assignedEl = document.getElementById('plan-' + planId + '-libraries-assigned');

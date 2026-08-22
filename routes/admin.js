@@ -595,6 +595,12 @@ router.post('/admin/plans/:id/libraries/reorder', (req, res) => {
   res.json({ ok: true });
 });
 
+router.post('/admin/plans/:id/library-browse-toggle', (req, res) => {
+  const enabled = req.body.enabled === '1' ? 1 : 0;
+  db.prepare('UPDATE plans SET library_browse_enabled = ? WHERE id = ?').run(enabled, req.params.id);
+  res.json({ ok: true });
+});
+
 // ---------- Minecraft Death Counter ----------
 
 router.post('/admin/plans/:id/death-counter/toggle-enabled', (req, res) => {
@@ -718,6 +724,32 @@ function loadStorageLists() {
 
 router.get('/admin/storage', (req, res) => {
   res.render('admin-storage', { ...loadStorageLists(), addResult: null });
+});
+
+router.get('/admin/storage/status', async (req, res) => {
+  const { buckets, sftpBoxes } = loadStorageLists();
+  const results = {};
+
+  await Promise.all([
+    ...buckets.map(async (b) => {
+      try {
+        const result = await s3.testConnection(b);
+        results['bucket-' + b.id] = { online: !!result.ok };
+      } catch (err) {
+        results['bucket-' + b.id] = { online: false };
+      }
+    }),
+    ...sftpBoxes.map(async (b) => {
+      try {
+        const result = await sftpStorage.testConnection(b);
+        results['sftp-' + b.id] = { online: !!result.ok };
+      } catch (err) {
+        results['sftp-' + b.id] = { online: false };
+      }
+    }),
+  ]);
+
+  res.json({ ok: true, results });
 });
 
 router.post('/admin/storage/bucket', async (req, res) => {

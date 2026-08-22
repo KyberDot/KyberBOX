@@ -222,6 +222,7 @@ CREATE TABLE IF NOT EXISTS plans (
   maintenance_mode INTEGER NOT NULL DEFAULT 0,
   maintenance_resume_at TEXT,  -- UTC datetime string; shown to subscribers in UK time
   maintenance_message TEXT,
+  library_browse_enabled INTEGER NOT NULL DEFAULT 0, -- lets subscribers click into a library and browse/search its contents, same as the admin Library Data widget
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -544,6 +545,7 @@ ensureColumn('users', 'totp_last_time_step', 'totp_last_time_step INTEGER');
 ensureColumn('plans', 'run_timer_status', "run_timer_status TEXT NOT NULL DEFAULT 'stopped'");
 ensureColumn('plans', 'run_timer_started_at', 'run_timer_started_at TEXT');
 ensureColumn('plans', 'run_timer_accumulated_seconds', 'run_timer_accumulated_seconds INTEGER NOT NULL DEFAULT 0');
+ensureColumn('plans', 'library_browse_enabled', 'library_browse_enabled INTEGER NOT NULL DEFAULT 0');
 ensureColumn('users', 'plex_link_attempted_at', 'plex_link_attempted_at TEXT');
 ensureColumn('users', 'admin_access_mode', "admin_access_mode TEXT NOT NULL DEFAULT 'full'"); // full | limited - only meaningful when role = 'admin'; limited admins are gated per-page via admin_page_access
 

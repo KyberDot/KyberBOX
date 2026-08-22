@@ -57,6 +57,7 @@ function getAllSettings() {
       { key: 'account_overview', enabled: true },
       { key: 'stream_data', enabled: true },
       { key: 'library_data', enabled: true },
+      { key: 'supplier_data', enabled: true },
     ])),
   };
 }

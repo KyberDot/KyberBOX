@@ -59,7 +59,10 @@
                         </div>
                     </div>
                     <p class="font-bold text-white text-sm mb-1"><%= b.label %></p>
-                    <span class="badge badge-answered text-[10px] mb-1 inline-block">S3 Bucket</span>
+                    <div class="flex items-center gap-1.5 mb-1">
+                        <span class="badge badge-answered text-[10px] inline-block">S3 Bucket</span>
+                        <span id="storage-status-bucket-<%= b.id %>" class="badge badge-suspended text-[10px] inline-flex items-center gap-1"><i class="fas fa-circle-notch fa-spin text-[8px]"></i>Checking</span>
+                    </div>
                     <p class="text-slate-500 text-xs font-mono truncate"><%= b.bucket_name %></p>
                     <p class="text-slate-600 text-[10px] font-mono truncate mt-0.5"><%= b.endpoint %></p>
                 </a>
@@ -83,7 +86,10 @@
                         </div>
                     </div>
                     <p class="font-bold text-white text-sm mb-1"><%= b.label %></p>
-                    <span class="badge badge-suspended text-[10px] mb-1 inline-block">SFTP Box</span>
+                    <div class="flex items-center gap-1.5 mb-1">
+                        <span class="badge badge-suspended text-[10px] inline-block">SFTP Box</span>
+                        <span id="storage-status-sftp-<%= b.id %>" class="badge badge-suspended text-[10px] inline-flex items-center gap-1"><i class="fas fa-circle-notch fa-spin text-[8px]"></i>Checking</span>
+                    </div>
                     <p class="text-slate-500 text-xs font-mono truncate"><%= b.username %>@<%= b.host %></p>
                     <p class="text-slate-600 text-[10px] font-mono truncate mt-0.5"><%= (b.root_path === '/' || !b.root_path) ? 'Default Directory' : b.root_path %></p>
                 </a>
@@ -344,6 +350,26 @@
                 showToast('Something went wrong sending that request.', 'error');
             }
         }
+
+        async function refreshStorageStatus() {
+            try {
+                const res = await fetch('/admin/storage/status');
+                const data = await res.json();
+                if (!data.ok) return;
+
+                Object.keys(data.results).forEach(function (key) {
+                    const el = document.getElementById('storage-status-' + key);
+                    if (!el) return;
+                    const online = data.results[key].online;
+                    el.className = 'badge ' + (online ? 'badge-active status-dot' : 'badge-expired') + ' text-[10px] inline-flex items-center gap-1';
+                    el.innerHTML = online ? '<i class="fas fa-circle text-[6px]"></i>Online' : '<i class="fas fa-circle text-[6px]"></i>Offline';
+                });
+            } catch (e) {
+                // leave "Checking" state as-is on failure
+            }
+        }
+
+        refreshStorageStatus();
     </script>
 </body>
 </html>

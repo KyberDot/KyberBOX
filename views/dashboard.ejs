@@ -105,7 +105,7 @@
                     <% } %>
 
                     <% if (pv.hasLibraries) { %>
-                        <div class="mb-6" data-plan-id="<%= pv.plan.id %>" data-library-counts>
+                        <div class="mb-6" data-plan-id="<%= pv.plan.id %>" data-library-counts data-library-browse-enabled="<%= pv.plan.library_browse_enabled ? '1' : '0' %>">
                             <p class="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-3">Library Overview</p>
                             <div class="flex flex-wrap gap-2" data-library-counts-list>
                                 <p class="text-slate-500 text-xs"><i class="fas fa-circle-notch fa-spin mr-2"></i>Loading…</p>
@@ -228,7 +228,7 @@
                                 <% } %>
 
                                 <% if (extra.hasLibraries) { %>
-                                    <div class="mb-5" data-plan-id="<%= extra.plan.id %>" data-library-counts>
+                                    <div class="mb-5" data-plan-id="<%= extra.plan.id %>" data-library-counts data-library-browse-enabled="<%= extra.plan.library_browse_enabled ? '1' : '0' %>">
                                         <p class="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-3">Library Overview</p>
                                         <div class="flex flex-wrap gap-2" data-library-counts-list>
                                             <p class="text-slate-500 text-xs"><i class="fas fa-circle-notch fa-spin mr-2"></i>Loading…</p>
@@ -301,6 +301,26 @@
                 <button onclick="closeActionModal()" class="btn-outline flex-1 py-3 rounded-xl text-sm">Cancel</button>
                 <button id="actionModalConfirmBtn" onclick="confirmAction()" class="btn-amber flex-1 py-3 rounded-xl text-sm">Yes, Continue</button>
             </div>
+        </div>
+    </div>
+
+    <!-- Library Media Browser Modal -->
+    <div id="libraryMediaModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden items-center justify-center z-50 px-4 py-8 overflow-y-auto">
+        <div class="glass rounded-3xl p-6 sm:p-8 max-w-2xl w-full my-auto">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-bold text-white"><i class="fas fa-film mr-2 text-sky-400"></i><span id="libraryMediaModalTitle">Library</span></h3>
+                <button type="button" onclick="closeLibraryMediaModal()" class="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5">
+                    <i class="fas fa-xmark"></i>
+                </button>
+            </div>
+            <div class="relative mb-4">
+                <i class="fas fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 text-sm"></i>
+                <input type="text" id="libraryMediaSearch" class="input pl-10" placeholder="Search this library…" oninput="handleLibraryMediaSearch()">
+            </div>
+            <div id="libraryMediaContent" class="space-y-1.5 min-h-[200px]">
+                <p class="text-slate-500 text-sm"><i class="fas fa-circle-notch fa-spin mr-2"></i>Loading…</p>
+            </div>
+            <div id="libraryMediaPagination" class="flex items-center justify-center gap-1.5 mt-5 flex-wrap"></div>
         </div>
     </div>
 
@@ -561,6 +581,7 @@
 
         async function refreshPlanLibraries(container) {
             const planId = container.getAttribute('data-plan-id');
+            const browseEnabled = container.getAttribute('data-library-browse-enabled') === '1';
             const list = container.querySelector('[data-library-counts-list]');
             if (!planId || !list) return;
 
@@ -576,11 +597,14 @@
                 list.innerHTML = data.libraries.map(function (lib) {
                     const icon = LIBRARY_COUNT_ICONS[lib.type] || 'fa-photo-film';
                     const name = String(lib.name).replace(/</g, '&lt;');
-                    return '<span class="inline-flex items-center gap-1.5 bg-slate-900/40 rounded-lg px-3 py-1.5 text-xs">'
-                        + '<i class="fas ' + icon + ' text-sky-400"></i>'
+                    const inner = '<i class="fas ' + icon + ' text-sky-400"></i>'
                         + '<span class="text-slate-300">' + name + '</span>'
-                        + '<span class="text-slate-500 font-mono">' + lib.count.toLocaleString() + '</span>'
-                        + '</span>';
+                        + '<span class="text-slate-500 font-mono">' + lib.count.toLocaleString() + '</span>';
+
+                    if (browseEnabled) {
+                        return '<button type="button" onclick="openLibraryMediaModal(\'' + planId + '\', \'' + lib.sectionId + '\', \'' + name.replace(/'/g, "\\'") + '\')" class="inline-flex items-center gap-1.5 bg-slate-900/40 hover:bg-slate-900/60 rounded-lg px-3 py-1.5 text-xs transition cursor-pointer">' + inner + '</button>';
+                    }
+                    return '<span class="inline-flex items-center gap-1.5 bg-slate-900/40 rounded-lg px-3 py-1.5 text-xs">' + inner + '</span>';
                 }).join('');
             } catch (e) {
                 container.remove(); // same reasoning - a broken/empty section looks worse than no section at all
@@ -590,6 +614,105 @@
         document.querySelectorAll('[data-library-counts]').forEach(function(el) {
             refreshPlanLibraries(el);
         });
+
+        // ---------- Library Media Browser Modal ----------
+        let currentLibraryPlanId = null;
+        let currentLibrarySectionId = null;
+        let currentLibraryPage = 0;
+        let libraryMediaSearchTimeout = null;
+        const LIBRARY_ITEM_ICONS = { movie: 'fa-film', show: 'fa-tv' };
+
+        function openLibraryMediaModal(planId, sectionId, name) {
+            currentLibraryPlanId = planId;
+            currentLibrarySectionId = sectionId;
+            currentLibraryPage = 0;
+            document.getElementById('libraryMediaModalTitle').textContent = name;
+            document.getElementById('libraryMediaSearch').value = '';
+            const modal = document.getElementById('libraryMediaModal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            loadLibraryMediaPage(0);
+        }
+
+        function closeLibraryMediaModal() {
+            const modal = document.getElementById('libraryMediaModal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+            currentLibraryPlanId = null;
+            currentLibrarySectionId = null;
+        }
+
+        function handleLibraryMediaSearch() {
+            if (libraryMediaSearchTimeout) clearTimeout(libraryMediaSearchTimeout);
+            libraryMediaSearchTimeout = setTimeout(function () {
+                loadLibraryMediaPage(0); // any new search starts back at page 1
+            }, 350);
+        }
+
+        async function loadLibraryMediaPage(page) {
+            if (!currentLibraryPlanId || !currentLibrarySectionId) return;
+            currentLibraryPage = page;
+            const search = document.getElementById('libraryMediaSearch').value.trim();
+            const content = document.getElementById('libraryMediaContent');
+            content.innerHTML = '<p class="text-slate-500 text-sm"><i class="fas fa-circle-notch fa-spin mr-2"></i>Loading…</p>';
+
+            try {
+                const url = '/dashboard/plans/' + encodeURIComponent(currentLibraryPlanId) + '/libraries/' + encodeURIComponent(currentLibrarySectionId) + '/media?page=' + page + '&search=' + encodeURIComponent(search);
+                const res = await fetch(url);
+                const data = await res.json();
+
+                if (!data.ok) {
+                    content.innerHTML = '<p class="text-red-400 text-sm">' + (data.message || 'Could not load this library.') + '</p>';
+                    document.getElementById('libraryMediaPagination').innerHTML = '';
+                    return;
+                }
+
+                renderLibraryMediaItems(data.items);
+                renderLibraryMediaPagination(data.recordsFiltered, page);
+            } catch (e) {
+                content.innerHTML = '<p class="text-red-400 text-sm">Could not reach the server.</p>';
+                document.getElementById('libraryMediaPagination').innerHTML = '';
+            }
+        }
+
+        function renderLibraryMediaItems(items) {
+            const content = document.getElementById('libraryMediaContent');
+            if (!items || items.length === 0) {
+                content.innerHTML = '<p class="text-slate-500 text-sm">No matching items found.</p>';
+                return;
+            }
+            content.innerHTML = items.map(function (item) {
+                const icon = LIBRARY_ITEM_ICONS[item.mediaType] || 'fa-file';
+                const safeTitle = String(item.title).replace(/</g, '&lt;');
+                const yearPart = item.year ? ' <span class="text-slate-500">(' + item.year + ')</span>' : '';
+                return '<div class="flex items-center gap-2.5 bg-slate-900/40 rounded-xl px-3 py-2.5">'
+                    + '<i class="fas ' + icon + ' text-sky-400 text-xs flex-shrink-0"></i>'
+                    + '<span class="text-white text-sm truncate">' + safeTitle + '</span>' + yearPart
+                    + '</div>';
+            }).join('');
+        }
+
+        function renderLibraryMediaPagination(recordsFiltered, currentPage) {
+            const container = document.getElementById('libraryMediaPagination');
+            const totalPages = Math.max(1, Math.ceil(recordsFiltered / 10));
+            if (totalPages <= 1) { container.innerHTML = ''; return; }
+
+            const pages = [];
+            const windowSize = 2;
+            for (let i = 0; i < totalPages; i++) {
+                if (i === 0 || i === totalPages - 1 || Math.abs(i - currentPage) <= windowSize) {
+                    pages.push(i);
+                } else if (pages[pages.length - 1] !== '…') {
+                    pages.push('…');
+                }
+            }
+
+            container.innerHTML = pages.map(function (p) {
+                if (p === '…') return '<span class="text-slate-600 px-1 text-xs">…</span>';
+                const active = p === currentPage;
+                return '<button type="button" onclick="loadLibraryMediaPage(' + p + ')" class="w-8 h-8 rounded-lg text-xs font-semibold transition ' + (active ? 'bg-sky-500/20 text-sky-400' : 'text-slate-400 hover:text-white hover:bg-white/5') + '">' + (p + 1) + '</button>';
+            }).join('');
+        }
 
         document.addEventListener('click', async function (e) {
             const btn = e.target.closest('[data-plan-refresh-btn]');
