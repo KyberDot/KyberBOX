@@ -334,7 +334,7 @@
                     <% } %>
 
                     <% if (plan.service === 'plex' || plan.service === 'multiple') { %>
-                        <details data-ajax-key="plan-<%= plan.id %>-libraries" ontoggle="if (this.open) loadPlanLibraries(<%= plan.id %>)">
+                        <details class="mb-3" data-ajax-key="plan-<%= plan.id %>-libraries" ontoggle="if (this.open) loadPlanLibraries(<%= plan.id %>)">
                             <summary class="cursor-pointer text-sky-400 text-xs font-semibold uppercase tracking-wide">Plex Libraries (shown to subscribers)</summary>
                             <p class="text-slate-500 text-xs mt-2 mb-3">Choose which libraries show an item count on this plan's dashboard card, and drag to reorder them.</p>
 

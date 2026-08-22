@@ -104,6 +104,15 @@
                         </div>
                     <% } %>
 
+                    <% if (pv.hasLibraries) { %>
+                        <div class="mb-6" data-plan-id="<%= pv.plan.id %>" data-library-counts>
+                            <p class="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-3">Library Overview</p>
+                            <div class="flex flex-wrap gap-2" data-library-counts-list>
+                                <p class="text-slate-500 text-xs"><i class="fas fa-circle-notch fa-spin mr-2"></i>Loading…</p>
+                            </div>
+                        </div>
+                    <% } %>
+
                     <!-- Server connection info (e.g. Minecraft server address) -->
                     <% if (pv.plan.server_connection_info) { %>
                         <% const addrColor = pv.plan.service === 'plex' ? 'amber' : 'emerald'; %>
@@ -133,15 +142,6 @@
                                         <span class="badge badge-suspended" data-status-pill><i class="fas fa-circle-notch fa-spin"></i> checking</span>
                                     </div>
                                 <% }); %>
-                            </div>
-                        </div>
-                    <% } %>
-
-                    <% if (pv.hasLibraries) { %>
-                        <div class="mb-6" data-plan-id="<%= pv.plan.id %>" data-library-counts>
-                            <p class="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-3">Library Data</p>
-                            <div class="flex flex-wrap gap-2" data-library-counts-list>
-                                <p class="text-slate-500 text-xs"><i class="fas fa-circle-notch fa-spin mr-2"></i>Loading…</p>
                             </div>
                         </div>
                     <% } %>
@@ -227,6 +227,15 @@
                                     </div>
                                 <% } %>
 
+                                <% if (extra.hasLibraries) { %>
+                                    <div class="mb-5" data-plan-id="<%= extra.plan.id %>" data-library-counts>
+                                        <p class="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-3">Library Overview</p>
+                                        <div class="flex flex-wrap gap-2" data-library-counts-list>
+                                            <p class="text-slate-500 text-xs"><i class="fas fa-circle-notch fa-spin mr-2"></i>Loading…</p>
+                                        </div>
+                                    </div>
+                                <% } %>
+
                                 <% if (extra.plan.server_connection_info) { %>
                                     <% const extraAddrColor = extra.plan.service === 'plex' ? 'amber' : 'emerald'; %>
                                     <div class="mb-5 rounded-2xl p-4 sm:p-5 bg-gradient-to-r from-<%= extraAddrColor %>-500/15 via-<%= extraAddrColor %>-500/5 to-transparent border border-<%= extraAddrColor %>-500/30">
@@ -255,15 +264,6 @@
                                                     <span class="badge badge-suspended" data-status-pill><i class="fas fa-circle-notch fa-spin"></i> checking</span>
                                                 </div>
                                             <% }); %>
-                                        </div>
-                                    </div>
-                                <% } %>
-
-                                <% if (extra.hasLibraries) { %>
-                                    <div class="mb-6" data-plan-id="<%= extra.plan.id %>" data-library-counts>
-                                        <p class="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-3">Library Data</p>
-                                        <div class="flex flex-wrap gap-2" data-library-counts-list>
-                                            <p class="text-slate-500 text-xs"><i class="fas fa-circle-notch fa-spin mr-2"></i>Loading…</p>
                                         </div>
                                     </div>
                                 <% } %>

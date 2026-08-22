@@ -191,11 +191,16 @@ async function fetchPosterImage(baseUrl, apiKey, imgPath) {
       return null;
     }
     const contentType = res.headers.get('content-type') || 'image/jpeg';
-    const buffer = Buffer.from(await res.arrayBuffer());
     if (!contentType.startsWith('image/')) {
-      console.error(`[tautulli] poster fetch for "${imgPath}" returned non-image content-type: ${contentType}`);
+      // Capture the actual body here - it's almost certainly Tautulli's
+      // own error page (auth failure, rejected path, etc), and that text
+      // is the concrete evidence needed to diagnose this, rather than
+      // guessing at causes with only the content-type to go on.
+      const body = await res.text().catch(() => '(could not read response body)');
+      console.error(`[tautulli] poster fetch for "${imgPath}" returned non-image content-type: ${contentType}\nResponse body: ${body.slice(0, 500)}`);
       return null;
     }
+    const buffer = Buffer.from(await res.arrayBuffer());
     return { buffer, contentType };
   } catch (err) {
     console.error(`[tautulli] poster fetch error for "${imgPath}": ${err.message}`);
